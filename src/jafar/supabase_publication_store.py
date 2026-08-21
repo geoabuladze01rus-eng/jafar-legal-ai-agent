@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -32,8 +33,15 @@ class SupabasePublicationStore:
     async def mark_published(self, publication_id: int, message_id: int) -> None:
         await self._patch(
             publication_id,
-            {"status": "published", "telegram_message_id": message_id, "published_at": "now()"},
+            {
+                "status": "published",
+                "telegram_message_id": message_id,
+                "published_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
     async def mark_failed(self, publication_id: int, reason: str) -> None:
-        await self._patch(publication_id, {"status": "failed", "metrics": {"error": reason[:1000]}})
+        await self._patch(
+            publication_id,
+            {"status": "failed", "metrics": {"error": reason[:1000]}},
+        )

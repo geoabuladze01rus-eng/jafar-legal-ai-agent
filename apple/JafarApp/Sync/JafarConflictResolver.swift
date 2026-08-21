@@ -26,6 +26,12 @@ struct JafarConflictResolver {
             return .requiresUserReview
         }
 
+        // Legal matters and legal deadlines are never silently overwritten.
+        if local.requiresLegalReview || remote.requiresLegalReview {
+            if local.payload == remote.payload { return .keepLocal }
+            return .requiresUserReview
+        }
+
         if local.version > remote.version { return .keepLocal }
         if remote.version > local.version { return .acceptRemote }
 

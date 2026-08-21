@@ -9,10 +9,12 @@ from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .legal_analysis import LegalAnalyzer
+from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 
-app = FastAPI(title=settings.app_name, version="0.4.0")
+app = FastAPI(title=settings.app_name, version="0.5.0")
+app.include_router(legal_entity_router)
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
@@ -71,16 +73,16 @@ async def analyze_document(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unsupported analysis task") from exc
 
-    if matter_id:
-        if matter_store.get(matter_id) is None:
-            raise HTTPException(status_code=404, detail="Matter not found")
-        result = document_workflow.process(
-            file.filename or "document", extracted, document_task, matter_type
-        )
-        return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else None)
+    if matter_id and matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
 
-    result = document_workflow.process(file.filename or "document", extracted, document_task, matter_type)
-    return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else None)
+    result = document_workflow.process(
+        file.filename or "document", extracted, document_task, matter_type
+    )
+    return AnalysisResponse(
+        analysis=result.analysis,
+        matter_id=result.match.matter_id if result.match else matter_id,
+    )
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

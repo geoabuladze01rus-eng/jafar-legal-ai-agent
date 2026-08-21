@@ -1,7 +1,7 @@
 import Foundation
 import Supabase
 
-struct JafarSyncEvent: Codable, Sendable, Equatable {
+struct JafarRealtimeSyncEvent: Codable, Sendable, Equatable {
     let id: UUID
     let entity: String
     let operation: String
@@ -22,7 +22,7 @@ final class JafarRealtimeSync {
         self.deviceID = deviceID
     }
 
-    func start(onEvent: @escaping @Sendable (JafarSyncEvent) async -> Void) async {
+    func start(onEvent: @escaping @Sendable (JafarRealtimeSyncEvent) async -> Void) async {
         let channel = supabase.realtimeV2.channel("jafar:user:sync") { config in
             config.isPrivate = true
         }
@@ -30,7 +30,7 @@ final class JafarRealtimeSync {
 
         channel.onBroadcast(event: "sync") { message in
             guard let data = message.payload.data(using: .utf8),
-                  let event = try? JSONDecoder().decode(JafarSyncEvent.self, from: data),
+                  let event = try? JSONDecoder().decode(JafarRealtimeSyncEvent.self, from: data),
                   event.deviceID != self.deviceID else { return }
             Task { await onEvent(event) }
         }
@@ -39,7 +39,7 @@ final class JafarRealtimeSync {
         await channel.subscribe()
     }
 
-    func publish(_ event: JafarSyncEvent) async throws {
+    func publish(_ event: JafarRealtimeSyncEvent) async throws {
         guard let channel else { return }
         let data = try JSONEncoder().encode(event)
         let payload = String(data: data, encoding: .utf8) ?? "{}"

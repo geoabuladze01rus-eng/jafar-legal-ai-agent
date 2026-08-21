@@ -23,6 +23,9 @@ class MatterStore:
     def get(self, matter_id: str) -> Matter | None:
         return self._matters.get(matter_id)
 
+    def list(self) -> list[Matter]:
+        return list(self._matters.values())
+
     def add_deadlines(self, matter_id: str, deadlines: list[Deadline]) -> Matter | None:
         matter = self.get(matter_id)
         if matter is None:

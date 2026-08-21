@@ -1,27 +1,33 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = VoiceCommandViewModel()
+    @StateObject private var viewModel: VoiceSessionViewModel
+
+    init() {
+        _viewModel = StateObject(wrappedValue: VoiceSessionViewModel(
+            commandClient: LocalCommandClient(),
+            userId: "local-user"
+        ))
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 28) {
                 Spacer()
-
                 Image(systemName: viewModel.isListening ? "waveform.circle.fill" : "scale.3d")
                     .font(.system(size: 72))
                     .symbolEffect(.pulse, isActive: viewModel.isListening)
-
-                Text("Джафар")
-                    .font(.largeTitle.bold())
-
+                Text("Джафар").font(.largeTitle.bold())
                 Text(viewModel.transcript.isEmpty ? "Скажите команду" : viewModel.transcript)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
 
                 Button {
-                    viewModel.toggleListening()
+                    Task {
+                        if viewModel.isListening { await viewModel.stopAndSend() }
+                        else { await viewModel.start() }
+                    }
                 } label: {
                     Label(
                         viewModel.isListening ? "Остановить" : "Говорить",
@@ -41,7 +47,9 @@ struct ContentView: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
                         .padding(.horizontal)
                 }
-
+                if let error = viewModel.errorMessage {
+                    Text(error).foregroundStyle(.red).padding(.horizontal)
+                }
                 Spacer()
             }
             .navigationTitle("Юридический агент")

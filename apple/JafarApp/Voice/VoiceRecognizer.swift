@@ -1,3 +1,5 @@
+import AVFoundation
+import Combine
 import Foundation
 import Speech
 
@@ -24,10 +26,7 @@ final class VoiceRecognizer: ObservableObject {
 
     func start() throws {
         guard !isListening else { return }
-        guard let recognizer, recognizer.isAvailable else {
-            throw VoiceError.unavailable
-        }
-
+        guard let recognizer, recognizer.isAvailable else { throw VoiceError.unavailable }
         transcript = ""
         errorMessage = nil
         task?.cancel()
@@ -41,11 +40,9 @@ final class VoiceRecognizer: ObservableObject {
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
-
         audioEngine.prepare()
         try audioEngine.start()
         isListening = true
-
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
                 if let result { self?.transcript = result.bestTranscription.formattedString }
@@ -55,7 +52,6 @@ final class VoiceRecognizer: ObservableObject {
     }
 
     func stop() {
-        guard isListening else { return }
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
@@ -66,6 +62,4 @@ final class VoiceRecognizer: ObservableObject {
     }
 }
 
-enum VoiceError: Error {
-    case unavailable
-}
+enum VoiceError: Error { case unavailable }

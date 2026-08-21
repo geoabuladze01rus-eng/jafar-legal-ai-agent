@@ -1,16 +1,19 @@
 import Foundation
 
-struct SyncEntity: Codable, Sendable, Hashable {
+struct SyncEnvelope: Codable, Sendable, Equatable {
+    let deviceId: String
+    let userId: String
     let entityType: String
     let entityId: String
     let version: Int64
+    let operation: String
+    let payload: Data
     let updatedAt: Date
+    let requiresLegalReview: Bool
 }
 
 struct SyncChange: Codable, Sendable {
-    let entity: SyncEntity
-    let operation: String
-    let payload: [String: String]
+    let entity: SyncEnvelope
 }
 
 actor JafarSyncCoordinator {

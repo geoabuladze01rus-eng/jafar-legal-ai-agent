@@ -19,7 +19,8 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
-        run: xcodegen generate --spec apple/project.yml --project apple/JafarApp.xcodeproj
+        working-directory: apple
+        run: xcodegen generate --spec project.yml
       - name: Verify generated project
         run: test -d apple/JafarApp.xcodeproj
       - name: Build iOS Simulator

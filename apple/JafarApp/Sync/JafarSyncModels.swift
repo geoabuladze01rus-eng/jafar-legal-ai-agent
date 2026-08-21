@@ -16,7 +16,7 @@ struct SyncChange: Codable, Sendable {
     let entity: SyncEnvelope
 }
 
-actor JafarSyncCoordinator {
+actor JafarSyncVersionTracker {
     private var versions: [String: Int64] = [:]
 
     func accept(_ change: SyncChange) -> Bool {

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_webhook_secret: str | None = None
     telegram_webhook_url: str | None = None
+    telegram_owner_id: int | None = None
+    supabase_url: str | None = None
+    supabase_service_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

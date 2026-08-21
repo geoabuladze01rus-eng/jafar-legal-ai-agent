@@ -18,6 +18,9 @@ line-length = 100
 
 autopep8 = false
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/jafar"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

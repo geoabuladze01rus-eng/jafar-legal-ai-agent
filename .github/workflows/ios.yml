@@ -1,0 +1,29 @@
+name: Jafar iOS
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Discover project
+        run: |
+          find apple -maxdepth 4 \( -name '*.xcodeproj' -o -name '*.xcworkspace' -o -name 'Package.swift' \) -print
+      - name: Build Swift package if present
+        shell: bash
+        run: |
+          if [ -f apple/Package.swift ]; then
+            cd apple
+            swift test
+          else
+            echo 'No Package.swift found; Xcode project discovery is required before simulator build.'
+          fi

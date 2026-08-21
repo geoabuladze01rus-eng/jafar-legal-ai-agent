@@ -9,15 +9,21 @@ from .domains import MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
+from .postgres_matters import PostgresMatterStore
 
-app = FastAPI(title=settings.app_name, version="0.2.0")
+app = FastAPI(title=settings.app_name, version="0.3.0")
 analyzer = LegalAnalyzer()
-matter_store = MatterStore()
+matter_store = (
+    PostgresMatterStore(settings.database_url, settings.database_owner_user_id)
+    if settings.database_url
+    else MatterStore()
+)
 
 
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = Field(default=settings.app_name)
+    storage: str = Field(default="postgres" if settings.database_url else "memory")
 
 
 class CreateMatterRequest(BaseModel):

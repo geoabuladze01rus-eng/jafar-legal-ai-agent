@@ -1,18 +1,20 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .config import settings
 from .domains import MatterType
+from .document_intake import DocumentExtractionError, DocumentExtractor
 from .legal_analysis import LegalAnalyzer
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 
-app = FastAPI(title=settings.app_name, version="0.2.0")
+app = FastAPI(title=settings.app_name, version="0.3.0")
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()
+document_extractor = DocumentExtractor()
 
 
 class HealthResponse(BaseModel):
@@ -43,6 +45,38 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
             raise HTTPException(status_code=404, detail="Matter not found")
         matter_store.add_deadlines(request.matter_id, analysis.deadlines)
     return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
+
+
+@app.post("/v1/documents/analyze", response_model=AnalysisResponse)
+async def analyze_document(
+    file: UploadFile = File(...),
+    task: str = "legal_analysis",
+    matter_type: MatterType = MatterType.GENERAL,
+    matter_id: str | None = None,
+) -> AnalysisResponse:
+    try:
+        content = await file.read(document_extractor.MAX_BYTES + 1)
+        extracted = document_extractor.extract(
+            filename=file.filename or "document",
+            content=content,
+            media_type=file.content_type,
+        )
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        from .domains import DocumentTask
+        document_task = DocumentTask(task)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unsupported analysis task") from exc
+
+    request = AnalysisRequest(
+        text=extracted.text,
+        task=document_task,
+        matter_type=matter_type,
+        matter_id=matter_id,
+    )
+    return analyze(request)
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

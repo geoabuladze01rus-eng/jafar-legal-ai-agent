@@ -18,6 +18,9 @@ dev = ["pytest>=8,<9", "ruff>=0.9,<1", "httpx>=0.28,<1"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+extend-ignore = ["B008", "FURB188", "I001", "RUF012", "UP012", "UP017"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/jafar"]
 

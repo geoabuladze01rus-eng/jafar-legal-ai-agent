@@ -8,13 +8,19 @@ final class JafarConflictCoordinator: ObservableObject {
 
     private let resolver: JafarConflictResolver
     private let notificationCenter: JafarNotificationCenter
+    private let audit: JafarAuditLogging
+    private let deviceID: String
 
     init(
         resolver: JafarConflictResolver = JafarConflictResolver(),
-        notificationCenter: JafarNotificationCenter
+        notificationCenter: JafarNotificationCenter,
+        audit: JafarAuditLogging,
+        deviceID: String
     ) {
         self.resolver = resolver
         self.notificationCenter = notificationCenter
+        self.audit = audit
+        self.deviceID = deviceID
     }
 
     func handle(local: SyncEnvelope, remote: SyncEnvelope) -> SyncConflictDecision {
@@ -36,19 +42,39 @@ final class JafarConflictCoordinator: ObservableObject {
         return decision
     }
 
-    func keepLocal() {
+    func keepLocal() async throws {
         guard let conflict else { return }
+        try await recordResolution(conflict: conflict, resolution: "keep_local")
         notificationCenter.remove(id: "sync-conflict-\(conflict.entityType)-\(conflict.entityId)")
         self.conflict = nil
     }
 
-    func acceptRemote() {
+    func acceptRemote() async throws {
         guard let conflict else { return }
+        try await recordResolution(conflict: conflict, resolution: "accept_remote")
         notificationCenter.remove(id: "sync-conflict-\(conflict.entityType)-\(conflict.entityId)")
         self.conflict = nil
     }
 
     func postpone() {
         conflict = nil
+    }
+
+    private func recordResolution(conflict: SyncConflict, resolution: String) async throws {
+        try await audit.record(JafarAuditEvent(
+            id: UUID(),
+            action: "resolve_sync_conflict",
+            entityType: conflict.entityType,
+            entityID: UUID(uuidString: conflict.entityId),
+            oldPayload: [
+                "local_version": String(conflict.localVersion),
+                "remote_version": String(conflict.remoteVersion)
+            ],
+            newPayload: ["resolution": resolution],
+            deviceID: deviceID,
+            source: "sync_conflict",
+            confirmed: true,
+            occurredAt: Date()
+        ))
     }
 }

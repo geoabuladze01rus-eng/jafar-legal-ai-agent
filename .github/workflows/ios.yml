@@ -1,4 +1,4 @@
-name: Jafar iOS
+name: Jafar Apple
 
 on:
   push:
@@ -11,19 +11,36 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Discover project
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec apple/project.yml --project apple/JafarApp.xcodeproj
+
+      - name: Verify generated project
+        run: test -d apple/JafarApp.xcodeproj
+
+      - name: Build iOS Simulator
         run: |
-          find apple -maxdepth 4 \( -name '*.xcodeproj' -o -name '*.xcworkspace' -o -name 'Package.swift' \) -print
-      - name: Build Swift package if present
-        shell: bash
+          xcodebuild \
+            -project apple/JafarApp.xcodeproj \
+            -scheme JafarApp \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build macOS
         run: |
-          if [ -f apple/Package.swift ]; then
-            cd apple
-            swift test
-          else
-            echo 'No Package.swift found; Xcode project discovery is required before simulator build.'
-          fi
+          xcodebuild \
+            -project apple/JafarApp.xcodeproj \
+            -scheme JafarApp \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

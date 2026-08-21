@@ -1,6 +1,6 @@
 [project]
 name = "jafar-legal-ai-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Jafar AI legal agent: document analysis, email triage, voice workflows and legal work automation."
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,7 @@ dependencies = [
   "uvicorn[standard]>=0.34,<1",
   "pydantic-settings>=2.7,<3",
   "python-multipart>=0.0.20,<1",
+  "psycopg[binary]>=3.2,<4",
 ]
 
 [project.optional-dependencies]

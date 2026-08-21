@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -39,8 +39,8 @@ class LegalEntityIntelligence:
             "sources_error": sum(f.status == "error" for f in findings),
             "risk_score": self._score_value(risks),
             "risk_level": self._risk_level(risks),
-            "risks": [r.__dict__ for r in risks],
-            "findings": [f.__dict__ for f in findings],
+            "risks": [asdict(r) for r in risks],
+            "findings": [asdict(f) for f in findings],
             "disclaimer": "Отсутствие сведений в конкретном публичном источнике не доказывает отсутствие обстоятельства.",
         }
 

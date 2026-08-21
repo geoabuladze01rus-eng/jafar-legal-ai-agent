@@ -5,16 +5,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .domains import MatterType
+from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .legal_analysis import LegalAnalyzer
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
+from .matter_matching import MatterMatch, MatterMatcher
 
-app = FastAPI(title=settings.app_name, version="0.3.0")
+app = FastAPI(title=settings.app_name, version="0.4.0")
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
+matter_matcher = MatterMatcher()
 
 
 class HealthResponse(BaseModel):
@@ -29,6 +31,11 @@ class CreateMatterRequest(BaseModel):
     opposing_party: str | None = None
     court_or_authority: str | None = None
     case_number: str | None = None
+
+
+class MatterMatchResponse(BaseModel):
+    matches: list[MatterMatch]
+    assigned_matter_id: str | None = None
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -53,6 +60,7 @@ async def analyze_document(
     task: str = "legal_analysis",
     matter_type: MatterType = MatterType.GENERAL,
     matter_id: str | None = None,
+    auto_match: bool = True,
 ) -> AnalysisResponse:
     try:
         content = await file.read(document_extractor.MAX_BYTES + 1)
@@ -65,18 +73,30 @@ async def analyze_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        from .domains import DocumentTask
         document_task = DocumentTask(task)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unsupported analysis task") from exc
+
+    resolved_matter_id = matter_id
+    if resolved_matter_id is None and auto_match:
+        best = matter_matcher.best_match(extracted.text, matter_store.list())
+        if best is not None:
+            resolved_matter_id = best.matter_id
 
     request = AnalysisRequest(
         text=extracted.text,
         task=document_task,
         matter_type=matter_type,
-        matter_id=matter_id,
+        matter_id=resolved_matter_id,
     )
     return analyze(request)
+
+
+@app.post("/v1/documents/match", response_model=MatterMatchResponse)
+def match_document(text: str) -> MatterMatchResponse:
+    matches = matter_matcher.match(text, matter_store.list())
+    assigned = matches[0].matter_id if matches else None
+    return MatterMatchResponse(matches=matches, assigned_matter_id=assigned)
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)
@@ -94,6 +114,11 @@ def create_matter(request: CreateMatterRequest) -> Matter:
         updated_at=now,
     )
     return matter_store.create(matter)
+
+
+@app.get("/v1/matters", response_model=list[Matter])
+def list_matters() -> list[Matter]:
+    return matter_store.list()
 
 
 @app.get("/v1/matters/{matter_id}", response_model=Matter)

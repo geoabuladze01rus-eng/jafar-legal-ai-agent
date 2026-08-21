@@ -31,3 +31,5 @@ jobs:
         run: |
           xcodebuild -project apple/JafarApp.xcodeproj -scheme JafarApp \
             -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+
+# CI trigger marker: 2026-08-21T14:30Z

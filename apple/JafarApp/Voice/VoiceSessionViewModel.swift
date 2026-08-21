@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import SwiftUI
 
@@ -12,10 +13,10 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private let recognizer = VoiceRecognizer()
     private let synthesizer = AVSpeechSynthesizer()
-    private let commandClient: CommandClient
+    private let commandClient: any CommandClient
     private let userId: String
 
-    init(commandClient: CommandClient, userId: String) {
+    init(commandClient: any CommandClient, userId: String) {
         self.commandClient = commandClient
         self.userId = userId
     }
@@ -39,13 +40,12 @@ final class VoiceSessionViewModel: ObservableObject {
         isListening = false
         transcript = recognizer.transcript
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
         do {
-            let result = try await commandClient.send(
+            let result = try await commandClient.send(request: CommandRequest(
                 text: transcript,
                 userId: userId,
                 sourceDevice: "apple"
-            )
+            ))
             response = result.message
             speak(response)
         } catch {
@@ -59,9 +59,7 @@ final class VoiceSessionViewModel: ObservableObject {
         utterance.voice = AVSpeechSynthesisVoice(language: "ru-RU")
         utterance.rate = 0.5
         isSpeaking = true
-        synthesizer.delegate = SpeechDelegate { [weak self] in
-            self?.isSpeaking = false
-        }
+        synthesizer.delegate = SpeechDelegate { [weak self] in self?.isSpeaking = false }
         synthesizer.speak(utterance)
     }
 }
@@ -69,7 +67,5 @@ final class VoiceSessionViewModel: ObservableObject {
 private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     private let completion: () -> Void
     init(completion: @escaping () -> Void) { self.completion = completion }
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        completion()
-    }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { completion() }
 }

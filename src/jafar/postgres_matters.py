@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import uuid4
 
 import psycopg
 from psycopg.rows import dict_row
@@ -28,11 +29,7 @@ class PostgresMatterStore:
             client_id = None
             if matter.client_name:
                 client = connection.execute(
-                    """
-                    insert into public.clients (name)
-                    values (%s)
-                    returning id
-                    """,
+                    "insert into public.clients (name) values (%s) returning id",
                     (matter.client_name,),
                 ).fetchone()
                 client_id = client["id"] if client else None
@@ -52,7 +49,7 @@ class PostgresMatterStore:
                     matter.status,
                     matter.case_number,
                     self.owner_user_id,
-                    __import__("json").dumps(metadata, ensure_ascii=False),
+                    json.dumps(metadata, ensure_ascii=False),
                     matter.created_at,
                     matter.updated_at,
                 ),
@@ -143,7 +140,7 @@ class PostgresMatterStore:
     ) -> MatterEvent | None:
         if self.get(matter_id) is None:
             return None
-        event_id = UUID(int=__import__("uuid").uuid4().int)
+        event_id = uuid4()
         with self._connect() as connection:
             connection.execute(
                 """

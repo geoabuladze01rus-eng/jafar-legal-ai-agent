@@ -23,11 +23,19 @@ class MatterStore:
     def get(self, matter_id: str) -> Matter | None:
         return self._matters.get(matter_id)
 
+    def list_matters(self) -> list[Matter]:
+        return list(self._matters.values())
+
     def add_deadlines(self, matter_id: str, deadlines: list[Deadline]) -> Matter | None:
         matter = self.get(matter_id)
         if matter is None:
             return None
-        matter.deadlines.extend(deadlines)
+        existing = {(item.title, item.due_date, item.source_text) for item in matter.deadlines}
+        for deadline in deadlines:
+            key = (deadline.title, deadline.due_date, deadline.source_text)
+            if key not in existing:
+                matter.deadlines.append(deadline)
+                existing.add(key)
         matter.updated_at = utcnow()
         return matter
 
@@ -51,6 +59,7 @@ class MatterStore:
             created_at=utcnow(),
         )
         self._events.setdefault(matter_id, []).append(event)
+        self._matters[matter_id].updated_at = utcnow()
         return event
 
     def events(self, matter_id: str) -> list[MatterEvent]:

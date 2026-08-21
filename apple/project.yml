@@ -21,10 +21,3 @@ targets:
         PRODUCT_NAME: Jafar
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Джафар использует распознавание речи для голосового управления."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Джафар использует микрофон для голосовых команд."
-schemes:
-  JafarApp:
-    build:
-      targets:
-        JafarApp:
-    run:
-      config: Debug

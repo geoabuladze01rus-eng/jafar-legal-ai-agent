@@ -19,15 +19,18 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
-        run: xcodegen generate --spec apple/project.yml --project apple/JafarApp.xcodeproj
+        working-directory: apple
+        run: xcodegen generate --spec project.yml
       - name: Verify generated project
         run: test -d apple/JafarApp.xcodeproj
+      - name: Show available Xcode targets and schemes
+        run: xcodebuild -project apple/JafarApp.xcodeproj -list
       - name: Build iOS Simulator
         run: |
-          xcodebuild -project apple/JafarApp.xcodeproj -scheme JafarApp \
+          xcodebuild -project apple/JafarApp.xcodeproj -target JafarApp_iOS \
             -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16' \
             CODE_SIGNING_ALLOWED=NO build
       - name: Build macOS
         run: |
-          xcodebuild -project apple/JafarApp.xcodeproj -scheme JafarApp \
-            -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project apple/JafarApp.xcodeproj -target JafarApp_macOS \
+            -sdk macosx -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build

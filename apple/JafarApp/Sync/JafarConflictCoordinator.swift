@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class JafarConflictCoordinator: ObservableObject {
@@ -28,8 +29,8 @@ final class JafarConflictCoordinator: ObservableObject {
         guard decision == .requiresUserReview else { return decision }
 
         conflict = resolver.conflict(local: local, remote: remote)
-        localSummary = local.payload
-        remoteSummary = remote.payload
+        localSummary = summary(for: local.payload)
+        remoteSummary = summary(for: remote.payload)
         notificationCenter.add(JafarNotificationItem(
             id: "sync-conflict-\(local.entityType)-\(local.entityId)",
             kind: .approvalRequired,
@@ -58,6 +59,11 @@ final class JafarConflictCoordinator: ObservableObject {
 
     func postpone() {
         conflict = nil
+    }
+
+    private func summary(for payload: Data) -> String {
+        if let string = String(data: payload, encoding: .utf8) { return string }
+        return "Бинарные данные (\(payload.count) байт)"
     }
 
     private func recordResolution(conflict: SyncConflict, resolution: String) async throws {

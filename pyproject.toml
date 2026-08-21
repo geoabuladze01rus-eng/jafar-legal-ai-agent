@@ -1,6 +1,6 @@
 [project]
 name = "jafar-legal-ai-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Jafar AI legal agent: document analysis, email triage, voice workflows and legal work automation."
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,8 @@ dependencies = [
   "uvicorn[standard]>=0.34,<1",
   "pydantic-settings>=2.7,<3",
   "python-multipart>=0.0.20,<1",
+  "pypdf>=5,<7",
+  "python-docx>=1.1,<2",
 ]
 
 [project.optional-dependencies]
@@ -15,8 +17,6 @@ dev = ["pytest>=8,<9", "ruff>=0.9,<1", "httpx>=0.28,<1"]
 
 [tool.ruff]
 line-length = 100
-
-autopep8 = false
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/jafar"]

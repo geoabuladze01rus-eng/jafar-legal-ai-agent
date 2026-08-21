@@ -1,8 +1,10 @@
 import re
 from datetime import date, datetime, timezone
+from typing import Any
 
 from .domains import DocumentTask, MatterType
 from .legal_models import Deadline, LegalAnalysis, LegalIssue, RiskLevel
+from .model_provider import ModelProvider
 
 
 DATE_PATTERNS = (
@@ -13,27 +15,44 @@ CASE_NUMBER = re.compile(r"(?:дело|дела|№)\s*№?\s*([A-Za-zА-Яа-я
 
 
 class LegalAnalyzer:
-    """Provider-neutral first-pass analyzer.
+    """Provider-neutral analyzer with a safe deterministic fallback.
 
-    This layer deliberately does not claim that regex heuristics are legal advice.
-    A model provider can replace/enrich this implementation while preserving the
-    structured output contract.
+    A configured model provider may enrich the structured result. If the provider
+    is unavailable, returns malformed data, or times out, the local first-pass
+    analysis remains the source of truth rather than failing the request.
     """
+
+    def __init__(self, provider: ModelProvider | None = None) -> None:
+        self.provider = provider
 
     def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
         normalized = " ".join(text.split())
-        issues = self._find_risk_signals(normalized)
-        deadlines = self._extract_dates(normalized)
-        facts = self._extract_facts(normalized)
-        missing = self._missing_information(normalized, matter_type)
-        confidence = 0.35 if normalized else 0.0
+        fallback = self._heuristic_analysis(normalized, task, matter_type)
+
+        if self.provider is None:
+            return fallback
+
+        try:
+            model_payload = self.provider.analyze(normalized, task, matter_type)
+            if not model_payload:
+                return fallback
+            return self._merge_model_result(fallback, model_payload, task, matter_type)
+        except Exception:
+            return fallback
+
+    def _heuristic_analysis(self, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
+        issues = self._find_risk_signals(text)
+        deadlines = self._extract_dates(text)
+        facts = self._extract_facts(text)
+        missing = self._missing_information(text, matter_type)
+        confidence = 0.35 if text else 0.0
         if issues or deadlines:
             confidence = 0.55
 
         return LegalAnalysis(
             task=task,
             matter_type=matter_type,
-            summary=self._summary(normalized),
+            summary=self._summary(text),
             issues=issues,
             deadlines=deadlines,
             key_facts=facts,
@@ -41,6 +60,32 @@ class LegalAnalyzer:
             confidence=confidence,
             generated_at=datetime.now(timezone.utc),
         )
+
+    def _merge_model_result(
+        self,
+        fallback: LegalAnalysis,
+        payload: dict[str, Any],
+        task: DocumentTask,
+        matter_type: MatterType,
+    ) -> LegalAnalysis:
+        """Validate model JSON while preserving the stable API contract."""
+        candidate = {
+            "task": task,
+            "matter_type": matter_type,
+            "summary": payload.get("summary") or fallback.summary,
+            "issues": payload.get("issues", fallback.issues),
+            "deadlines": payload.get("deadlines", fallback.deadlines),
+            "key_facts": payload.get("key_facts", fallback.key_facts),
+            "missing_information": payload.get(
+                "missing_information", fallback.missing_information
+            ),
+            "confidence": payload.get("confidence", fallback.confidence),
+            "generated_at": datetime.now(timezone.utc),
+        }
+        try:
+            return LegalAnalysis.model_validate(candidate)
+        except Exception:
+            return fallback
 
     def _summary(self, text: str) -> str:
         if len(text) <= 500:

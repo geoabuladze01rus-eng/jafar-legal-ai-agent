@@ -5,16 +5,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .domains import MatterType
+from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
+from .document_workflow import DocumentWorkflow
 from .legal_analysis import LegalAnalyzer
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 
-app = FastAPI(title=settings.app_name, version="0.3.0")
+app = FastAPI(title=settings.app_name, version="0.4.0")
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
+document_workflow = DocumentWorkflow(matter_store, analyzer)
 
 
 class HealthResponse(BaseModel):
@@ -65,18 +67,20 @@ async def analyze_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        from .domains import DocumentTask
         document_task = DocumentTask(task)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unsupported analysis task") from exc
 
-    request = AnalysisRequest(
-        text=extracted.text,
-        task=document_task,
-        matter_type=matter_type,
-        matter_id=matter_id,
-    )
-    return analyze(request)
+    if matter_id:
+        if matter_store.get(matter_id) is None:
+            raise HTTPException(status_code=404, detail="Matter not found")
+        result = document_workflow.process(
+            file.filename or "document", extracted, document_task, matter_type
+        )
+        return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else None)
+
+    result = document_workflow.process(file.filename or "document", extracted, document_task, matter_type)
+    return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else None)
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)
@@ -94,6 +98,11 @@ def create_matter(request: CreateMatterRequest) -> Matter:
         updated_at=now,
     )
     return matter_store.create(matter)
+
+
+@app.get("/v1/matters", response_model=list[Matter])
+def list_matters() -> list[Matter]:
+    return matter_store.list_matters()
 
 
 @app.get("/v1/matters/{matter_id}", response_model=Matter)

@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"
+    database_url: str | None = None
+    database_owner_user_id: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

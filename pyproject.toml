@@ -1,0 +1,23 @@
+[project]
+name = "jafar-legal-ai-agent"
+version = "0.1.0"
+description = "Jafar AI legal agent: document analysis, email triage, voice workflows and legal work automation."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "pydantic-settings>=2.7,<3",
+  "python-multipart>=0.0.20,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+
+[tool.ruff]
+line-length = 100
+
+autopep8 = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

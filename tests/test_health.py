@@ -15,4 +15,4 @@ def test_health() -> None:
 def test_analysis_boundary() -> None:
     response = client.post("/v1/analyze", json={"text": "Тест документа"})
     assert response.status_code == 200
-    assert response.json()["task"] == "legal_analysis"
+    assert response.json()["analysis"]["task"] == "legal_analysis"

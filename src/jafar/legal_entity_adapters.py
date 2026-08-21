@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import quote
 
 from .legal_entity_intelligence import EntityQuery
 
@@ -39,6 +40,27 @@ class PublicSourceAdapter:
             status="no_data",
             source_url=self.source_url,
             data={"query": query.value, "query_type": query.query_type},
+        )
+
+
+class PublicUrlSourceAdapter(PublicSourceAdapter):
+    """Builds a deterministic public-search URL without performing network I/O."""
+
+    def __init__(self, source_key: str, search_url_template: str) -> None:
+        super().__init__(source_key)
+        self.search_url_template = search_url_template
+
+    def search(self, query: EntityQuery) -> SourceResult:
+        url = self.search_url_template.format(query=quote(query.value, safe=""))
+        return SourceResult(
+            source_key=self.source_key,
+            status="no_data",
+            source_url=url,
+            data={
+                "query": query.value,
+                "query_type": query.query_type,
+                "transport": "not_configured",
+            },
         )
 
 

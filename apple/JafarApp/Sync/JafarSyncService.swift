@@ -1,16 +1,5 @@
 import Foundation
 
-struct SyncEnvelope: Codable, Sendable {
-    let deviceId: String
-    let userId: String
-    let entityType: String
-    let entityId: String
-    let version: Int64
-    let operation: String
-    let payload: Data
-    let updatedAt: Date
-}
-
 actor JafarSyncStore {
     private var pending: [SyncEnvelope] = []
     private var appliedVersions: [String: Int64] = [:]
@@ -51,7 +40,8 @@ actor JafarSyncService {
         entityId: String,
         version: Int64,
         operation: String,
-        payload: Data
+        payload: Data,
+        requiresLegalReview: Bool = false
     ) async {
         await store.enqueue(SyncEnvelope(
             deviceId: deviceId,
@@ -61,7 +51,8 @@ actor JafarSyncService {
             version: version,
             operation: operation,
             payload: payload,
-            updatedAt: Date()
+            updatedAt: Date(),
+            requiresLegalReview: requiresLegalReview
         ))
     }
 

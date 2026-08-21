@@ -1,0 +1,33 @@
+name: Jafar Apple
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate --spec apple/project.yml --project apple/JafarApp.xcodeproj
+      - name: Verify generated project
+        run: test -d apple/JafarApp.xcodeproj
+      - name: Build iOS Simulator
+        run: |
+          xcodebuild -project apple/JafarApp.xcodeproj -scheme JafarApp \
+            -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Build macOS
+        run: |
+          xcodebuild -project apple/JafarApp.xcodeproj -scheme JafarApp \
+            -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build

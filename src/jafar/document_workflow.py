@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .document_intake import ExtractedDocument
+from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
-from .legal_models import LegalAnalysis, Matter, MatterEvent
+from .legal_models import LegalAnalysis, MatterEvent
 from .matter_matching import MatterMatch, MatterMatcher
 from .matters import MatterStore
 
@@ -20,7 +21,7 @@ class DocumentWorkflowResult:
 
 
 class DocumentWorkflow:
-    """Orchestrates document extraction, matter matching, analysis and event capture."""
+    """Orchestrates extraction, matter matching, analysis and event capture."""
 
     def __init__(
         self,
@@ -36,13 +37,13 @@ class DocumentWorkflow:
         self,
         document_name: str,
         extracted: ExtractedDocument,
+        task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
+        matter_type: MatterType = MatterType.GENERAL,
     ) -> DocumentWorkflowResult:
-        matters = self.store.list_matters()
-        match = self.matcher.best_match(extracted.text, matters)
-        matter: Matter | None = self.store.get(match.matter_id) if match else None
-
-        matter_type = matter.matter_type if matter else extracted.matter_type
-        analysis = self.analyzer.analyze(extracted.text, extracted.task, matter_type)
+        match = self.matcher.best_match(extracted.text, self.store.list_matters())
+        matter = self.store.get(match.matter_id) if match else None
+        effective_type = matter.matter_type if matter else matter_type
+        analysis = self.analyzer.analyze(extracted.text, task, effective_type)
         event = None
 
         if matter:

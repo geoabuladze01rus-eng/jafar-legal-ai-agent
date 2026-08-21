@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct JafarSyncEvent: Codable, Sendable, Identifiable {
     let id: UUID

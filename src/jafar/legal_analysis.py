@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from .domains import DocumentTask, MatterType
 from .legal_models import Deadline, LegalAnalysis, LegalIssue, RiskLevel

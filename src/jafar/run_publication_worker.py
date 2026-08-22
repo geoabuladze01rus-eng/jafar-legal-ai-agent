@@ -9,6 +9,7 @@ from .publication_dispatch import TelegramSendResult
 from .publication_worker_store import SupabaseWorkerRunStore
 from .supabase_publication_repository import SupabasePublicationRepository
 from .telegram_api import TelegramBotAPI
+from .telegram_dry_run_guard import require_production_publication_enabled
 
 
 class _TelegramSender:
@@ -23,6 +24,10 @@ class _TelegramSender:
 
 
 async def main() -> CycleReport:
+    # Production publication is an explicit opt-in. A missing flag must never
+    # result in a real Telegram send or even claiming queued publications.
+    require_production_publication_enabled()
+
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]

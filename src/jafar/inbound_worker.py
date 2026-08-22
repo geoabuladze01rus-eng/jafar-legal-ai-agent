@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from .comment_pipeline import CommentPipelineResult, process_update
 from .inbound_state import InboundStateStore
+from .supabase_inbound_state import SupabaseInboundStateStore
 
 
 class InboundAuditSink(Protocol):
@@ -31,3 +32,12 @@ class TelegramInboundWorker:
         if result is not None and self.audit_sink is not None:
             await self.audit_sink.write(result)
         return InboundWorkerResult(processed=result is not None, duplicate=False, result=result)
+
+
+def build_supabase_inbound_worker(
+    supabase_url: str,
+    supabase_service_key: str,
+    audit_sink: InboundAuditSink | None = None,
+) -> TelegramInboundWorker:
+    state = SupabaseInboundStateStore(supabase_url, supabase_service_key)
+    return TelegramInboundWorker(state, audit_sink)

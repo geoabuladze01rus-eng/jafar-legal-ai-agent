@@ -2,6 +2,7 @@ import pytest
 
 from jafar.comment_classifier import CommentIntent
 from jafar.inbound_worker import TelegramInboundWorker
+from jafar.comment_pipeline import process_update
 
 
 class FakeState:
@@ -24,9 +25,9 @@ class FakeAudit:
 
 
 @pytest.mark.asyncio
-async def test_sensitive_comment_is_blocked(monkeypatch):
-    worker = TelegramInboundWorker(FakeState(), FakeAudit())
-    from jafar.comment_pipeline import process_update
+async def test_sensitive_comment_is_blocked_and_audited(monkeypatch):
+    audit = FakeAudit()
+    worker = TelegramInboundWorker(FakeState(), audit)
     monkeypatch.setattr(
         "jafar.inbound_worker.process_update",
         lambda update: process_update({"text": "Следователь вызвал меня на допрос"}),
@@ -36,6 +37,7 @@ async def test_sensitive_comment_is_blocked(monkeypatch):
     assert result.processed is False
     assert result.result is not None
     assert result.result.draft.intent is CommentIntent.ESCALATE
+    assert audit.results == [result.result]
 
 
 @pytest.mark.asyncio

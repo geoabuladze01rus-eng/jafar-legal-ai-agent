@@ -27,7 +27,7 @@ class SupabaseInboundStateStore:
             )
         if response.status_code == 201:
             return True
-        if response.status_code in (409, 23505):
+        if response.status_code == 409:
             return False
         response.raise_for_status()
         return False

@@ -18,7 +18,7 @@ class EntityQuery:
 @dataclass(frozen=True)
 class SourceFinding:
     source_key: str
-    status: str  # found | negative | no_data | error
+    status: str
     title: str
     details: dict[str, Any]
     source_url: str | None = None
@@ -39,6 +39,12 @@ class RiskFinding:
     source_keys: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class InvestigationResult:
+    query: EntityQuery
+    profile: dict[str, Any]
+
+
 class LegalEntityIntelligence:
     """Source-neutral public/free-source aggregator for Russian legal entities."""
 
@@ -49,7 +55,12 @@ class LegalEntityIntelligence:
         q = query.normalized()
         if not any((q.name, q.inn, q.ogrn, q.kpp)):
             raise ValueError("At least one entity identifier is required")
-        findings = [source.lookup(q) for source in self.sources]
+        findings = []
+        for source in self.sources:
+            try:
+                findings.append(source.lookup(q))
+            except Exception as exc:
+                findings.append(SourceFinding(source.source_key, "error", source.source_key, {}, error_to_details(exc)))
         return self.build_profile(findings)
 
     def build_profile(self, findings: list[SourceFinding]) -> dict[str, Any]:
@@ -100,3 +111,11 @@ class LegalEntityIntelligence:
         if any(r.severity == "high" for r in risks): return "high"
         if any(r.severity == "medium" for r in risks): return "medium"
         return "low" if risks else "unknown"
+
+    def run(self, query: EntityQuery) -> InvestigationResult:
+        normalized = query.normalized()
+        return InvestigationResult(normalized, self.investigate(normalized))
+
+
+def error_to_details(exc: Exception) -> dict[str, Any]:
+    return {"reason": str(exc), "type": type(exc).__name__}

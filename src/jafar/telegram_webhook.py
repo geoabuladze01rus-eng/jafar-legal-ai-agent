@@ -1,18 +1,30 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+import hmac
+
+from fastapi import APIRouter, Header, HTTPException, Request
+
+from .config import settings
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 
 @router.post("/webhook")
-async def telegram_webhook(request: Request) -> dict[str, object]:
-    """Receive Telegram updates.
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Receive Telegram updates with fail-closed webhook authentication.
 
-    The handler intentionally does not send an automatic legal answer here.
-    Updates are classified first; sensitive or client-like messages must pass
-    the approval gate before any response is sent.
+    The handler never sends an automatic legal answer. Updates are classified
+    first; sensitive or client-like messages must pass the approval gate.
     """
+    expected = settings.telegram_webhook_secret
+    if not expected or not x_telegram_bot_api_secret_token or not hmac.compare_digest(
+        x_telegram_bot_api_secret_token, expected
+    ):
+        raise HTTPException(status_code=403, detail="invalid Telegram webhook secret")
+
     update = await request.json()
     message = update.get("message") or update.get("channel_post") or {}
     text = (message.get("text") or "").strip()

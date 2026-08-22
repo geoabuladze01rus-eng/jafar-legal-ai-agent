@@ -19,7 +19,7 @@ class HTTPProviderConfig:
 
 
 class HTTPModelProvider(ModelProvider):
-    """Small stdlib provider adapter; keeps credentials outside source code."""
+    """OpenAI-compatible adapter for providers exposing chat-completions semantics."""
 
     def __init__(self, config: HTTPProviderConfig) -> None:
         self.config = config
@@ -32,23 +32,12 @@ class HTTPModelProvider(ModelProvider):
         api_key = os.getenv(self.config.api_key_env)
         if not api_key:
             raise RuntimeError(f"Provider {self.key} is not configured")
-
-        payload = {
-            "model": self.config.model,
-            "messages": [{"role": "user", "content": request.prompt}],
-        }
+        payload = {"model": self.config.model, "messages": [{"role": "user", "content": request.prompt}]}
         body = json.dumps(payload).encode("utf-8")
-        req = Request(
-            self.config.endpoint,
-            data=body,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
+        req = Request(self.config.endpoint, data=body, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")
         with urlopen(req, timeout=60) as response:
             data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
-
-        text = self._extract_text(data)
-        return ModelResponse(provider=self.key, model=self.config.model, text=text, metadata=data)
+        return ModelResponse(provider=self.key, model=self.config.model, text=self._extract_text(data), metadata=data)
 
     @staticmethod
     def _extract_text(data: dict[str, Any]) -> str:
@@ -62,9 +51,35 @@ class HTTPModelProvider(ModelProvider):
         return json.dumps(data, ensure_ascii=False)
 
 
+class OpenAIResponsesProvider(ModelProvider):
+    """Native OpenAI Responses API adapter."""
+
+    key = "openai"
+
+    def __init__(self) -> None:
+        self.model = os.getenv("OPENAI_MODEL", "gpt-5.6")
+        self.endpoint = os.getenv("OPENAI_RESPONSES_URL", "https://api.openai.com/v1/responses")
+
+    def available(self) -> bool:
+        return bool(os.getenv("OPENAI_API_KEY"))
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("Provider openai is not configured")
+        payload = {"model": self.model, "input": request.prompt}
+        req = Request(self.endpoint, data=json.dumps(payload).encode("utf-8"), headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")
+        with urlopen(req, timeout=60) as response:
+            data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+        text = data.get("output_text")
+        if not isinstance(text, str):
+            text = json.dumps(data, ensure_ascii=False)
+        return ModelResponse(provider=self.key, model=self.model, text=text, metadata=data)
+
+
 def default_providers() -> dict[str, ModelProvider]:
     return {
-        "openai": HTTPModelProvider(HTTPProviderConfig("openai", os.getenv("OPENAI_MODEL", "gpt-5.6"), "OPENAI_API_KEY", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions"))),
+        "openai": OpenAIResponsesProvider(),
         "deepseek": HTTPModelProvider(HTTPProviderConfig("deepseek", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"), "DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/chat/completions"))),
         "gemini": GeminiProvider(),
     }

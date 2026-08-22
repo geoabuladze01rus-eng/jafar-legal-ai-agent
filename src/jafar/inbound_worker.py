@@ -35,7 +35,7 @@ class TelegramInboundWorker:
         if result is None:
             return InboundWorkerResult(False, False, False, None)
 
-        safety = evaluate_response(result.audit.intent, result.decision)
+        safety = evaluate_response(result.draft.intent, result.draft.decision)
         if not safety.allowed:
             if self.audit_sink is not None:
                 await self.audit_sink.write(result)

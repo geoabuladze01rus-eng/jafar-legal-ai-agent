@@ -13,7 +13,7 @@ from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 
-app = FastAPI(title=settings.app_name, version="0.5.0")
+app = FastAPI(title=settings.app_name, version="0.5.1")
 app.include_router(legal_entity_router)
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()
@@ -35,9 +35,50 @@ class CreateMatterRequest(BaseModel):
     case_number: str | None = None
 
 
+class CommandRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    user_id: str = Field(min_length=1, max_length=200)
+    source_device: str = Field(min_length=1, max_length=100)
+
+
+class CommandResponse(BaseModel):
+    message: str
+    intent: str
+    approval_required: bool = False
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.post("/v1/command", response_model=CommandResponse)
+def command(request: CommandRequest) -> CommandResponse:
+    """Minimal safe command gateway for Apple clients.
+
+    Read-only commands are handled here; externally visible actions remain
+    behind the existing approval boundary.
+    """
+    normalized = " ".join(request.text.lower().split())
+
+    if any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
+        matters = matter_store.list_matters()
+        if not matters:
+            return CommandResponse(message="Сейчас открытых дел в хранилище нет.", intent="list_matters")
+        titles = ", ".join(matter.title for matter in matters[:10])
+        suffix = "" if len(matters) <= 10 else f" и ещё {len(matters) - 10}"
+        return CommandResponse(
+            message=f"У вас {len(matters)} дел: {titles}{suffix}.",
+            intent="list_matters",
+        )
+
+    if "здоров" in normalized or "проверка связи" in normalized:
+        return CommandResponse(message="Джафар на связи.", intent="health")
+
+    return CommandResponse(
+        message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.",
+        intent="natural_language_command",
+    )
 
 
 @app.post("/v1/analyze", response_model=AnalysisResponse)

@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class EntityQuery:
+    name: str | None = None
+    inn: str | None = None
+    ogrn: str | None = None
+    kpp: str | None = None
+
+    def normalized(self) -> "EntityQuery":
+        return EntityQuery(*(value.strip() if value else None for value in (self.name, self.inn, self.ogrn, self.kpp)))
 
 
 @dataclass(frozen=True)
@@ -11,23 +22,35 @@ class SourceFinding:
     title: str
     details: dict[str, Any]
     source_url: str | None = None
+    confidence: float = 0.0
+
+
+class EntitySource(Protocol):
+    source_key: str
+    def lookup(self, query: EntityQuery) -> SourceFinding: ...
 
 
 @dataclass(frozen=True)
 class RiskFinding:
     code: str
     title: str
-    severity: str  # low | medium | high | critical
+    severity: str
     rationale: str
     source_keys: tuple[str, ...]
 
 
 class LegalEntityIntelligence:
-    """Normalizes public-source findings and calculates a transparent risk profile.
+    """Source-neutral public/free-source aggregator for Russian legal entities."""
 
-    Network access is intentionally outside this class. Adapters can be added per
-    source without coupling source-specific HTML/API details to legal scoring.
-    """
+    def __init__(self, sources: list[EntitySource] | None = None) -> None:
+        self.sources = sources or []
+
+    def investigate(self, query: EntityQuery) -> dict[str, Any]:
+        q = query.normalized()
+        if not any((q.name, q.inn, q.ogrn, q.kpp)):
+            raise ValueError("At least one entity identifier is required")
+        findings = [source.lookup(q) for source in self.sources]
+        return self.build_profile(findings)
 
     def build_profile(self, findings: list[SourceFinding]) -> dict[str, Any]:
         risks = self._score(findings)
@@ -47,49 +70,33 @@ class LegalEntityIntelligence:
     def _score(self, findings: list[SourceFinding]) -> list[RiskFinding]:
         risks: list[RiskFinding] = []
         by_source = {f.source_key: f for f in findings}
-
         fedresurs = by_source.get("fedresurs")
         if fedresurs and fedresurs.status == "found" and fedresurs.details.get("bankruptcy"):
-            risks.append(RiskFinding("bankruptcy", "Признаки банкротства", "critical", "В источнике обнаружены сведения о банкротстве.", ("fedresurs",)))
-
+            risks.append(RiskFinding("bankruptcy", "Признаки банкротства", "critical", "Обнаружены сведения о банкротстве.", ("fedresurs",)))
         fssp = by_source.get("fssp")
         if fssp and fssp.status == "found":
             amount = fssp.details.get("debt_amount")
             if isinstance(amount, (int, float)) and amount > 0:
-                severity = "high" if amount >= 1_000_000 else "medium"
-                risks.append(RiskFinding("enforcement_debt", "Исполнительные производства", severity, f"Обнаружена сумма задолженности: {amount}.", ("fssp",)))
-
+                risks.append(RiskFinding("enforcement_debt", "Исполнительные производства", "high" if amount >= 1_000_000 else "medium", f"Обнаружена задолженность: {amount}.", ("fssp",)))
         kad = by_source.get("kad")
         if kad and kad.status == "found":
             count = kad.details.get("case_count")
             if isinstance(count, int) and count > 0:
-                severity = "high" if count >= 20 else "medium"
-                risks.append(RiskFinding("arbitration_activity", "Арбитражная активность", severity, f"Найдено арбитражных дел: {count}.", ("kad",)))
-
+                risks.append(RiskFinding("arbitration_activity", "Арбитражная активность", "high" if count >= 20 else "medium", f"Найдено дел: {count}.", ("kad",)))
         finance = by_source.get("bo")
         if finance and finance.status == "found":
-            revenue = finance.details.get("revenue")
             loss = finance.details.get("net_loss")
             if isinstance(loss, (int, float)) and loss > 0:
                 risks.append(RiskFinding("financial_loss", "Убыток по отчётности", "medium", f"Зафиксирован убыток: {loss}.", ("bo",)))
-            if isinstance(revenue, (int, float)) and revenue == 0:
-                risks.append(RiskFinding("zero_revenue", "Нулевая выручка", "low", "В предоставленной финансовой выборке выручка равна нулю.", ("bo",)))
-
         return risks
 
     @staticmethod
     def _score_value(risks: list[RiskFinding]) -> int:
-        weights = {"low": 10, "medium": 25, "high": 50, "critical": 80}
-        return min(100, sum(weights[r.severity] for r in risks))
+        return min(100, sum({"low": 10, "medium": 25, "high": 50, "critical": 80}[r.severity] for r in risks))
 
     @staticmethod
     def _risk_level(risks: list[RiskFinding]) -> str:
-        if any(r.severity == "critical" for r in risks):
-            return "critical"
-        if any(r.severity == "high" for r in risks):
-            return "high"
-        if any(r.severity == "medium" for r in risks):
-            return "medium"
-        if risks:
-            return "low"
-        return "unknown"
+        if any(r.severity == "critical" for r in risks): return "critical"
+        if any(r.severity == "high" for r in risks): return "high"
+        if any(r.severity == "medium" for r in risks): return "medium"
+        return "low" if risks else "unknown"

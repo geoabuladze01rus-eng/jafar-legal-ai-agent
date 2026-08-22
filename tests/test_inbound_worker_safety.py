@@ -2,7 +2,7 @@ import pytest
 
 from jafar.comment_classifier import CommentIntent
 from jafar.comment_pipeline import CommentPipelineResult
-from jafar.comment_response_policy import build_response
+from jafar.comment_response_engine import prepare_response
 from jafar.inbound_worker import TelegramInboundWorker
 
 
@@ -26,8 +26,13 @@ class FakeAudit:
 
 
 def make_result(intent):
-    decision = build_response(intent, "test")
-    return CommentPipelineResult(decision=decision, audit=type("Audit", (), {"intent": intent})())
+    draft = prepare_response("test")
+    draft = type(draft)(intent=intent, decision=draft.decision)
+    return CommentPipelineResult(
+        comment=None,
+        draft=draft,
+        audit=None,
+    )
 
 
 @pytest.mark.asyncio

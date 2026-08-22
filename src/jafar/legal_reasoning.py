@@ -17,44 +17,27 @@ class LegalFinding:
 class LegalReasoningEngine:
     """Evidence-grounded reasoning layer; never presents inference as established fact."""
 
-    def analyze(self, *, facts: list[dict[str, Any]], evidence: list[dict[str, Any]], risks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def analyze(self, *, facts: list[dict[str, Any]], evidence: list[dict[str, Any]], risks: list[dict[str, Any]] | None = None, timeline: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         evidence_ids = {item.get("evidence_id") for item in evidence if item.get("evidence_id")}
         findings: list[LegalFinding] = []
 
         for fact in facts:
             basis = tuple(str(item) for item in fact.get("evidence_ids", []) if item in evidence_ids)
-            confidence = float(fact.get("confidence", 0.0))
-            findings.append(LegalFinding(
-                kind="fact_assessment",
-                statement=str(fact.get("statement", "")),
-                basis=basis,
-                confidence=confidence,
-                requires_human_review=confidence < 0.95 or not basis,
-            ))
+            confidence = max(0.0, min(1.0, float(fact.get("confidence", 0.0))))
+            findings.append(LegalFinding("fact_assessment", str(fact.get("statement", "")), basis, confidence, confidence < 0.95 or not basis))
 
         for risk in risks or []:
-            findings.append(LegalFinding(
-                kind="risk_signal",
-                statement=str(risk.get("statement", risk.get("title", ""))),
-                basis=tuple(str(item) for item in risk.get("evidence_ids", []) if item in evidence_ids),
-                confidence=float(risk.get("confidence", 0.0)),
-                requires_human_review=True,
-                metadata={"severity": risk.get("severity")},
-            ))
+            findings.append(LegalFinding("risk_signal", str(risk.get("statement", risk.get("title", ""))), tuple(str(item) for item in risk.get("evidence_ids", []) if item in evidence_ids), max(0.0, min(1.0, float(risk.get("confidence", 0.0)))), True, {"severity": risk.get("severity")}))
 
+        chronology = sorted(timeline or [], key=lambda event: str(event.get("event_at") or ""))
         return {
             "findings": [self._serialize(item) for item in findings],
-            "human_review_required": any(item.requires_human_review for item in findings),
+            "timeline": chronology,
+            "human_review_required": True,
             "evidence_count": len(evidence),
+            "disclaimer": "AI output is an analytical aid and requires review by a qualified lawyer before legal reliance or external action.",
         }
 
     @staticmethod
     def _serialize(item: LegalFinding) -> dict[str, Any]:
-        return {
-            "kind": item.kind,
-            "statement": item.statement,
-            "basis": list(item.basis),
-            "confidence": item.confidence,
-            "requires_human_review": item.requires_human_review,
-            "metadata": item.metadata,
-        }
+        return {"kind": item.kind, "statement": item.statement, "basis": list(item.basis), "confidence": item.confidence, "requires_human_review": item.requires_human_review, "metadata": item.metadata}

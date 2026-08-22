@@ -23,12 +23,9 @@ class KadAdapter(PublicSourceAdapter):
             response = self.transport.get(url)
             data = self.parse_response(response.text)
             status = "found" if data.get("case_count") is not None else "no_data"
-            return SourceResult(
-                source_key="kad",
-                status=status,
-                source_url=response.url,
-                data=data,
-            )
+            return SourceResult(source_key="kad", status=status, source_url=response.url, data=data)
+        except TimeoutError as exc:
+            return SourceResult(source_key="kad", status="timeout", error=str(exc))
         except Exception as exc:
             return SourceResult(source_key="kad", status="error", error=str(exc))
 

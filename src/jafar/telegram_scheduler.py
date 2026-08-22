@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .telegram_bot import TelegramBot
+from .telegram_dry_run_guard import require_production_publication_enabled
 
 
 @dataclass(frozen=True)
@@ -18,8 +19,9 @@ class ApprovedPublication:
 
 
 async def publish_due(bot: TelegramBot, item: ApprovedPublication, now: datetime | None = None) -> dict:
-    """Publish only an already-approved item when its scheduled time arrives."""
+    """Publish an approved item only when due and production publication is explicitly enabled."""
     if not item.due(now):
         return {"published": False, "reason": "not_due"}
+    require_production_publication_enabled()
     result = await bot.send_message(item.chat_id, item.text)
     return {"published": True, "telegram": result}

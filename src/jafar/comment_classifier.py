@@ -17,6 +17,7 @@ HELP_MARKERS = ("мне", "у меня", "моего", "моей", "помоги
 AGGRESSIVE_MARKERS = ("идиот", "мраз", "туп", "ненавижу")
 PERSONAL_MARKERS = ("паспорт", "телефон", "адрес", "карта", "номер телефона")
 ESCALATE_MARKERS = ("пытк", "уголовн", "угрож", "несовершеннолет")
+AMBIGUOUS_LEGAL_MARKERS = ("следователь", "фсин", "колони", "задержали", "обыск", "допрос", "прокуратур", "судебн")
 
 
 def classify_comment(text: str) -> CommentIntent:
@@ -27,6 +28,8 @@ def classify_comment(text: str) -> CommentIntent:
         return CommentIntent.ESCALATE
     if any(marker in normalized for marker in AGGRESSIVE_MARKERS):
         return CommentIntent.AGGRESSIVE
+    if any(marker in normalized for marker in AMBIGUOUS_LEGAL_MARKERS):
+        return CommentIntent.ESCALATE
     if any(marker in normalized for marker in LEGAL_MARKERS) and any(marker in normalized for marker in HELP_MARKERS):
         return CommentIntent.LEGAL_HELP
     if "?" in normalized or normalized.startswith(("почему", "как", "можно", "что")):

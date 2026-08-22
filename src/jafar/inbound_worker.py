@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from .comment_pipeline import CommentPipelineResult, process_update
 from .inbound_state import InboundStateStore
+from .response_safety_gate import evaluate_response
 from .supabase_inbound_state import SupabaseInboundStateStore
 
 
@@ -16,6 +17,7 @@ class InboundAuditSink(Protocol):
 class InboundWorkerResult:
     processed: bool
     duplicate: bool
+    blocked_by_safety_gate: bool
     result: CommentPipelineResult | None
 
 
@@ -27,11 +29,21 @@ class TelegramInboundWorker:
     async def handle_update(self, update: dict[str, Any]) -> InboundWorkerResult:
         update_id = int(update.get("update_id", 0))
         if not await self.state.claim_update(update_id):
-            return InboundWorkerResult(processed=False, duplicate=True, result=None)
+            return InboundWorkerResult(False, True, False, None)
+
         result = process_update(update)
-        if result is not None and self.audit_sink is not None:
+        if result is None:
+            return InboundWorkerResult(False, False, False, None)
+
+        safety = evaluate_response(result.audit.intent, result.decision)
+        if not safety.allowed:
+            if self.audit_sink is not None:
+                await self.audit_sink.write(result)
+            return InboundWorkerResult(False, False, True, result)
+
+        if self.audit_sink is not None:
             await self.audit_sink.write(result)
-        return InboundWorkerResult(processed=result is not None, duplicate=False, result=result)
+        return InboundWorkerResult(True, False, False, result)
 
 
 def build_supabase_inbound_worker(

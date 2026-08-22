@@ -3,41 +3,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .legal_entity_intelligence import EntityQuery, EntitySource, LegalEntityIntelligence
+from .legal_entity_adapters import LegalEntitySourceRegistry, SourceResult
+from .legal_entity_intelligence import EntityQuery
 
 
 @dataclass(frozen=True, slots=True)
-class InvestigationReport:
+class InvestigationRun:
     query: EntityQuery
-    profile: dict[str, Any]
-    source_order: tuple[str, ...]
+    results: tuple[SourceResult, ...]
+    successful_sources: int
+    failed_sources: int
 
 
 class EntityInvestigationPipeline:
-    """Runs the configured public/free-source entity checks as one auditable job."""
+    """Runs all registered entity sources and preserves per-source provenance."""
 
-    def __init__(self, sources: list[EntitySource]) -> None:
-        self.sources = sources
-        self.engine = LegalEntityIntelligence(sources)
+    def __init__(self, registry: LegalEntitySourceRegistry) -> None:
+        self.registry = registry
 
-    def run(self, query: EntityQuery) -> InvestigationReport:
-        normalized = query.normalized()
-        profile = self.engine.investigate(normalized)
-        return InvestigationReport(
-            query=normalized,
-            profile=profile,
-            source_order=tuple(source.source_key for source in self.sources),
-        )
+    def run(self, query: EntityQuery) -> InvestigationRun:
+        results = tuple(self.registry.search_all(query))
+        successful = sum(1 for item in results if item.status in {"success", "found"})
+        failed = sum(1 for item in results if item.status in {"error", "unavailable"})
+        return InvestigationRun(query, results, successful, failed)
 
     @staticmethod
-    def to_dict(report: InvestigationReport) -> dict[str, Any]:
-        return {
-            "query": {
-                "name": report.query.name,
-                "inn": report.query.inn,
-                "ogrn": report.query.ogrn,
-                "kpp": report.query.kpp,
-            },
-            "source_order": list(report.source_order),
-            "profile": report.profile,
-        }
+    def to_report_input(run: InvestigationRun) -> list[dict[str, Any]]:
+        return [
+            {
+                "source": item.source_key,
+                "status": item.status,
+                "source_url": item.source_url,
+                "result": item.data or {},
+                "error": item.error,
+            }
+            for item in run.results
+        ]

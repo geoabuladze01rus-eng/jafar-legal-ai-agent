@@ -16,6 +16,42 @@ protocol CommandClient: Sendable {
 
 struct LocalCommandClient: CommandClient {
     func send(request: CommandRequest) async throws -> CommandResponse {
-        CommandResponse(message: "Команда получена: \(request.text)")
+        CommandResponse(message: "Команда получена локально: \(request.text)")
     }
+}
+
+struct RemoteCommandClient: CommandClient {
+    let endpoint: URL
+    let session: URLSession
+    let authorizationToken: String?
+
+    init(endpoint: URL, session: URLSession = .shared, authorizationToken: String? = nil) {
+        self.endpoint = endpoint
+        self.session = session
+        self.authorizationToken = authorizationToken
+    }
+
+    func send(request: CommandRequest) async throws -> CommandResponse {
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let authorizationToken {
+            urlRequest.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
+        }
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CommandClientError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw CommandClientError.httpStatus(httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CommandResponse.self, from: data)
+    }
+}
+
+enum CommandClientError: Error, Sendable {
+    case invalidResponse
+    case httpStatus(Int)
 }

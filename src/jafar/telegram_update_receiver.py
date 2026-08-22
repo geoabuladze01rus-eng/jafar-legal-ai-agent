@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -12,7 +13,7 @@ class TelegramUpdateReceiver:
         self.request_timeout = request_timeout
 
     async def fetch(self, offset: int | None = None) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"timeout": self.timeout, "allowed_updates": ["message"]}
+        params: dict[str, Any] = {"timeout": self.timeout, "allowed_updates": json.dumps(["message"])}
         if offset is not None:
             params["offset"] = offset
         async with httpx.AsyncClient(timeout=self.request_timeout) as client:

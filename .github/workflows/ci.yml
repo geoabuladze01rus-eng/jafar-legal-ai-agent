@@ -24,7 +24,7 @@ jobs:
         run: |
           set -o pipefail
           python -m compileall -q src 2>&1 | tee compile.log
-          python -c "import jafar.telegram_update_receiver, jafar.supabase_inbound_state, jafar.supabase_comment_audit" 2>&1 | tee -a compile.log
+          python -c "import jafar.telegram_update_receiver, jafar.supabase_inbound_state, jafar.supabase_comment_audit, jafar.production_guard, jafar.telegram_outbound" 2>&1 | tee -a compile.log
       - name: Run tests with diagnostics
         run: |
           set -o pipefail

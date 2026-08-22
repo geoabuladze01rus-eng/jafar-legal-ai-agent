@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.request import Request, urlopen
 
+from .gemini_provider import GeminiProvider
 from .model_router import ModelProvider, ModelRequest, ModelResponse
 
 
@@ -65,4 +66,5 @@ def default_providers() -> dict[str, ModelProvider]:
     return {
         "openai": HTTPModelProvider(HTTPProviderConfig("openai", os.getenv("OPENAI_MODEL", "gpt-5.6"), "OPENAI_API_KEY", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions"))),
         "deepseek": HTTPModelProvider(HTTPProviderConfig("deepseek", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"), "DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/chat/completions"))),
+        "gemini": GeminiProvider(),
     }

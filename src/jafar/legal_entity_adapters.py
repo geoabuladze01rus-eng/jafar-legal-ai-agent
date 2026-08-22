@@ -64,6 +64,13 @@ class PublicUrlSourceAdapter(PublicSourceAdapter):
         )
 
 
+class KadPublicAdapter(PublicUrlSourceAdapter):
+    """KAD adapter boundary; transport remains injected and policy-controlled."""
+
+    def __init__(self, search_url_template: str) -> None:
+        super().__init__("kad", search_url_template)
+
+
 class LegalEntitySourceRegistry:
     def __init__(self, adapters: list[LegalEntitySource] | None = None) -> None:
         self._adapters: dict[str, LegalEntitySource] = {

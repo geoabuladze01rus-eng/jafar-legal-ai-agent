@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -37,7 +37,7 @@ class CaseDatabase:
 
     def attach_document(self, case_id: str, document_id: str) -> CaseRecord:
         case = self._require(case_id)
-        updated = CaseRecord(**{**case.__dict__, "document_ids": tuple(dict.fromkeys((*case.document_ids, document_id)))})
+        updated = replace(case, document_ids=tuple(dict.fromkeys((*case.document_ids, document_id))))
         self._cases[case_id] = updated
         return updated
 

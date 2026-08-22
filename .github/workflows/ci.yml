@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'feature/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -13,8 +14,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - run: python -m pip install --upgrade pip
-      - run: pip install -e '.[dev]'
-      - run: ruff check .
-      - run: pytest -q
+          python-version: '3.12'
+      - name: Install project and development dependencies
+        run: |
+          set -o pipefail
+          python -m pip install --upgrade pip 2>&1 | tee install.log
+          python -m pip install -e '.[dev]' 2>&1 | tee -a install.log
+      - name: Verify imports and compile sources
+        run: |
+          set -o pipefail
+          python -m compileall -q src 2>&1 | tee compile.log
+          python -c "import jafar.telegram_update_receiver, jafar.supabase_inbound_state, jafar.supabase_comment_audit" 2>&1 | tee -a compile.log
+      - name: Run tests with diagnostics
+        run: |
+          set -o pipefail
+          pytest -vv 2>&1 | tee pytest.log
+      - name: Publish CI diagnostics
+        if: always()
+        run: |
+          {
+            echo '## install diagnostics'
+            tail -n 120 install.log 2>/dev/null || true
+            echo '## compile/import diagnostics'
+            tail -n 120 compile.log 2>/dev/null || true
+            echo '## pytest diagnostics'
+            tail -n 120 pytest.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics
+          path: |
+            install.log
+            compile.log
+            pytest.log

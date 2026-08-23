@@ -4,13 +4,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from .attachment_storage import AttachmentStorage
+from .document_status import DocumentStatus
 from .document_workflow import DocumentWorkflow, DocumentWorkflowResult
-from .inbox import (
-    AttachmentProcessingIssue,
-    ExtractedInboxDocument,
-    InboxDocumentIntake,
-    InboxMessage,
-)
+from .inbox import AttachmentProcessingIssue, ExtractedInboxDocument, InboxDocumentIntake, InboxMessage
 
 
 @dataclass(frozen=True)
@@ -22,7 +18,9 @@ class InboxDocumentResult:
     content_type: str | None
     storage_path: str
     fingerprint: str
-    workflow: DocumentWorkflowResult
+    status: DocumentStatus
+    error: str | None
+    workflow: DocumentWorkflowResult | None
 
 
 @dataclass(frozen=True)
@@ -44,13 +42,13 @@ class InboxProcessor:
         results: list[InboxDocumentResult] = []
         issues = list(intake_result.issues)
         for item in intake_result.documents:
-            try:
-                results.append(self._process_document(item))
-            except Exception as exc:
+            result = self._process_document(item)
+            results.append(result)
+            if result.status is DocumentStatus.FAILED:
                 issues.append(AttachmentProcessingIssue(
                     filename=item.attachment.filename,
-                    error_type=type(exc).__name__,
-                    message=str(exc),
+                    error_type="DocumentProcessingError",
+                    message=result.error or "document processing failed",
                 ))
         return InboxProcessingResult(documents=tuple(results), issues=tuple(issues))
 
@@ -61,17 +59,21 @@ class InboxProcessor:
             content=item.attachment.content,
             media_type=item.attachment.media_type,
         )
-        workflow_result = self.workflow.process(
-            document_name=item.attachment.filename,
-            extracted=item.document,
-        )
+        try:
+            workflow_result = self.workflow.process(
+                document_name=item.attachment.filename,
+                extracted=item.document,
+            )
+        except Exception as exc:
+            return InboxDocumentResult(
+                message_id=item.message_id, sender=item.sender, subject=item.subject,
+                attachment_name=item.attachment.filename, content_type=item.attachment.media_type,
+                storage_path=storage_path, fingerprint=fingerprint,
+                status=DocumentStatus.FAILED, error=str(exc), workflow=None,
+            )
         return InboxDocumentResult(
-            message_id=item.message_id,
-            sender=item.sender,
-            subject=item.subject,
-            attachment_name=item.attachment.filename,
-            content_type=item.attachment.media_type,
-            storage_path=storage_path,
-            fingerprint=fingerprint,
-            workflow=workflow_result,
+            message_id=item.message_id, sender=item.sender, subject=item.subject,
+            attachment_name=item.attachment.filename, content_type=item.attachment.media_type,
+            storage_path=storage_path, fingerprint=fingerprint,
+            status=DocumentStatus.COMPLETED, error=None, workflow=workflow_result,
         )

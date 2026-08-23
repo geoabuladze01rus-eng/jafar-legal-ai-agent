@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 
@@ -10,6 +11,12 @@ class ExtractedDocument:
     filename: str
     media_type: str
     text: str
+
+    @property
+    def fingerprint(self) -> str:
+        """Stable identity for the extracted document content."""
+        payload = f"{self.media_type}\n{self.text}".encode("utf-8")
+        return sha256(payload).hexdigest()
 
 
 class DocumentExtractionError(ValueError):

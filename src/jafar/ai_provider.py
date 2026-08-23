@@ -7,6 +7,7 @@ from openai import OpenAI
 
 from .domains import DocumentTask, MatterType
 from .legal_models import LegalAnalysis
+from .model_router import ModelRequest, ModelResponse
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,9 @@ class AIProviderConfig:
 
 
 class OpenAILegalAnalyzer:
-    """OpenAI-backed legal analysis adapter."""
+    """OpenAI provider used by Jafar's provider-agnostic model router."""
+
+    key = "openai"
 
     def __init__(self, *, config: AIProviderConfig, client: OpenAI | None = None) -> None:
         self.config = config
@@ -25,7 +28,16 @@ class OpenAILegalAnalyzer:
             timeout=config.timeout_seconds,
         )
 
-    def analyze(self, *, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
+    def available(self) -> bool:
+        return bool(os.environ.get("OPENAI_API_KEY")) or self.client is not None
+
+    def analyze(
+        self,
+        *,
+        text: str,
+        task: DocumentTask,
+        matter_type: MatterType = MatterType.GENERAL,
+    ) -> LegalAnalysis:
         if not text.strip():
             raise ValueError("document text must not be empty")
 
@@ -55,3 +67,13 @@ class OpenAILegalAnalyzer:
         if response.output_parsed is None:
             raise RuntimeError("OpenAI returned no structured legal analysis")
         return response.output_parsed
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        task = DocumentTask(request.task) if request.task in {task.value for task in DocumentTask} else DocumentTask.SUMMARIZE
+        analysis = self.analyze(text=request.prompt, task=task)
+        return ModelResponse(
+            provider=self.key,
+            model=self.config.model,
+            text=analysis.summary,
+            metadata={"legal_analysis": analysis.model_dump(mode="json")},
+        )

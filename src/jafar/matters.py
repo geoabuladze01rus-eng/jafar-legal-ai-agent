@@ -2,14 +2,15 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from .legal_models import Deadline, Matter, MatterEvent
+from .matter_repository import MatterRepository
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class MatterStore:
-    """Small in-memory store used until persistent storage is introduced."""
+class MatterStore(MatterRepository):
+    """In-memory repository used for tests and local development."""
 
     def __init__(self) -> None:
         self._matters: dict[str, Matter] = {}

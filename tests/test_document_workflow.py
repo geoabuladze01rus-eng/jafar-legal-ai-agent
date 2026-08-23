@@ -93,7 +93,7 @@ def test_workflow_does_not_mutate_matter_for_ambiguous_match():
     assert store.get("matter-2").deadlines == []
 
 
-def test_workflow_creates_single_event_per_processing_call():
+def test_workflow_is_idempotent_for_same_document_content():
     store = MatterStore()
     store.create(make_matter())
     workflow = DocumentWorkflow(store, LegalAnalyzer())
@@ -104,8 +104,38 @@ def test_workflow_creates_single_event_per_processing_call():
     )
 
     first = workflow.process("review.txt", extracted)
-    second = workflow.process("review.txt", extracted)
+    second = workflow.process("renamed-copy.txt", extracted)
 
     assert first.event is not None
     assert second.event is not None
+    assert second.event.id == first.event.id
+    assert second.event.document_fingerprint == extracted.fingerprint
+    assert len(store.events("matter-1")) == 1
+
+
+def test_same_filename_with_different_content_is_not_deduplicated():
+    store = MatterStore()
+    store.create(make_matter())
+    workflow = DocumentWorkflow(store, LegalAnalyzer())
+
+    first = workflow.process(
+        "review.txt",
+        ExtractedDocument(
+            filename="review.txt",
+            media_type="text/plain",
+            text="По делу А40-12345/2026 первый документ.",
+        ),
+    )
+    second = workflow.process(
+        "review.txt",
+        ExtractedDocument(
+            filename="review.txt",
+            media_type="text/plain",
+            text="По делу А40-12345/2026 второй документ.",
+        ),
+    )
+
+    assert first.event is not None
+    assert second.event is not None
+    assert first.event.id != second.event.id
     assert len(store.events("matter-1")) == 2

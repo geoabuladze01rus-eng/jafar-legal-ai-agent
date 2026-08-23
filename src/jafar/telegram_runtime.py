@@ -37,11 +37,18 @@ class TelegramBotHttpClient:
 class TelegramRuntime:
     """Connect Telegram polling, the comment pipeline, safety and outbound delivery."""
 
-    def __init__(self, bot_token: str, *, production_send: bool = False) -> None:
+    def __init__(
+        self,
+        bot_token: str,
+        *,
+        production_send: bool = False,
+        dry_run: bool = True,
+    ) -> None:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
+        self.dry_run = dry_run
         self.outbound = TelegramOutbound(
-            guard=ProductionGuard(production_send=production_send),
+            guard=ProductionGuard(production_send=production_send and not dry_run),
             bot=self.bot,
         )
         self._task: asyncio.Task[None] | None = None
@@ -49,6 +56,15 @@ class TelegramRuntime:
     async def handle_update(self, update: dict[str, Any]) -> None:
         result = process_update(update)
         if result is None or not result.safety.allowed:
+            return
+
+        if self.dry_run:
+            logger.info(
+                "Telegram dry-run update=%s chat=%s draft=%r",
+                update.get("update_id"),
+                result.comment.chat_id,
+                result.draft.decision.draft,
+            )
             return
 
         await self.outbound.send_text(

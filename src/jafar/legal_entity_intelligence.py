@@ -59,8 +59,15 @@ class LegalEntityIntelligence:
         for source in self.sources:
             try:
                 findings.append(source.lookup(q))
-            except Exception as exc:
-                findings.append(SourceFinding(source.source_key, "error", source.source_key, {}, error_to_details(exc)))
+            except Exception as exc:  # noqa: BLE001 - source isolation boundary
+                findings.append(
+                    SourceFinding(
+                        source_key=source.source_key,
+                        status="error",
+                        title=source.source_key,
+                        details=error_to_details(exc),
+                    )
+                )
         return self.build_profile(findings)
 
     def build_profile(self, findings: list[SourceFinding]) -> dict[str, Any]:

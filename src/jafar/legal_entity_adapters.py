@@ -88,7 +88,7 @@ class LegalEntitySourceRegistry:
         for adapter in self._adapters.values():
             try:
                 results.append(adapter.search(query))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - registry isolates adapter failures
                 results.append(
                     SourceResult(
                         source_key=adapter.source_key,

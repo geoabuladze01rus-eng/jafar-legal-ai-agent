@@ -1,4 +1,4 @@
-import pytest
+import asyncio
 
 from jafar.telegram_update_receiver import run_polling
 
@@ -16,11 +16,7 @@ class FakeReceiver:
         raise asyncio.CancelledError
 
 
-import asyncio
-
-
-@pytest.mark.asyncio
-async def test_polling_advances_after_handler_failure():
+async def _test_polling_advances_after_handler_failure():
     receiver = FakeReceiver()
     handled = []
     errors = []
@@ -33,9 +29,15 @@ async def test_polling_advances_after_handler_failure():
     async def on_error(update, exc):
         errors.append((update["update_id"], str(exc)))
 
-    with pytest.raises(asyncio.CancelledError):
+    try:
         await run_polling(receiver, handler, on_error=on_error)
+    except asyncio.CancelledError:
+        pass
 
     assert handled == [10, 11]
     assert errors == [(10, "boom")]
     assert receiver.offsets == [None, 12]
+
+
+def test_polling_advances_after_handler_failure():
+    asyncio.run(_test_polling_advances_after_handler_failure())

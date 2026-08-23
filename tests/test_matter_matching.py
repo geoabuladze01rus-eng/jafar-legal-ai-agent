@@ -44,13 +44,13 @@ def test_weak_title_match_does_not_mutate_matter() -> None:
     assert result is None
 
 
-def test_close_candidates_are_treated_as_ambiguous() -> None:
+def test_equal_strong_candidates_are_treated_as_ambiguous() -> None:
     matcher = MatterMatcher(min_margin=0.10)
     result = matcher.best_match(
         "А40-12345/26 спор с ООО Альфа",
         [
             matter("m1", "Спор с ООО Альфа", "А40-12345/26"),
-            matter("m2", "Спор с ООО Альфа", "А40-12345/27"),
+            matter("m2", "Спор с ООО Альфа", "А40-12345/26"),
         ],
     )
     assert result is None

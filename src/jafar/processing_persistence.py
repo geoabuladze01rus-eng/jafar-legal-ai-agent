@@ -48,8 +48,10 @@ class SupabaseProcessingResultStore:
             "documents": [
                 {
                     "filename": item.attachment_name,
+                    "storage_path": item.storage_path,
+                    "content_type": item.attachment.media_type,
+                    "fingerprint": item.fingerprint,
                     "matter_id": item.workflow.match.matter_id if item.workflow.match else None,
-                    "fingerprint": item.workflow.extracted.fingerprint,
                     "analysis": _jsonable(item.workflow.analysis),
                 }
                 for item in result.documents

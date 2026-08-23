@@ -16,11 +16,7 @@ class AIProviderConfig:
 
 
 class OpenAILegalAnalyzer:
-    """OpenAI-backed legal analysis adapter.
-
-    The API key is read exclusively from OPENAI_API_KEY at runtime. Provider
-    responses are validated against the existing LegalAnalysis Pydantic model.
-    """
+    """OpenAI-backed legal analysis adapter."""
 
     def __init__(self, *, config: AIProviderConfig, client: OpenAI | None = None) -> None:
         self.config = config
@@ -30,6 +26,9 @@ class OpenAILegalAnalyzer:
         )
 
     def analyze(self, *, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
+        if not text.strip():
+            raise ValueError("document text must not be empty")
+
         response = self.client.responses.parse(
             model=self.config.model,
             input=[
@@ -39,7 +38,8 @@ class OpenAILegalAnalyzer:
                         "You are Jafar, a legal document analysis assistant. "
                         "Extract only information supported by the supplied document. "
                         "Do not invent facts, authorities, deadlines, or citations. "
-                        "If information is missing or uncertain, state that explicitly."
+                        "If information is missing or uncertain, state that explicitly. "
+                        "Use the requested task and matter type when structuring the analysis."
                     ),
                 },
                 {

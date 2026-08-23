@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .domains import DocumentTask
+from .privacy_policy import ProviderPrivacyPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,7 +15,7 @@ class ModelRequest:
     requires_google_context: bool = False
     verification: bool = False
     confidential: bool = True
-    allowed_providers: tuple[str, ...] = ("openai",)
+    allowed_providers: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,13 +42,23 @@ class RoutingDecision:
 
 
 class ModelRouter:
-    """Provider-agnostic routing policy with explicit confidentiality controls."""
+    """Provider-agnostic routing guarded by the central privacy policy."""
 
-    def __init__(self, providers: dict[str, ModelProvider]) -> None:
+    def __init__(
+        self,
+        providers: dict[str, ModelProvider],
+        privacy_policy: ProviderPrivacyPolicy | None = None,
+    ) -> None:
         self.providers = providers
+        self.privacy_policy = privacy_policy or ProviderPrivacyPolicy()
 
     def decide(self, request: ModelRequest) -> RoutingDecision:
-        allowed = set(request.allowed_providers)
+        allowed = set(
+            self.privacy_policy.validate(
+                confidential=request.confidential,
+                requested=request.allowed_providers,
+            )
+        )
         primary = self._preferred_provider(request)
 
         if primary not in allowed or not self._available(primary):
@@ -59,11 +70,9 @@ class ModelRouter:
 
         verifier = None
         if request.verification:
-            verifier_candidates = tuple(
-                key for key in ("deepseek", "gemini", "openai")
-                if key in allowed and key != primary
+            verifier = self._first_available(
+                tuple(key for key in ("deepseek", "gemini", "openai") if key in allowed and key != primary)
             )
-            verifier = self._first_available(verifier_candidates)
             if verifier is None:
                 raise RuntimeError("Verification requested but no independent permitted provider is available")
 
@@ -91,10 +100,17 @@ class ModelRouter:
             return "gemini"
         if request.task in {"coding", "technical_analysis", "second_opinion"}:
             return "deepseek"
+        if request.task in {DocumentTask.LEGAL_ANALYSIS.value, DocumentTask.RISK_REVIEW.value}:
+            return "openai"
         return "openai"
 
     def _complete_with_fallback(self, request: ModelRequest, primary: str) -> ModelResponse:
-        allowed = set(request.allowed_providers)
+        allowed = set(
+            self.privacy_policy.validate(
+                confidential=request.confidential,
+                requested=request.allowed_providers,
+            )
+        )
         candidates = (primary,) + tuple(
             key
             for key in ("openai", "gemini", "deepseek", "nano_banana")

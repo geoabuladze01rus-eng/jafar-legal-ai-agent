@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
+import os
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 from .telegram_runtime import TelegramRuntime
+from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -37,10 +39,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="0.5.1", lifespan=lifespan)
 app.include_router(legal_entity_router)
-analyzer = LegalAnalyzer()
+heuristic_analyzer = LegalAnalyzer()
+openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
-document_workflow = DocumentWorkflow(matter_store, analyzer)
+document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 
 
 class HealthResponse(BaseModel):
@@ -76,11 +79,6 @@ def health() -> HealthResponse:
 
 @app.post("/v1/command", response_model=CommandResponse)
 def command(request: CommandRequest) -> CommandResponse:
-    """Minimal safe command gateway for Apple clients.
-
-    Read-only commands are handled here; externally visible actions remain
-    behind the existing approval boundary.
-    """
     normalized = " ".join(request.text.lower().split())
 
     if any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
@@ -89,23 +87,23 @@ def command(request: CommandRequest) -> CommandResponse:
             return CommandResponse(message="Сейчас открытых дел в хранилище нет.", intent="list_matters")
         titles = ", ".join(matter.title for matter in matters[:10])
         suffix = "" if len(matters) <= 10 else f" и ещё {len(matters) - 10}"
-        return CommandResponse(
-            message=f"У вас {len(matters)} дел: {titles}{suffix}.",
-            intent="list_matters",
-        )
+        return CommandResponse(message=f"У вас {len(matters)} дел: {titles}{suffix}.", intent="list_matters")
 
     if "здоров" in normalized or "проверка связи" in normalized:
         return CommandResponse(message="Джафар на связи.", intent="health")
 
-    return CommandResponse(
-        message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.",
-        intent="natural_language_command",
-    )
+    return CommandResponse(message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.", intent="natural_language_command")
+
+
+def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
+    if openai_analyzer is not None:
+        return openai_analyzer.analyze(text=text, task=task, matter_type=matter_type)
+    return heuristic_analyzer.analyze(text, task, matter_type)
 
 
 @app.post("/v1/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
-    analysis = analyzer.analyze(request.text, request.task, request.matter_type)
+    analysis = _analyze(request.text, request.task, request.matter_type)
     if request.matter_id:
         matter = matter_store.get(request.matter_id)
         if matter is None:
@@ -123,11 +121,7 @@ async def analyze_document(
 ) -> AnalysisResponse:
     try:
         content = await file.read(document_extractor.MAX_BYTES + 1)
-        extracted = document_extractor.extract(
-            filename=file.filename or "document",
-            content=content,
-            media_type=file.content_type,
-        )
+        extracted = document_extractor.extract(filename=file.filename or "document", content=content, media_type=file.content_type)
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -139,29 +133,18 @@ async def analyze_document(
     if matter_id and matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
 
-    result = document_workflow.process(
-        file.filename or "document", extracted, document_task, matter_type
-    )
-    return AnalysisResponse(
-        analysis=result.analysis,
-        matter_id=result.match.matter_id if result.match else matter_id,
-    )
+    if openai_analyzer is not None:
+        analysis = openai_analyzer.analyze(text=extracted, task=document_task, matter_type=matter_type)
+        return AnalysisResponse(analysis=analysis, matter_id=matter_id)
+
+    result = document_workflow.process(file.filename or "document", extracted, document_task, matter_type)
+    return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else matter_id)
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)
 def create_matter(request: CreateMatterRequest) -> Matter:
     now = datetime.now(timezone.utc)
-    matter = Matter(
-        id=str(uuid4()),
-        title=request.title,
-        matter_type=request.matter_type,
-        client_name=request.client_name,
-        opposing_party=request.opposing_party,
-        court_or_authority=request.court_or_authority,
-        case_number=request.case_number,
-        created_at=now,
-        updated_at=now,
-    )
+    matter = Matter(id=str(uuid4()), title=request.title, matter_type=request.matter_type, client_name=request.client_name, opposing_party=request.opposing_party, court_or_authority=request.court_or_authority, case_number=request.case_number, created_at=now, updated_at=now)
     return matter_store.create(matter)
 
 

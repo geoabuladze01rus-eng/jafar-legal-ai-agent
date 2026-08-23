@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from jafar.attachment_materializer import InMemoryAttachmentMaterializer
 from jafar.outlook_provider import OutlookEmailProvider, OutlookProviderConfig
 
 
@@ -22,12 +25,14 @@ class FakeOutlook:
         return f"file://{attachment_id}"
 
 
-def test_provider_fetches_only_supported_non_inline_attachments():
+def test_provider_materializes_supported_attachment_bytes():
     client = FakeOutlook()
-    messages = OutlookEmailProvider(client).fetch_messages(limit=1)
+    materializer = InMemoryAttachmentMaterializer({"file://pdf-1": b"real-pdf-bytes"})
+    messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
     assert len(messages) == 1
     assert messages[0].sender == "client@example.com"
     assert messages[0].attachments[0].filename == "court.pdf"
+    assert messages[0].attachments[0].content == b"real-pdf-bytes"
     assert client.fetched == ["pdf-1"]
 
 
@@ -37,6 +42,14 @@ def test_provider_skips_oversized_attachment():
             return [{"id":"large","name":"large.pdf","size_bytes":101,"content_type":"application/pdf","is_inline":False}]
 
     client = LargeAttachmentClient()
-    messages = OutlookEmailProvider(client, OutlookProviderConfig(max_attachment_bytes=100)).fetch_messages()
+    materializer = InMemoryAttachmentMaterializer({})
+    messages = OutlookEmailProvider(client, materializer, OutlookProviderConfig(max_attachment_bytes=100)).fetch_messages()
     assert messages[0].attachments == ()
     assert client.fetched == []
+
+
+def test_provider_surfaces_materialization_failure():
+    client = FakeOutlook()
+    materializer = InMemoryAttachmentMaterializer({})
+    with pytest.raises(FileNotFoundError):
+        OutlookEmailProvider(client, materializer).fetch_messages(limit=1)

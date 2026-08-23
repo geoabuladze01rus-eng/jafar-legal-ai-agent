@@ -28,11 +28,19 @@ class TelegramUpdateReceiver:
 async def run_polling(
     receiver: TelegramUpdateReceiver,
     handler: Callable[[dict[str, Any]], Awaitable[None]],
+    *,
+    on_error: Callable[[dict[str, Any], Exception], Awaitable[None]] | None = None,
 ) -> None:
+    """Poll Telegram without letting one bad update poison the queue."""
     offset: int | None = None
     while True:
         updates = await receiver.fetch(offset)
         for update in updates:
             update_id = int(update["update_id"])
-            await handler(update)
-            offset = update_id + 1
+            try:
+                await handler(update)
+            except Exception as exc:
+                if on_error is not None:
+                    await on_error(update, exc)
+            finally:
+                offset = update_id + 1

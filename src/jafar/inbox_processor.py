@@ -30,8 +30,6 @@ class InboxProcessingResult:
 
 
 class InboxProcessor:
-    """Bridges email attachments into durable storage and legal document workflow."""
-
     def __init__(self, intake: InboxDocumentIntake, workflow: DocumentWorkflow, storage: AttachmentStorage) -> None:
         self.intake = intake
         self.workflow = workflow
@@ -69,7 +67,7 @@ class InboxProcessor:
                 message_id=item.message_id, sender=item.sender, subject=item.subject,
                 attachment_name=item.attachment.filename, content_type=item.attachment.media_type,
                 storage_path=storage_path, fingerprint=fingerprint,
-                status=DocumentStatus.FAILED, error=str(exc), workflow=None,
+                status=DocumentStatus.FAILED, error=f"{type(exc).__name__}: {exc}", workflow=None,
             )
         return InboxDocumentResult(
             message_id=item.message_id, sender=item.sender, subject=item.subject,

@@ -39,5 +39,5 @@ class JafarCommandBus:
             result = handler(command.args)
             data = result if isinstance(result, dict) else {"result": result}
             return CommandResult("completed", "Команда выполнена.", command.request_id, data)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - command boundary normalizes handler failures
             return CommandResult("error", "Ошибка выполнения команды.", command.request_id, {"error": str(exc)})

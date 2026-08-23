@@ -17,7 +17,7 @@ class RetryExecutor(Protocol):
 
 class RecoveryLeaseStore(Protocol):
     def heartbeat(self, *, job_id: str, worker_id: str) -> bool: ...
-    def requeue_expired(self, *, lease_seconds: int = 300, limit: int = 50) -> int: ...
+    def requeue_expired(self, *, limit: int = 50) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -75,10 +75,18 @@ class RecoveryWorkerRuntime:
             heartbeat_thread.start()
         try:
             self.executor.retry(storage_path=job.storage_path)
-            self.queue.finish(job_id=job.id, success=True)
+            self.queue.finish(job_id=job.id, worker_id=self.config.worker_id, success=True)
         except Exception as exc:
             log.exception("recovery job failed", extra={"job_id": job.id, "storage_path": job.storage_path})
-            self.queue.finish(job_id=job.id, success=False, error=f"{type(exc).__name__}: {exc}")
+            try:
+                self.queue.finish(
+                    job_id=job.id,
+                    worker_id=self.config.worker_id,
+                    success=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            except Exception:
+                log.exception("recovery job completion update failed", extra={"job_id": job.id})
         finally:
             heartbeat_stop.set()
             if heartbeat_thread:

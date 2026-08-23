@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from .attachment_materializer import AttachmentMaterializer
 from .email_adapter import ExternalEmail
 from .inbox import InboxAttachment
 
@@ -26,15 +27,16 @@ class OutlookProviderConfig:
 
 
 class OutlookEmailProvider:
-    """Maps Outlook connector data into Jafar's provider-neutral email contract.
+    """Maps Outlook connector data into Jafar's provider-neutral email contract."""
 
-    The connector materializes an attachment as a workspace ``file_uri``. Jafar
-    keeps that reference in the transport layer; raw bytes are produced by the
-    connector/file bridge before the InboxDocumentIntake boundary.
-    """
-
-    def __init__(self, client: OutlookClient, config: OutlookProviderConfig | None = None) -> None:
+    def __init__(
+        self,
+        client: OutlookClient,
+        materializer: AttachmentMaterializer,
+        config: OutlookProviderConfig | None = None,
+    ) -> None:
         self.client = client
+        self.materializer = materializer
         self.config = config or OutlookProviderConfig()
 
     def fetch_messages(self, *, limit: int = 25) -> list[ExternalEmail]:
@@ -51,12 +53,8 @@ class OutlookEmailProvider:
                 if size > self.config.max_attachment_bytes:
                     continue
                 file_uri = self.client.fetch_attachment(message_id, str(item["id"]))
-                attachments.append(
-                    InboxAttachment(name, b"", item.get("content_type"))
-                )
-                # The URI is intentionally not encoded as document bytes. A real
-                # connector bridge must materialize it before DocumentExtractor.
-                attachments[-1] = InboxAttachment(name, b"", item.get("content_type"))
+                content = self.materializer.materialize(file_uri)
+                attachments.append(InboxAttachment(name, content, item.get("content_type")))
 
             sender = raw.get("sender", {}).get("emailAddress", {}).get("address", "")
             received_at = datetime.fromisoformat(str(raw["receivedDateTime"]).replace("Z", "+00:00"))

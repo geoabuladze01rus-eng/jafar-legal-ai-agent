@@ -33,6 +33,18 @@ class MatterRepository(ABC):
     ) -> MatterEvent | None: ...
 
     @abstractmethod
+    def record_document_event(
+        self,
+        matter_id: str,
+        title: str,
+        event_date: datetime,
+        description: str | None = None,
+        source_document: str | None = None,
+        document_fingerprint: str | None = None,
+        deadlines: list[Deadline] | None = None,
+    ) -> MatterEvent | None: ...
+
+    @abstractmethod
     def event_by_fingerprint(self, matter_id: str, document_fingerprint: str) -> MatterEvent | None: ...
 
     @abstractmethod

@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"
+    telegram_bot_token: str | None = None
+    telegram_polling_enabled: bool = False
+    telegram_production_send: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

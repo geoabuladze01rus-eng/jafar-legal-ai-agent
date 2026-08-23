@@ -17,7 +17,7 @@ class EmailPipelineResult:
 
 
 class EmailPipeline:
-    """Runs email triage and attachment processing with duplicate protection."""
+    """Runs email triage and attachment processing with atomic duplicate protection."""
 
     def __init__(
         self,
@@ -30,21 +30,30 @@ class EmailPipeline:
         self.ledger = ledger or InMemoryProcessingLedger()
 
     def process(self, message: InboxMessage) -> EmailPipelineResult:
-        if self.ledger.has_processed(message.message_id):
-            email_result = self.email_processor.process(message)
+        received_at = message.received_at.isoformat()
+        claimed = self.ledger.claim(
+            message.message_id,
+            sender=message.sender,
+            subject=message.subject,
+            received_at=received_at,
+        )
+        email_result = self.email_processor.process(message)
+        if not claimed:
             return EmailPipelineResult(email=email_result, skipped_as_duplicate=True)
 
-        email_result = self.email_processor.process(message)
-        document_results = ()
-        issues = ()
-        if email_result.triage.action == "prepare_legal_analysis":
-            inbox_result = self.inbox_processor.process_message(message)
-            document_results = inbox_result.documents
-            issues = inbox_result.issues
-
-        self.ledger.mark_processed(message.message_id)
-        return EmailPipelineResult(
-            email=email_result,
-            documents=document_results,
-            issues=issues,
-        )
+        try:
+            document_results = ()
+            issues = ()
+            if email_result.triage.action == "prepare_legal_analysis":
+                inbox_result = self.inbox_processor.process_message(message)
+                document_results = inbox_result.documents
+                issues = inbox_result.issues
+            self.ledger.mark_processed(message.message_id)
+            return EmailPipelineResult(
+                email=email_result,
+                documents=document_results,
+                issues=issues,
+            )
+        except Exception:
+            self.ledger.mark_failed(message.message_id)
+            raise

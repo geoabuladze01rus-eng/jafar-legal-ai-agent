@@ -39,5 +39,5 @@ class FedresursPublicAdapter:
             return SourceResult(self.source_key, status, response.url, data)
         except TimeoutError as exc:
             return SourceResult(self.source_key, "timeout", error=str(exc))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public-source boundary normalizes transport failures
             return SourceResult(self.source_key, "error", error=str(exc))

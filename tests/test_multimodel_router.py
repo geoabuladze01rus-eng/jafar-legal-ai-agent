@@ -1,12 +1,15 @@
+import pytest
+
 from jafar.model_consensus import ModelConsensus
 from jafar.model_router import ModelRequest, ModelResponse, ModelRouter
 
 
 class FakeProvider:
-    def __init__(self, key: str, text: str, available: bool = True) -> None:
+    def __init__(self, key: str, text: str, available: bool = True, error: Exception | None = None) -> None:
         self.key = key
         self.text = text
         self._available = available
+        self.error = error
         self.calls = 0
 
     def available(self) -> bool:
@@ -14,6 +17,8 @@ class FakeProvider:
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls += 1
+        if self.error is not None:
+            raise self.error
         return ModelResponse(self.key, "test-model", self.text, {})
 
 
@@ -35,6 +40,17 @@ def test_router_falls_back_when_primary_is_unavailable() -> None:
     }
     decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
     assert decision.primary == "gemini"
+
+
+def test_router_falls_back_when_primary_fails_at_runtime() -> None:
+    providers = {
+        "openai": FakeProvider("openai", "broken", error=RuntimeError("timeout")),
+        "gemini": FakeProvider("gemini", "fallback"),
+        "deepseek": FakeProvider("deepseek", "technical"),
+    }
+    result = ModelRouter(providers).run(ModelRequest("p", "legal_analysis"))
+    assert result[0].provider == "gemini"
+    assert result[0].metadata["routing_fallback_from"] == "openai"
 
 
 def test_verification_uses_independent_provider() -> None:
@@ -66,3 +82,21 @@ def test_verification_marks_disagreement_instead_of_hiding_it() -> None:
     assert result.confidence == 0.45
     assert result.disagreements
     assert "требует проверки" in result.consensus
+
+
+def test_requested_verification_fails_closed_when_verifier_unavailable() -> None:
+    providers = {
+        "openai": FakeProvider("openai", "primary"),
+        "deepseek": FakeProvider("deepseek", "unavailable", available=False),
+    }
+    with pytest.raises(RuntimeError, match="Verification requested"):
+        ModelRouter(providers).decide(ModelRequest("p", "legal_analysis", verification=True))
+
+
+def test_verifier_runtime_failure_is_not_silently_downgraded() -> None:
+    providers = {
+        "openai": FakeProvider("openai", "primary"),
+        "deepseek": FakeProvider("deepseek", "broken", error=RuntimeError("timeout")),
+    }
+    with pytest.raises(RuntimeError, match="Independent verification provider"):
+        ModelRouter(providers).run(ModelRequest("p", "legal_analysis", verification=True))

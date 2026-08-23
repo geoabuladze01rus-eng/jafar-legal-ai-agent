@@ -1,0 +1,50 @@
+{
+  "document": {
+    "filename": "Павлик В. А. (2).pdf",
+    "sha256": "76450e76415ae313d972ef8938426fb3a57dd05cf1ae66c967f47a4ec0cd5ac3",
+    "pages": 16,
+    "ocr": {
+      "engine": "tesseract",
+      "languages": ["rus"],
+      "psm": 11,
+      "text_layer_present": false,
+      "needs_human_validation": true
+    }
+  },
+  "case": {
+    "case_number": "12604008104000012",
+    "suspect": "Павлик Вадим Александрович",
+    "date_of_birth": "17.11.1984",
+    "investigator": "Орлов А.С.",
+    "investigator_rank": "лейтенант юстиции",
+    "defense_counsel": "Григорьев Денис Юрьевич",
+    "counsel_order": "658507 от 25.06.2026",
+    "accusation": "ч. 4 ст. 194 УК РФ — уклонение от уплаты таможенных платежей, специальных, антидемпинговых и/или компенсационных пошлин, совершенное организованной группой",
+    "detention_date": "25.06.2026",
+    "detention_time_recorded": "16:20",
+    "detention_basis": "п. 2 ч. 1 ст. 91 УПК РФ",
+    "detention_location": "служебный кабинет №11 следственного отдела по г. Новороссийск СУ СК России по Краснодарскому краю",
+    "holding_place": "ИВС УМВД России г. Новороссийск, ул. Грибоедова, д. 6",
+    "prosecutor_notification": "Транспортному прокурору г. Новороссийск Краснодарского края, 16:50 25.06.2026",
+    "statements": {
+      "estimated_vehicles": "около 100",
+      "payments_per_vehicle": 165000,
+      "suspect_share_per_vehicle": 15000,
+      "transferred_to_khafizov_per_vehicle": 150000,
+      "self_reported_suspicion_of_forged_documents": true,
+      "self_reported_awareness_of_illegal_assistance": false,
+      "self_reported_suspicion_of_illegal_assistance": true
+    },
+    "persons_mentioned": [
+      "Хафизов А.А.",
+      "Карпова Инна Дмитриевна",
+      "Бочкарев Илья Васильевич",
+      "Нерода Яна Александровна"
+    ],
+    "procedural_end_state": "заявления не поступили; замечания к протоколу не поступили; протокол прочитан участниками"
+  },
+  "validation_flags": [
+    "OCR contains recognition errors; validate all names, dates, amounts and legal citations against page images before using as authoritative evidence.",
+    "Page 16 OCR contains a potentially erroneous phrase naming Хафизов А.А. in the detention-notification field; preserve source wording and flag for visual verification rather than correcting it automatically."
+  ]
+}

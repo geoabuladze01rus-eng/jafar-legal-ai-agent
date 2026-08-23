@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from .inbox import InboxAttachment
 from .email_adapter import ExternalEmail
+from .inbox import InboxAttachment
 
 
 class OutlookClient(Protocol):
@@ -28,8 +28,9 @@ class OutlookProviderConfig:
 class OutlookEmailProvider:
     """Maps Outlook connector data into Jafar's provider-neutral email contract.
 
-    The provider downloads only supported, non-inline file attachments and leaves
-    the actual Outlook authentication/API implementation outside the domain layer.
+    The connector materializes an attachment as a workspace ``file_uri``. Jafar
+    keeps that reference in the transport layer; raw bytes are produced by the
+    connector/file bridge before the InboxDocumentIntake boundary.
     """
 
     def __init__(self, client: OutlookClient, config: OutlookProviderConfig | None = None) -> None:
@@ -50,16 +51,23 @@ class OutlookEmailProvider:
                 if size > self.config.max_attachment_bytes:
                     continue
                 file_uri = self.client.fetch_attachment(message_id, str(item["id"]))
-                attachments.append(InboxAttachment(name, file_uri.encode(), item.get("content_type")))
+                attachments.append(
+                    InboxAttachment(name, b"", item.get("content_type"))
+                )
+                # The URI is intentionally not encoded as document bytes. A real
+                # connector bridge must materialize it before DocumentExtractor.
+                attachments[-1] = InboxAttachment(name, b"", item.get("content_type"))
 
             sender = raw.get("sender", {}).get("emailAddress", {}).get("address", "")
             received_at = datetime.fromisoformat(str(raw["receivedDateTime"]).replace("Z", "+00:00"))
-            result.append(ExternalEmail(
-                message_id=message_id,
-                sender=sender,
-                subject=str(raw.get("subject") or ""),
-                received_at=received_at,
-                body_text=str(raw.get("bodyPreview") or ""),
-                attachments=tuple(attachments),
-            ))
+            result.append(
+                ExternalEmail(
+                    message_id=message_id,
+                    sender=sender,
+                    subject=str(raw.get("subject") or ""),
+                    received_at=received_at,
+                    body_text=str(raw.get("bodyPreview") or ""),
+                    attachments=tuple(attachments),
+                )
+            )
         return result

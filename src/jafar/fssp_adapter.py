@@ -34,5 +34,5 @@ class FsspPublicAdapter:
                 source_url=response.url,
                 data=self.parser.parse(response.text),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public-source boundary normalizes transport failures
             return SourceResult(source_key=self.source_key, status="error", error=str(exc))

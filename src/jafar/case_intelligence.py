@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -40,7 +40,7 @@ class CaseIntelligence:
     ) -> dict[str, Any]:
         ordered_events = sorted(
             events or [],
-            key=lambda event: event.occurred_at or datetime.min,
+            key=lambda event: event.occurred_at or datetime.min.replace(tzinfo=timezone.utc),
             reverse=True,
         )
         ordered_deadlines = sorted(deadlines or [], key=lambda deadline: deadline.due_at)

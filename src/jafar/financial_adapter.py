@@ -26,5 +26,5 @@ class FinancialPublicAdapter:
         try:
             response = self.transport.get(self.url_builder(query))
             return SourceResult(self.source_key, "found", response.url, self.parser.parse(response.text))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public-source boundary normalizes transport failures
             return SourceResult(self.source_key, "error", error=str(exc))

@@ -10,8 +10,6 @@ if TYPE_CHECKING:
 
 
 class ProcessingResultStore(Protocol):
-    """Durable boundary for saving the outcome of an email processing run."""
-
     def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None: ...
 
 
@@ -24,13 +22,25 @@ class InMemoryProcessingResultStore:
 
 
 class SupabaseProcessingResultStore:
-    """Persists normalized email triage and document analyses through RPC."""
+    """Persists email results and preserves failed document outcomes."""
 
     def __init__(self, client: object) -> None:
         self.client = client
 
     def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None:
         triage = result.email.triage
+        documents = []
+        for item in result.documents:
+            documents.append({
+                "filename": item.attachment_name,
+                "storage_path": item.storage_path,
+                "content_type": item.content_type,
+                "fingerprint": item.fingerprint,
+                "processing_status": item.status.value,
+                "processing_error": item.error,
+                "matter_id": item.workflow.match.matter_id if item.workflow and item.workflow.match else None,
+                "analysis": _jsonable(item.workflow.analysis) if item.workflow else None,
+            })
         payload = {
             "message_id": message.message_id,
             "sender": message.sender,
@@ -41,21 +51,8 @@ class SupabaseProcessingResultStore:
             "triage_action": triage.action,
             "case_candidates": list(triage.case_candidates),
             "reply_draft": _draft_text(result.email.reply_draft),
-            "issues": [
-                {"filename": i.filename, "error_type": i.error_type, "message": i.message}
-                for i in result.issues
-            ],
-            "documents": [
-                {
-                    "filename": item.attachment_name,
-                    "storage_path": item.storage_path,
-                    "content_type": item.content_type,
-                    "fingerprint": item.fingerprint,
-                    "matter_id": item.workflow.match.matter_id if item.workflow.match else None,
-                    "analysis": _jsonable(item.workflow.analysis),
-                }
-                for item in result.documents
-            ],
+            "issues": [{"filename": i.filename, "error_type": i.error_type, "message": i.message} for i in result.issues],
+            "documents": documents,
         }
         self.client.rpc("persist_email_processing", {"p_payload": json.dumps(payload, ensure_ascii=False)})
 

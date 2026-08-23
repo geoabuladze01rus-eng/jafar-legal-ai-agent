@@ -74,7 +74,7 @@ class ModelRouter:
         if decision.verifier:
             try:
                 responses.append(self.providers[decision.verifier].complete(request))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - verifier failure is normalized into routing error
                 raise RuntimeError(
                     f"Independent verification provider {decision.verifier!r} failed"
                 ) from exc
@@ -95,7 +95,7 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - fallback loop must try the next provider
                 last_error = exc
         raise RuntimeError("All configured AI providers failed during completion") from last_error
 

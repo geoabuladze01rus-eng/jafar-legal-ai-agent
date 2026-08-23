@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from .domains import DocumentTask
+
 
 @dataclass(frozen=True, slots=True)
 class ModelRequest:
@@ -49,6 +51,11 @@ class ModelRouter:
             primary = "gemini"
         elif request.task in {"coding", "technical_analysis", "second_opinion"}:
             primary = "deepseek"
+        elif request.task in {
+            DocumentTask.LEGAL_ANALYSIS.value,
+            DocumentTask.RISK_REVIEW.value,
+        }:
+            primary = "openai"
         else:
             primary = "openai"
 

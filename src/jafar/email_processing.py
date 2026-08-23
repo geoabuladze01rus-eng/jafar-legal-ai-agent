@@ -30,6 +30,7 @@ class EmailProcessor:
             subject=message.subject,
             preview=message.body_text[:4000],
             attachment_count=len(message.attachments),
+            attachment_names=tuple(item.filename for item in message.attachments),
         )
         draft = None
         if decision.action == "prepare_legal_analysis":

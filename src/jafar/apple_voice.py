@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +15,7 @@ class VoiceCommand:
 class AppleVoiceCommandRouter:
     """Platform-neutral command router for Siri/Shortcuts-style Apple clients."""
 
-    INTENTS = {
+    INTENTS: ClassVar[dict[str, str]] = {
         "покажи дела": "list_cases",
         "найди дело": "find_case",
         "проверь компанию": "investigate_entity",

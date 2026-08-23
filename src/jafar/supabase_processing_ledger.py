@@ -14,20 +14,17 @@ class SupabaseRpcClient(Protocol):
 class SupabaseProcessingLedger(ProcessingLedger):
     """Production ledger backed by atomic PostgreSQL claim/complete functions."""
 
-    def __init__(self, client: SupabaseRpcClient, *, sender: str, subject: str, received_at: str) -> None:
+    def __init__(self, client: SupabaseRpcClient) -> None:
         self.client = client
-        self.sender = sender
-        self.subject = subject
-        self.received_at = received_at
 
-    def has_processed(self, message_id: str) -> bool:
+    def claim(self, message_id: str, *, sender: str, subject: str, received_at: str) -> bool:
         result = self.client.rpc("claim_email_processing", {
             "p_message_id": message_id,
-            "p_sender": self.sender,
-            "p_subject": self.subject,
-            "p_received_at": self.received_at,
+            "p_sender": sender,
+            "p_subject": subject,
+            "p_received_at": received_at,
         })
-        return not bool(result)
+        return bool(result)
 
     def mark_processed(self, message_id: str) -> None:
         self.client.rpc("complete_email_processing", {

@@ -52,26 +52,52 @@ class ModelRouter:
         else:
             primary = "openai"
 
-        verifier = None
-        if request.verification:
-            verifier = "deepseek" if primary != "deepseek" else "openai"
-
         if not self._available(primary):
             primary = self._first_available(("openai", "gemini", "deepseek", "nano_banana"))
             if primary is None:
                 raise RuntimeError("No configured AI provider is available")
 
-        if verifier and not self._available(verifier):
-            verifier = None
+        verifier = None
+        if request.verification:
+            verifier = "deepseek" if primary != "deepseek" else "openai"
+            if not self._available(verifier):
+                raise RuntimeError(
+                    f"Verification requested but independent provider {verifier!r} is unavailable"
+                )
 
         return RoutingDecision(primary=primary, verifier=verifier, reason=f"task={request.task}")
 
     def run(self, request: ModelRequest) -> tuple[ModelResponse, ...]:
         decision = self.decide(request)
-        responses = [self.providers[decision.primary].complete(request)]
+        primary = self._complete_with_fallback(request, decision.primary)
+        responses = [primary]
         if decision.verifier:
-            responses.append(self.providers[decision.verifier].complete(request))
+            try:
+                responses.append(self.providers[decision.verifier].complete(request))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Independent verification provider {decision.verifier!r} failed"
+                ) from exc
         return tuple(responses)
+
+    def _complete_with_fallback(self, request: ModelRequest, primary: str) -> ModelResponse:
+        candidates = (primary,) + tuple(
+            key
+            for key in ("openai", "gemini", "deepseek", "nano_banana")
+            if key != primary and self._available(key)
+        )
+        last_error: Exception | None = None
+        for key in candidates:
+            try:
+                response = self.providers[key].complete(request)
+                if key != primary:
+                    metadata = dict(response.metadata)
+                    metadata["routing_fallback_from"] = primary
+                    return ModelResponse(response.provider, response.model, response.text, metadata)
+                return response
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError("All configured AI providers failed during completion") from last_error
 
     def _available(self, key: str) -> bool:
         provider = self.providers.get(key)

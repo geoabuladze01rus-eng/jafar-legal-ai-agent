@@ -61,6 +61,7 @@ class MatterEvent(BaseModel):
     event_date: datetime
     description: str | None = None
     source_document: str | None = None
+    document_fingerprint: str | None = None
     created_at: datetime
 
 

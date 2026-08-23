@@ -69,7 +69,11 @@ class OpenAILegalAnalyzer:
         return response.output_parsed
 
     def complete(self, request: ModelRequest) -> ModelResponse:
-        task = DocumentTask(request.task) if request.task in {task.value for task in DocumentTask} else DocumentTask.SUMMARIZE
+        try:
+            task = DocumentTask(request.task)
+        except ValueError:
+            task = DocumentTask.SUMMARIZE
+
         analysis = self.analyze(text=request.prompt, task=task)
         return ModelResponse(
             provider=self.key,

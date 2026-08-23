@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -12,8 +13,29 @@ from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
+from .telegram_runtime import TelegramRuntime
 
-app = FastAPI(title=settings.app_name, version="0.5.1")
+telegram_runtime: TelegramRuntime | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global telegram_runtime
+    if settings.telegram_polling_enabled and settings.telegram_bot_token:
+        telegram_runtime = TelegramRuntime(
+            settings.telegram_bot_token,
+            production_send=settings.telegram_production_send,
+        )
+        telegram_runtime.start()
+    try:
+        yield
+    finally:
+        if telegram_runtime is not None:
+            await telegram_runtime.stop()
+            telegram_runtime = None
+
+
+app = FastAPI(title=settings.app_name, version="0.5.1", lifespan=lifespan)
 app.include_router(legal_entity_router)
 analyzer = LegalAnalyzer()
 matter_store = MatterStore()

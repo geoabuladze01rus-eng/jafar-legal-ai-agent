@@ -32,8 +32,8 @@ class SupabaseRecoveryQueue:
             for row in (response.data or [])
         ]
 
-    def finish(self, *, job_id: str, success: bool, error: str | None = None) -> None:
+    def finish(self, *, job_id: str, worker_id: str, success: bool, error: str | None = None) -> None:
         self.client.rpc(
             "finish_document_recovery_job",
-            {"p_id": job_id, "p_success": success, "p_error": error},
+            {"p_id": job_id, "p_worker_id": worker_id, "p_success": success, "p_error": error},
         ).execute()

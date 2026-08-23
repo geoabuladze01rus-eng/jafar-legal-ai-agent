@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 
 @dataclass(frozen=True)
@@ -26,8 +27,8 @@ class DocumentExtractionError(ValueError):
 class DocumentExtractor:
     """Extract text from legal documents supported by Jafar."""
 
-    MAX_BYTES = 20 * 1024 * 1024
-    SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
+    MAX_BYTES: ClassVar[int] = 20 * 1024 * 1024
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
     def extract(self, filename: str, content: bytes, media_type: str | None = None) -> ExtractedDocument:
         if len(content) > self.MAX_BYTES:

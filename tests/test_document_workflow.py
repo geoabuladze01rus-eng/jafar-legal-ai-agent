@@ -8,16 +8,20 @@ from jafar.document_workflow import DocumentWorkflow
 from jafar.matters import MatterStore
 
 
-def make_matter() -> Matter:
+def make_matter(
+    matter_id: str = "matter-1",
+    case_number: str = "А40-12345/2026",
+    title: str = "Взыскание задолженности",
+) -> Matter:
     now = datetime.now(timezone.utc)
     return Matter(
-        id="matter-1",
-        title="Взыскание задолженности",
+        id=matter_id,
+        title=title,
         matter_type=MatterType.CIVIL,
         client_name="ООО Альфа",
         opposing_party="ООО Бета",
         court_or_authority="Арбитражный суд Москвы",
-        case_number="А40-12345/2026",
+        case_number=case_number,
         created_at=now,
         updated_at=now,
     )
@@ -64,3 +68,44 @@ def test_workflow_does_not_create_event_for_unresolved_document():
     assert result.match is None
     assert result.event is None
     assert store.events("matter-1") == []
+
+
+def test_workflow_does_not_mutate_matter_for_ambiguous_match():
+    store = MatterStore()
+    store.create(make_matter("matter-1", "А40-12345/2026", "Спор с ООО Альфа"))
+    store.create(make_matter("matter-2", "А40-12346/2026", "Спор с ООО Альфа"))
+    workflow = DocumentWorkflow(store, LegalAnalyzer())
+
+    result = workflow.process(
+        "ambiguous.txt",
+        ExtractedDocument(
+            filename="ambiguous.txt",
+            media_type="text/plain",
+            text="Спор с ООО Альфа, номер дела не указан.",
+        ),
+    )
+
+    assert result.match is None
+    assert result.event is None
+    assert store.events("matter-1") == []
+    assert store.events("matter-2") == []
+    assert store.get("matter-1").deadlines == []
+    assert store.get("matter-2").deadlines == []
+
+
+def test_workflow_creates_single_event_per_processing_call():
+    store = MatterStore()
+    store.create(make_matter())
+    workflow = DocumentWorkflow(store, LegalAnalyzer())
+    extracted = ExtractedDocument(
+        filename="review.txt",
+        media_type="text/plain",
+        text="По делу А40-12345/2026 срок обжалования до 21.08.2026.",
+    )
+
+    first = workflow.process("review.txt", extracted)
+    second = workflow.process("review.txt", extracted)
+
+    assert first.event is not None
+    assert second.event is not None
+    assert len(store.events("matter-1")) == 2

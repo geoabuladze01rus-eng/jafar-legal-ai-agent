@@ -19,6 +19,7 @@ class InboxDocumentResult:
     sender: str
     subject: str
     attachment_name: str
+    content_type: str | None
     storage_path: str
     fingerprint: str
     workflow: DocumentWorkflowResult
@@ -69,6 +70,7 @@ class InboxProcessor:
             sender=item.sender,
             subject=item.subject,
             attachment_name=item.attachment.filename,
+            content_type=item.attachment.media_type,
             storage_path=storage_path,
             fingerprint=fingerprint,
             workflow=workflow_result,

@@ -6,6 +6,10 @@ Private AI assistant for legal practice: document analysis, email triage, drafti
 
 - FastAPI service with `/health` and `/v1/analyze` endpoints.
 - Typed legal domain primitives for criminal, arbitration, civil and administrative work.
+- Conservative document-to-matter matching with ambiguity protection.
+- Supabase persistence boundary and atomic document-event contract.
+- Telegram editorial runtime with approval gates and dry-run safety.
+- API authentication boundary for non-development environments.
 - Architecture and security boundaries documented in `docs/ARCHITECTURE.md`.
 - Environment template without credentials.
 - API smoke tests.
@@ -20,6 +24,8 @@ uvicorn jafar.main:app --reload
 ```
 
 Health check: `GET http://127.0.0.1:8000/health`
+
+For staging/production, set `API_KEY` in secret storage and send it in the `X-Jafar-API-Key` header to `/v1/*` endpoints. The health endpoint remains public for liveness checks. Development without `API_KEY` remains intentionally available for local work.
 
 ## Roadmap
 

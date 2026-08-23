@@ -41,31 +41,30 @@ class MatterStore(MatterRepository):
             matter.updated_at = utcnow()
         return matter
 
-    def add_event(
-        self,
-        matter_id: str,
-        title: str,
-        event_date: datetime,
-        description: str | None = None,
-        source_document: str | None = None,
-        document_fingerprint: str | None = None,
-    ) -> MatterEvent | None:
+    def record_document_event(self, matter_id: str, title: str, event_date: datetime,
+                              description: str | None, source_document: str | None,
+                              document_fingerprint: str | None, deadlines: list[Deadline]) -> MatterEvent | None:
         if matter_id not in self._matters:
             return None
         if document_fingerprint:
             existing = self.event_by_fingerprint(matter_id, document_fingerprint)
             if existing is not None:
                 return existing
-        event = MatterEvent(
-            id=str(uuid4()),
-            matter_id=matter_id,
-            title=title,
-            event_date=event_date,
-            description=description,
-            source_document=source_document,
-            document_fingerprint=document_fingerprint,
-            created_at=utcnow(),
-        )
+        self.add_deadlines(matter_id, deadlines)
+        return self.add_event(matter_id, title, event_date, description, source_document, document_fingerprint)
+
+    def add_event(self, matter_id: str, title: str, event_date: datetime,
+                  description: str | None = None, source_document: str | None = None,
+                  document_fingerprint: str | None = None) -> MatterEvent | None:
+        if matter_id not in self._matters:
+            return None
+        if document_fingerprint:
+            existing = self.event_by_fingerprint(matter_id, document_fingerprint)
+            if existing is not None:
+                return existing
+        event = MatterEvent(id=str(uuid4()), matter_id=matter_id, title=title, event_date=event_date,
+                            description=description, source_document=source_document,
+                            document_fingerprint=document_fingerprint, created_at=utcnow())
         self._events.setdefault(matter_id, []).append(event)
         self._matters[matter_id].updated_at = utcnow()
         return event

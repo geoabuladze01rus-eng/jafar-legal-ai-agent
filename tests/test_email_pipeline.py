@@ -8,6 +8,8 @@ from jafar.email_reply_draft import EmailReplyDraftGenerator
 from jafar.email_triage import EmailTriage
 from jafar.inbox import InboxAttachment, InboxDocumentIntake, InboxMessage
 from jafar.inbox_processor import InboxProcessor
+from jafar.document_intake import ExtractedDocument
+from jafar.document_workflow import DocumentWorkflowResult
 
 
 class StubWorkflow:
@@ -16,7 +18,13 @@ class StubWorkflow:
 
     def process(self, *, document_name, extracted):
         self.calls.append((document_name, extracted))
-        return {"document_name": document_name}
+        return DocumentWorkflowResult(
+            document_name=document_name,
+            extracted=extracted,
+            match=None,
+            analysis=None,
+            event=None,
+        )
 
 
 def message(*, subject="Дело", body="Требуется юридическая помощь.", attachments=()):
@@ -61,3 +69,19 @@ def test_pipeline_processes_multiple_supported_attachments():
     assert len(result.documents) == 2
     assert [item.attachment_name for item in result.documents] == ["first.txt", "second.md"]
     assert len(workflow.calls) == 2
+    assert all(isinstance(item.workflow, DocumentWorkflowResult) for item in result.documents)
+
+
+def test_pipeline_ignores_unsupported_attachment_without_aborting_message():
+    workflow = StubWorkflow()
+    inbox = InboxProcessor(InboxDocumentIntake(), workflow)
+    pipeline = EmailPipeline(EmailProcessor(), inbox)
+    msg = message(
+        attachments=(
+            InboxAttachment("legal.txt", b"legal facts", "text/plain"),
+            InboxAttachment("archive.zip", b"not supported", "application/zip"),
+        )
+    )
+    result = pipeline.process(msg)
+    assert [item.attachment_name for item in result.documents] == ["legal.txt"]
+    assert len(workflow.calls) == 1

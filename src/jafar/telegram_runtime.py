@@ -53,7 +53,7 @@ class TelegramRuntime:
 
         await self.outbound.send_text(
             result.comment.chat_id,
-            result.draft.text,
+            result.draft.decision.draft,
             allowed=result.safety.allowed,
         )
 

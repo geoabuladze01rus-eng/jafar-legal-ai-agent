@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False
+    telegram_dry_run: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

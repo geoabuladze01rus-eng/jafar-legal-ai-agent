@@ -26,7 +26,7 @@ class KadAdapter(PublicSourceAdapter):
             return SourceResult(source_key="kad", status=status, source_url=response.url, data=data)
         except TimeoutError as exc:
             return SourceResult(source_key="kad", status="timeout", error=str(exc))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public-source boundary normalizes transport failures
             return SourceResult(source_key="kad", status="error", error=str(exc))
 
     @staticmethod

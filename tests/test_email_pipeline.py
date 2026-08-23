@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from jafar.document_workflow import DocumentWorkflowResult
 from jafar.email_pipeline import EmailPipeline
 from jafar.email_processing import EmailProcessor
 from jafar.email_reply_draft import EmailReplyDraftGenerator
 from jafar.email_triage import EmailTriage
 from jafar.inbox import InboxAttachment, InboxDocumentIntake, InboxMessage
 from jafar.inbox_processor import InboxProcessor
-from jafar.document_intake import ExtractedDocument
-from jafar.document_workflow import DocumentWorkflowResult
 
 
 class StubWorkflow:
@@ -52,6 +51,27 @@ def test_irrelevant_email_does_not_create_draft():
     )
     assert result.triage.action != "prepare_legal_analysis"
     assert result.reply_draft is None
+
+
+def test_neutral_message_with_pdf_attachment_is_legal():
+    result = EmailProcessor(EmailTriage(), EmailReplyDraftGenerator()).process(
+        message(subject="Документ", body="Во вложении документ.", attachments=(
+            InboxAttachment("postanovlenie.pdf", b"pdf-bytes", "application/pdf"),
+        ))
+    )
+    assert result.triage.action == "prepare_legal_analysis"
+    assert result.triage.legal_relevance >= 0.5
+    assert result.reply_draft is not None
+
+
+def test_neutral_message_with_docx_attachment_is_legal():
+    result = EmailProcessor(EmailTriage(), EmailReplyDraftGenerator()).process(
+        message(subject="Материалы", body="Посмотрите, пожалуйста.", attachments=(
+            InboxAttachment("dogovor.docx", b"docx-bytes", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ))
+    )
+    assert result.triage.action == "prepare_legal_analysis"
+    assert result.reply_draft is not None
 
 
 def test_pipeline_processes_multiple_supported_attachments():

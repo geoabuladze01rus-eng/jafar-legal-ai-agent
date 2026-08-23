@@ -45,9 +45,7 @@ class ModelRouter:
         self.providers = providers
 
     def decide(self, request: ModelRequest) -> RoutingDecision:
-        if request.requires_vision:
-            primary = "gemini"
-        elif request.requires_google_context:
+        if request.requires_vision or request.requires_google_context:
             primary = "gemini"
         elif request.task in {"coding", "technical_analysis", "second_opinion"}:
             primary = "deepseek"

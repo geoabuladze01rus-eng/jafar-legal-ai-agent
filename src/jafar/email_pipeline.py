@@ -6,6 +6,7 @@ from .email_processing import EmailProcessingResult, EmailProcessor
 from .idempotency import InMemoryProcessingLedger, ProcessingLedger
 from .inbox import AttachmentProcessingIssue, InboxMessage
 from .inbox_processor import InboxDocumentResult, InboxProcessor
+from .processing_persistence import InMemoryProcessingResultStore, ProcessingResultStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,17 +18,19 @@ class EmailPipelineResult:
 
 
 class EmailPipeline:
-    """Runs email triage and attachment processing with atomic duplicate protection."""
+    """Runs email processing, duplicate protection and optional durable persistence."""
 
     def __init__(
         self,
         email_processor: EmailProcessor,
         inbox_processor: InboxProcessor,
         ledger: ProcessingLedger | None = None,
+        result_store: ProcessingResultStore | None = None,
     ) -> None:
         self.email_processor = email_processor
         self.inbox_processor = inbox_processor
         self.ledger = ledger or InMemoryProcessingLedger()
+        self.result_store = result_store or InMemoryProcessingResultStore()
 
     def process(self, message: InboxMessage) -> EmailPipelineResult:
         received_at = message.received_at.isoformat()
@@ -48,12 +51,14 @@ class EmailPipeline:
                 inbox_result = self.inbox_processor.process_message(message)
                 document_results = inbox_result.documents
                 issues = inbox_result.issues
-            self.ledger.mark_processed(message.message_id)
-            return EmailPipelineResult(
+            result = EmailPipelineResult(
                 email=email_result,
                 documents=document_results,
                 issues=issues,
             )
+            self.result_store.save(message, result)
+            self.ledger.mark_processed(message.message_id)
+            return result
         except Exception:
             self.ledger.mark_failed(message.message_id)
             raise

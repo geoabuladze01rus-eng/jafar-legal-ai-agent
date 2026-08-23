@@ -8,6 +8,7 @@ from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_models import LegalAnalysis, MatterEvent
 from .matter_matching import MatterMatch, MatterMatcher
+from .matter_repository import MatterRepository
 from .matters import MatterStore
 
 
@@ -25,7 +26,7 @@ class DocumentWorkflow:
 
     def __init__(
         self,
-        store: MatterStore,
+        store: MatterRepository,
         analyzer: LegalAnalyzer,
         matcher: MatterMatcher | None = None,
     ) -> None:

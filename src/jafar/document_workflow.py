@@ -54,6 +54,7 @@ class DocumentWorkflow:
                 event_date=datetime.now(timezone.utc),
                 description=analysis.summary,
                 source_document=document_name,
+                document_fingerprint=extracted.fingerprint,
             )
 
         return DocumentWorkflowResult(

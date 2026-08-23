@@ -41,21 +41,25 @@ class MatterStore(MatterRepository):
             matter.updated_at = utcnow()
         return matter
 
-    def record_document_event(self, matter_id: str, title: str, event_date: datetime,
-                              description: str | None, source_document: str | None,
-                              document_fingerprint: str | None, deadlines: list[Deadline]) -> MatterEvent | None:
+    def record_document_event(
+        self, matter_id: str, title: str, event_date: datetime,
+        description: str | None = None, source_document: str | None = None,
+        document_fingerprint: str | None = None, deadlines: list[Deadline] | None = None,
+    ) -> MatterEvent | None:
         if matter_id not in self._matters:
             return None
         if document_fingerprint:
             existing = self.event_by_fingerprint(matter_id, document_fingerprint)
             if existing is not None:
                 return existing
-        self.add_deadlines(matter_id, deadlines)
+        self.add_deadlines(matter_id, deadlines or [])
         return self.add_event(matter_id, title, event_date, description, source_document, document_fingerprint)
 
-    def add_event(self, matter_id: str, title: str, event_date: datetime,
-                  description: str | None = None, source_document: str | None = None,
-                  document_fingerprint: str | None = None) -> MatterEvent | None:
+    def add_event(
+        self, matter_id: str, title: str, event_date: datetime,
+        description: str | None = None, source_document: str | None = None,
+        document_fingerprint: str | None = None,
+    ) -> MatterEvent | None:
         if matter_id not in self._matters:
             return None
         if document_fingerprint:

@@ -1,5 +1,5 @@
--- CONSOLIDATION: privileged document-search function must not inherit a mutable role search_path.
--- Keep the function body unchanged; only pin name resolution to trusted schemas.
+-- CONSOLIDATION: pin name resolution for document vector search.
+-- The function is SECURITY INVOKER; this is a defense-in-depth hardening measure.
 
-ALTER FUNCTION public.match_document_chunks(vector, integer, jsonb)
+ALTER FUNCTION public.match_document_chunks(vector, integer, uuid)
   SET search_path = public, pg_catalog;

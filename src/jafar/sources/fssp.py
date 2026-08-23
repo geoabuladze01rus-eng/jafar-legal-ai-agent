@@ -22,5 +22,5 @@ class FsspAdapter:
             return SourceResult(self.name, status, data)
         except TimeoutError as exc:
             return SourceResult(self.name, "timeout", {}, str(exc))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - source adapter isolates transport failures
             return SourceResult(self.name, "error", {}, str(exc))

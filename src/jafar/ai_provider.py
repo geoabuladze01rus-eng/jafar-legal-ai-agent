@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from openai import OpenAI
 
+from .config import settings
 from .domains import DocumentTask, MatterType
 from .legal_models import LegalAnalysis
 from .model_router import ModelRequest, ModelResponse
@@ -12,7 +12,7 @@ from .model_router import ModelRequest, ModelResponse
 
 @dataclass(frozen=True)
 class AIProviderConfig:
-    model: str = "gpt-5.6"
+    model: str = settings.model_name
     timeout_seconds: float = 60.0
 
 
@@ -21,15 +21,15 @@ class OpenAILegalAnalyzer:
 
     key = "openai"
 
-    def __init__(self, *, config: AIProviderConfig, client: OpenAI | None = None) -> None:
-        self.config = config
+    def __init__(self, *, config: AIProviderConfig | None = None, client: OpenAI | None = None) -> None:
+        self.config = config or AIProviderConfig()
         self.client = client or OpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            timeout=config.timeout_seconds,
+            api_key=settings.openai_api_key,
+            timeout=self.config.timeout_seconds,
         )
 
     def available(self) -> bool:
-        return bool(os.environ.get("OPENAI_API_KEY")) or self.client is not None
+        return bool(settings.openai_api_key)
 
     def analyze(
         self,

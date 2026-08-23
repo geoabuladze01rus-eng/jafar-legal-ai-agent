@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any, Iterable
+from typing import Any, ClassVar, Iterable
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,14 +18,16 @@ class AttachmentRecord:
 class EmailAttachmentPipeline:
     """Normalizes email attachments before document/evidence processing."""
 
-    ALLOWED_DOCUMENT_TYPES = {
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "text/plain",
-        "text/csv",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
+    ALLOWED_DOCUMENT_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain",
+            "text/csv",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+    )
 
     def inspect(self, attachments: Iterable[dict[str, Any]]) -> list[AttachmentRecord]:
         result: list[AttachmentRecord] = []

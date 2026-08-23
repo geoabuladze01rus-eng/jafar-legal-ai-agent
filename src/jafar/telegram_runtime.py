@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from .comment_pipeline import process_update
+from .production_guard import ProductionGuard
 from .telegram_outbound import TelegramOutbound
 from .telegram_update_receiver import TelegramUpdateReceiver, run_polling
 
@@ -40,13 +41,10 @@ class TelegramRuntime:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
         self.outbound = TelegramOutbound(
-            guard=__import__("jafar.production_guard", fromlist=["ProductionGuard"]).ProductionGuard(
-                production_send=production_send
-            ),
+            guard=ProductionGuard(production_send=production_send),
             bot=self.bot,
         )
         self._task: asyncio.Task[None] | None = None
-        self._stopping = False
 
     async def handle_update(self, update: dict[str, Any]) -> None:
         result = process_update(update)
@@ -68,11 +66,9 @@ class TelegramRuntime:
     def start(self) -> None:
         if self._task is not None and not self._task.done():
             return
-        self._stopping = False
         self._task = asyncio.create_task(self.run(), name="jafar-telegram-polling")
 
     async def stop(self) -> None:
-        self._stopping = True
         if self._task is not None:
             self._task.cancel()
             try:

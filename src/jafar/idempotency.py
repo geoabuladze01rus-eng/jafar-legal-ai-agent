@@ -4,11 +4,13 @@ from typing import Protocol
 
 
 class ProcessingLedger(Protocol):
-    """Durable boundary used to prevent duplicate message processing."""
+    """Atomic boundary used to claim a message before processing it."""
 
-    def has_processed(self, message_id: str) -> bool: ...
+    def claim(self, message_id: str, *, sender: str, subject: str, received_at: str) -> bool: ...
 
     def mark_processed(self, message_id: str) -> None: ...
+
+    def mark_failed(self, message_id: str) -> None: ...
 
 
 class InMemoryProcessingLedger:
@@ -16,9 +18,17 @@ class InMemoryProcessingLedger:
 
     def __init__(self) -> None:
         self._processed: set[str] = set()
+        self._claimed: set[str] = set()
 
-    def has_processed(self, message_id: str) -> bool:
-        return message_id in self._processed
+    def claim(self, message_id: str, *, sender: str, subject: str, received_at: str) -> bool:
+        if message_id in self._claimed or message_id in self._processed:
+            return False
+        self._claimed.add(message_id)
+        return True
 
     def mark_processed(self, message_id: str) -> None:
+        self._claimed.discard(message_id)
         self._processed.add(message_id)
+
+    def mark_failed(self, message_id: str) -> None:
+        self._claimed.discard(message_id)

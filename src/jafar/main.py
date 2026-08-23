@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -116,7 +117,7 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
 
 @app.post("/v1/documents/analyze", response_model=AnalysisResponse)
 async def analyze_document(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
     task: str = "legal_analysis",
     matter_type: MatterType = MatterType.GENERAL,
     matter_id: str | None = None,

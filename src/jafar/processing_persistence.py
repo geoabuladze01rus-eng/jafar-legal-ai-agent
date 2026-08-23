@@ -49,7 +49,7 @@ class SupabaseProcessingResultStore:
                 {
                     "filename": item.attachment_name,
                     "storage_path": item.storage_path,
-                    "content_type": item.attachment.media_type,
+                    "content_type": item.content_type,
                     "fingerprint": item.fingerprint,
                     "matter_id": item.workflow.match.matter_id if item.workflow.match else None,
                     "analysis": _jsonable(item.workflow.analysis),

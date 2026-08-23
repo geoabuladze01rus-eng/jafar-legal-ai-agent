@@ -1,39 +1,36 @@
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from .email_pipeline import EmailPipelineResult
 from .inbox import InboxMessage
+
+if TYPE_CHECKING:
+    from .email_pipeline import EmailPipelineResult
 
 
 class ProcessingResultStore(Protocol):
     """Durable boundary for saving the outcome of an email processing run."""
 
-    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None: ...
+    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None: ...
 
 
 class InMemoryProcessingResultStore:
     def __init__(self) -> None:
-        self.results: dict[str, EmailPipelineResult] = {}
+        self.results: dict[str, "EmailPipelineResult"] = {}
 
-    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None:
+    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None:
         self.results[message.message_id] = result
 
 
 class SupabaseProcessingResultStore:
-    """Persists normalized email triage and document analyses through RPC.
-
-    The concrete Supabase SDK is intentionally kept outside the domain layer.
-    The RPC should perform the email upsert and analysis inserts atomically.
-    """
+    """Persists normalized email triage and document analyses through RPC."""
 
     def __init__(self, client: object) -> None:
         self.client = client
 
-    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None:
+    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None:
         triage = result.email.triage
-        draft = result.email.reply_draft
         payload = {
             "message_id": message.message_id,
             "sender": message.sender,
@@ -43,10 +40,10 @@ class SupabaseProcessingResultStore:
             "triage_confidence": triage.legal_relevance,
             "triage_action": triage.action,
             "case_candidates": list(triage.case_candidates),
-            "reply_draft": _draft_text(draft),
+            "reply_draft": _draft_text(result.email.reply_draft),
             "issues": [
-                {"filename": issue.filename, "error_type": issue.error_type, "message": issue.message}
-                for issue in result.issues
+                {"filename": i.filename, "error_type": i.error_type, "message": i.message}
+                for i in result.issues
             ],
             "documents": [
                 {
@@ -58,8 +55,7 @@ class SupabaseProcessingResultStore:
                 for item in result.documents
             ],
         }
-        rpc = getattr(self.client, "rpc")
-        rpc("persist_email_processing", {"p_payload": json.dumps(payload, ensure_ascii=False)})
+        self.client.rpc("persist_email_processing", {"p_payload": json.dumps(payload, ensure_ascii=False)})
 
 
 def _draft_text(draft: object | None) -> str | None:

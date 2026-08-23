@@ -75,7 +75,11 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
-@app.post("/v1/command", response_model=CommandResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/v1/command",
+    response_model=CommandResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def command(request: CommandRequest) -> CommandResponse:
     """Minimal safe command gateway for Apple clients.
 
@@ -104,7 +108,11 @@ def command(request: CommandRequest) -> CommandResponse:
     )
 
 
-@app.post("/v1/analyze", response_model=AnalysisResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/v1/analyze",
+    response_model=AnalysisResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
     analysis = analyzer.analyze(request.text, request.task, request.matter_type)
     if request.matter_id:
@@ -115,7 +123,11 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
     return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
 
 
-@app.post("/v1/documents/analyze", response_model=AnalysisResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/v1/documents/analyze",
+    response_model=AnalysisResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def analyze_document(
     file: UploadFile = File(...),
     task: str = "legal_analysis",
@@ -149,7 +161,12 @@ async def analyze_document(
     )
 
 
-@app.post("/v1/matters", response_model=Matter, status_code=201, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/v1/matters",
+    response_model=Matter,
+    status_code=201,
+    dependencies=[Depends(require_api_key)],
+)
 def create_matter(request: CreateMatterRequest) -> Matter:
     now = datetime.now(timezone.utc)
     matter = Matter(
@@ -166,12 +183,20 @@ def create_matter(request: CreateMatterRequest) -> Matter:
     return matter_store.create(matter)
 
 
-@app.get("/v1/matters", response_model=list[Matter], dependencies=[Depends(require_api_key)])
+@app.get(
+    "/v1/matters",
+    response_model=list[Matter],
+    dependencies=[Depends(require_api_key)],
+)
 def list_matters() -> list[Matter]:
     return matter_store.list_matters()
 
 
-@app.get("/v1/matters/{matter_id}", response_model=Matter, dependencies=[Depends(require_api_key)])
+@app.get(
+    "/v1/matters/{matter_id}",
+    response_model=Matter,
+    dependencies=[Depends(require_api_key)],
+)
 def get_matter(matter_id: str) -> Matter:
     matter = matter_store.get(matter_id)
     if matter is None:
@@ -179,7 +204,10 @@ def get_matter(matter_id: str) -> Matter:
     return matter
 
 
-@app.get("/v1/matters/{matter_id}/events", dependencies=[Depends(require_api_key)])
+@app.get(
+    "/v1/matters/{matter_id}/events",
+    dependencies=[Depends(require_api_key)],
+)
 def get_matter_events(matter_id: str):
     if matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")

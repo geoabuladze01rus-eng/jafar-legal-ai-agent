@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.inbox import InboxAttachment, InboxDocumentIntake, InboxMessage
@@ -12,15 +12,15 @@ class FakeWorkflow:
         return type("WorkflowResult", (), {"match": None, "analysis": {"ok": True}})()
 
 
-def test_processor_persists_original_and_exposes_fingerprint():
+def test_processor_persists_original_and_exposes_fingerprint(synthetic_pdf_bytes):
     storage = InMemoryAttachmentStorage()
     processor = InboxProcessor(InboxDocumentIntake(), FakeWorkflow(), storage)
-    attachment = InboxAttachment("order.pdf", b"legal-original", "application/pdf")
+    attachment = InboxAttachment("order.pdf", synthetic_pdf_bytes, "application/pdf")
     message = InboxMessage(
         message_id="msg-storage-test",
         sender="client@example.test",
         subject="Order",
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(UTC),
         body_text="Please review",
         attachments=(attachment,),
     )
@@ -32,4 +32,4 @@ def test_processor_persists_original_and_exposes_fingerprint():
     document = result.documents[0]
     assert document.storage_path == "msg-storage-test/order.pdf"
     assert document.fingerprint
-    assert storage.files[document.storage_path] == (b"legal-original", "application/pdf")
+    assert storage.files[document.storage_path] == (synthetic_pdf_bytes, "application/pdf")

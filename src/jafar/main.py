@@ -16,6 +16,7 @@ from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 from .telegram_runtime import TelegramRuntime
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
+from .command_runtime import JafarCommandRuntime
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -37,13 +38,14 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.5.1", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
+command_runtime = JafarCommandRuntime(matter_store)
 
 
 class HealthResponse(BaseModel):
@@ -64,12 +66,15 @@ class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     user_id: str = Field(min_length=1, max_length=200)
     source_device: str = Field(min_length=1, max_length=100)
+    approved: bool = False
 
 
 class CommandResponse(BaseModel):
     message: str
     intent: str
     approval_required: bool = False
+    request_id: str
+    data: dict | None = None
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -81,18 +86,28 @@ def health() -> HealthResponse:
 def command(request: CommandRequest) -> CommandResponse:
     normalized = " ".join(request.text.lower().split())
 
-    if any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
-        matters = matter_store.list_matters()
-        if not matters:
-            return CommandResponse(message="Сейчас открытых дел в хранилище нет.", intent="list_matters")
-        titles = ", ".join(matter.title for matter in matters[:10])
-        suffix = "" if len(matters) <= 10 else f" и ещё {len(matters) - 10}"
-        return CommandResponse(message=f"У вас {len(matters)} дел: {titles}{suffix}.", intent="list_matters")
-
     if "здоров" in normalized or "проверка связи" in normalized:
-        return CommandResponse(message="Джафар на связи.", intent="health")
+        intent = "health"
+    elif any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
+        intent = "list_matters"
+    else:
+        return CommandResponse(
+            message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.",
+            intent="natural_language_command",
+            request_id=str(uuid4()),
+        )
 
-    return CommandResponse(message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.", intent="natural_language_command")
+    result = command_runtime.execute(
+        intent,
+        approved=request.approved,
+    )
+    return CommandResponse(
+        message=result.message,
+        intent=result.intent,
+        approval_required=result.approval_required,
+        request_id=result.request_id,
+        data=result.data,
+    )
 
 
 def _analyze(text: str, task: DocumentTask, matter_type: MatterType):

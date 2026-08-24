@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -29,7 +29,7 @@ def make_analysis() -> LegalAnalysis:
         task=DocumentTask.LEGAL_ANALYSIS,
         matter_type=MatterType.GENERAL,
         summary="A supported summary.",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         confidence=0.8,
     )
 
@@ -61,3 +61,5 @@ def test_openai_adapter_rejects_empty_structured_response():
             task=DocumentTask.LEGAL_ANALYSIS,
             matter_type=MatterType.GENERAL,
         )
+
+    assert len(client.responses.calls) == 1

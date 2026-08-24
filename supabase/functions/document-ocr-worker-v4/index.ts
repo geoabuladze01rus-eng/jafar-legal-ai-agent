@@ -3,7 +3,11 @@ import {
   clampConfidence,
   configuredInteger,
   configuredModel,
+  fetchWithRetry,
   isAuthorizedWorker,
+  isRetryableStatus,
+  isTransientRequestFailure,
+  jobRetryDelayMs,
 } from "../_shared/document-worker.ts";
 
 const OCR_MODEL = configuredModel("JAFAR_OCR_MODEL", "gpt-5.6");
@@ -13,6 +17,18 @@ const DEFAULT_MAX_RETRIES = configuredInteger(
   3,
   1,
   20,
+);
+const OPENAI_MAX_ATTEMPTS = configuredInteger(
+  "JAFAR_OPENAI_MAX_ATTEMPTS",
+  3,
+  1,
+  10,
+);
+const OPENAI_TIMEOUT_MS = configuredInteger(
+  "JAFAR_OPENAI_TIMEOUT_MS",
+  90000,
+  1000,
+  600000,
 );
 
 type OcrPage = {
@@ -45,14 +61,25 @@ function configuredServiceKey(): string | undefined {
   return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || undefined;
 }
 
-async function openaiFile(key: string, file: Blob) {
-  const form = new FormData();
-  form.append("purpose", "user_data");
-  form.append("file", file, "document.pdf");
-  const response = await fetch("https://api.openai.com/v1/files", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: form,
+async function openaiFile(key: string, file: Blob, requestTrace: string) {
+  const response = await fetchWithRetry((signal, _attempt, requestId) => {
+    const form = new FormData();
+    form.append("purpose", "user_data");
+    form.append("file", file, "document.pdf");
+    return fetch("https://api.openai.com/v1/files", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "x-client-request-id": requestId,
+      },
+      body: form,
+      signal,
+    });
+  }, {
+    maxAttempts: OPENAI_MAX_ATTEMPTS,
+    timeoutMs: OPENAI_TIMEOUT_MS,
+    stage: "ocr_upload",
+    requestIdPrefix: `${requestTrace}-upload`,
   });
   if (!response.ok) {
     throw new Error(
@@ -95,15 +122,16 @@ Deno.serve(async (req) => {
 
   const job = jobs?.[0];
   if (!job) return json({ ok: true, status: "idle" });
+  const requestTrace = `${job.id}-ocr-${crypto.randomUUID()}`;
 
   let maxRetries = DEFAULT_MAX_RETRIES;
   const fail = async (message: string, retry = true) => {
     const attempts = Number(job.attempts ?? 1);
     const terminal = !retry || attempts >= maxRetries;
-    const next = terminal ? null : new Date(
-      Date.now() + Math.min(120000, 5000 * 2 ** Math.max(0, attempts - 1)),
-    )
-      .toISOString();
+    const next = terminal
+      ? null
+      : new Date(Date.now() + jobRetryDelayMs(attempts))
+        .toISOString();
     const { error } = await db.rpc("fail_document_ocr_job", {
       p_job_id: job.id,
       p_document_id: job.document_id,
@@ -146,9 +174,9 @@ Deno.serve(async (req) => {
 
   let uploaded;
   try {
-    uploaded = await openaiFile(key, file);
+    uploaded = await openaiFile(key, file, requestTrace);
   } catch (error) {
-    await fail(String(error));
+    await fail(String(error), isTransientRequestFailure(error));
     return json({ error: "openai_file_upload_failed" }, 502);
   }
 
@@ -168,22 +196,48 @@ Deno.serve(async (req) => {
     text: { format: { type: "json_object" } },
   };
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry((signal, _attempt, requestId) => {
+      return fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+          "x-client-request-id": requestId,
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+    }, {
+      maxAttempts: OPENAI_MAX_ATTEMPTS,
+      timeoutMs: OPENAI_TIMEOUT_MS,
+      stage: "ocr",
+      requestIdPrefix: `${requestTrace}-response`,
+    });
+  } catch (error) {
+    const message = `responses:${String(error)}`;
+    await fail(message, isTransientRequestFailure(message));
+    return json({ error: "openai_ocr_failed" }, 502);
+  }
   if (!response.ok) {
     await fail(
       `responses:${response.status}:${(await response.text()).slice(0, 1500)}`,
+      isRetryableStatus(response.status),
     );
     return json({ error: "openai_ocr_failed" }, 502);
   }
 
-  const output = await response.json() as ResponsesOutput;
+  let output: ResponsesOutput;
+  try {
+    output = await response.json() as ResponsesOutput;
+  } catch {
+    await fail("ocr_response_invalid_json", false);
+    return json(
+      { error: "ocr_response_invalid_json", manual_review_required: true },
+      502,
+    );
+  }
   const raw = output.output_text ?? output.output
     ?.flatMap((item) => item.content ?? [])
     .map((item) => item.text ?? "")

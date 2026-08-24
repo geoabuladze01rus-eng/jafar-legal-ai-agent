@@ -4,7 +4,11 @@ import {
   clampConfidence,
   configuredInteger,
   configuredModel,
+  embeddingStageStatus,
+  fetchWithRetry,
   isAuthorizedWorker,
+  jobRetryDelayMs,
+  pipelineFailureDisposition,
   type SourceChunk,
   validateAnalysisResult,
 } from "../_shared/document-worker.ts";
@@ -25,6 +29,24 @@ const ANALYSIS_MAX_CONTEXT_CHARS = configuredInteger(
   700000,
   10000,
   2000000,
+);
+const DEFAULT_PIPELINE_MAX_RETRIES = configuredInteger(
+  "JAFAR_PIPELINE_MAX_RETRIES",
+  3,
+  1,
+  20,
+);
+const OPENAI_MAX_ATTEMPTS = configuredInteger(
+  "JAFAR_OPENAI_MAX_ATTEMPTS",
+  3,
+  1,
+  10,
+);
+const OPENAI_TIMEOUT_MS = configuredInteger(
+  "JAFAR_OPENAI_TIMEOUT_MS",
+  90000,
+  1000,
+  600000,
 );
 const CHUNK_WRITE_BATCH_SIZE = 200;
 const CHUNK_READ_PAGE_SIZE = 500;
@@ -104,20 +126,30 @@ Deno.serve(async (req) => {
 
   const job = jobs?.[0];
   if (!job) return json({ ok: true, status: "idle" });
+  const requestTrace = `${job.id}-${job.stage}-${crypto.randomUUID()}`;
+  let pipelineMaxRetries = DEFAULT_PIPELINE_MAX_RETRIES;
 
   const finish = async (
     status: "queued" | "completed" | "failed" | "manual_review",
     error: string | null = null,
+    availableAt: string | null = null,
   ) => {
+    const parameters: Record<string, unknown> = {
+      p_job_id: job.id,
+      p_document_id: job.document_id,
+      p_worker_id: workerId,
+      p_error: error?.slice(0, 2000) ?? null,
+    };
+    if (availableAt) {
+      parameters.p_available_at = availableAt;
+    } else {
+      parameters.p_status = status;
+    }
     const { error: finishError } = await db.rpc(
-      "finish_document_pipeline_job",
-      {
-        p_job_id: job.id,
-        p_document_id: job.document_id,
-        p_worker_id: workerId,
-        p_status: status,
-        p_error: error?.slice(0, 2000) ?? null,
-      },
+      availableAt
+        ? "retry_document_pipeline_job"
+        : "finish_document_pipeline_job",
+      parameters,
     );
     if (finishError) {
       throw new Error(`pipeline_finish_failed:${finishError.message}`);
@@ -135,10 +167,15 @@ Deno.serve(async (req) => {
 
   try {
     const { data: doc, error: docError } = await db.from("documents")
-      .select("id,matter_id,filename,processing_status,manual_review_required")
+      .select(
+        "id,matter_id,filename,processing_status,manual_review_required,max_retry_attempts",
+      )
       .eq("id", job.document_id)
       .maybeSingle();
     if (docError || !doc) throw new Error("document_not_found");
+    pipelineMaxRetries = Number.isSafeInteger(Number(doc.max_retry_attempts))
+      ? Math.max(1, Number(doc.max_retry_attempts))
+      : DEFAULT_PIPELINE_MAX_RETRIES;
     if (
       doc.manual_review_required || doc.processing_status === "manual_review"
     ) {
@@ -193,17 +230,29 @@ Deno.serve(async (req) => {
         { id: string; content: string }
       >;
       if (pendingChunks.length) {
-        const response = await fetch("https://api.openai.com/v1/embeddings", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${key}`,
-            "content-type": "application/json",
+        const response = await fetchWithRetry(
+          (signal, _attempt, requestId) => {
+            return fetch("https://api.openai.com/v1/embeddings", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${key}`,
+                "content-type": "application/json",
+                "x-client-request-id": requestId,
+              },
+              body: JSON.stringify({
+                model: EMBEDDING_MODEL,
+                input: pendingChunks.map((chunk) => chunk.content),
+              }),
+              signal,
+            });
           },
-          body: JSON.stringify({
-            model: EMBEDDING_MODEL,
-            input: pendingChunks.map((chunk) => chunk.content),
-          }),
-        });
+          {
+            maxAttempts: OPENAI_MAX_ATTEMPTS,
+            timeoutMs: OPENAI_TIMEOUT_MS,
+            stage: "embed",
+            requestIdPrefix: `${requestTrace}-embedding`,
+          },
+        );
         if (!response.ok) {
           throw new Error(
             `embedding_api:${response.status}:${
@@ -237,7 +286,7 @@ Deno.serve(async (req) => {
       if (remainingError) {
         throw new Error(`embedding_count_failed:${remainingError.message}`);
       }
-      if ((remaining ?? 0) > 0) {
+      if (embeddingStageStatus(remaining ?? 0) === "queued") {
         await finish("queued");
         await heartbeat();
         return json({
@@ -268,6 +317,45 @@ Deno.serve(async (req) => {
         throw new Error("analysis_manual_review_embeddings_incomplete");
       }
 
+      const pipelineJobId = String(job.id);
+      const { data: existingAnalysis, error: existingError } = await db.from(
+        "ai_analyses",
+      )
+        .select("id,status")
+        .eq("document_id", doc.id)
+        .eq("analysis_type", "document_pipeline")
+        .eq("created_by", "document-pipeline-worker")
+        .contains("result", { pipeline_job_id: pipelineJobId })
+        .in("status", ["completed", "manual_review"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingError) {
+        throw new Error(
+          `analysis_idempotency_check_failed:${existingError.message}`,
+        );
+      }
+      if (existingAnalysis) {
+        const existingStatus = existingAnalysis.status === "completed"
+          ? "completed"
+          : "manual_review";
+        await finish(
+          existingStatus,
+          existingStatus === "manual_review"
+            ? "analysis_manual_review:existing_result"
+            : null,
+        );
+        await heartbeat();
+        return json({
+          ok: existingStatus === "completed",
+          job_id: job.id,
+          document_id: job.document_id,
+          stage: job.stage,
+          status: existingStatus,
+          idempotent_replay: true,
+        }, existingStatus === "completed" ? 200 : 422);
+      }
+
       const chunks = await readAllChunks(doc.id);
       if (!chunks.length) throw new Error("no_chunks");
       const context = chunks.map((chunk) => {
@@ -279,18 +367,30 @@ Deno.serve(async (req) => {
 
       const prompt =
         `Analyze ONLY the supplied legal document. Do not invent facts and do not silently correct the source. Return JSON with summary, persons, dates, case_numbers, statutes, monetary_amounts, procedural_events, contradictions, risks, missing_information, confidence, requires_lawyer_review, citations. citations must be an array of {claim, page, chunk_index}; every significant factual finding must have a citation to the supplied page and chunk. Explicitly distinguish: (1) statements of the suspect, (2) questions/statements of the investigator, (3) information about third parties, and (4) procedural boilerplate. If the supplied pages are incomplete, say so.\n\nDOCUMENT:\n${context}`;
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${key}`,
-          "content-type": "application/json",
+      const response = await fetchWithRetry(
+        (signal, _attempt, requestId) => {
+          return fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${key}`,
+              "content-type": "application/json",
+              "x-client-request-id": requestId,
+            },
+            body: JSON.stringify({
+              model: ANALYSIS_MODEL,
+              input: prompt,
+              text: { format: { type: "json_object" } },
+            }),
+            signal,
+          });
         },
-        body: JSON.stringify({
-          model: ANALYSIS_MODEL,
-          input: prompt,
-          text: { format: { type: "json_object" } },
-        }),
-      });
+        {
+          maxAttempts: OPENAI_MAX_ATTEMPTS,
+          timeoutMs: OPENAI_TIMEOUT_MS,
+          stage: "analyze",
+          requestIdPrefix: `${requestTrace}-analysis`,
+        },
+      );
       if (!response.ok) {
         throw new Error(
           `analysis_api:${response.status}:${
@@ -311,9 +411,17 @@ Deno.serve(async (req) => {
       const result = parsed as Record<string, unknown>;
 
       const validation = validateAnalysisResult(result, chunks);
+      const sourceChunks = chunks.map((chunk) => ({
+        id: chunk.id,
+        page: chunk.source_page,
+        chunk_index: chunk.chunk_index,
+      }));
       const persistedResult = {
         ...result,
+        pipeline_job_id: pipelineJobId,
         citations: validation.citations,
+        source_chunks: sourceChunks,
+        confidence: clampConfidence(result.confidence),
         requires_lawyer_review: true,
         validation_errors: validation.errors,
       };
@@ -323,11 +431,7 @@ Deno.serve(async (req) => {
         analysis_type: "document_pipeline",
         result: persistedResult,
         citations: validation.citations,
-        source_chunks: chunks.map((chunk) => ({
-          id: chunk.id,
-          page: chunk.source_page,
-          chunk_index: chunk.chunk_index,
-        })),
+        source_chunks: sourceChunks,
         confidence: clampConfidence(result.confidence),
         requires_lawyer_review: true,
         status: validation.valid ? "completed" : "manual_review",
@@ -370,9 +474,23 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const message = String(error);
-    const manualReview = message.includes("manual_review");
+    const attempts = Number(job.attempts ?? 1);
+    const disposition = pipelineFailureDisposition(
+      message,
+      attempts,
+      pipelineMaxRetries,
+    );
+    const manualReview = disposition === "manual_review";
+    const retrying = disposition === "queued";
     try {
-      await finish(manualReview ? "manual_review" : "failed", message);
+      const retryAt = retrying
+        ? new Date(Date.now() + jobRetryDelayMs(attempts)).toISOString()
+        : null;
+      await finish(
+        manualReview ? "manual_review" : retrying ? "queued" : "failed",
+        message,
+        retryAt,
+      );
     } catch (finishError) {
       return json({
         ok: false,
@@ -389,8 +507,9 @@ Deno.serve(async (req) => {
       job_id: job.id,
       document_id: job.document_id,
       stage: job.stage,
-      status: manualReview ? "manual_review" : "failed",
+      status: manualReview ? "manual_review" : retrying ? "queued" : "failed",
+      retry_scheduled: retrying || undefined,
       error: message,
-    }, manualReview ? 422 : 502);
+    }, manualReview ? 422 : retrying ? 503 : 502);
   }
 });

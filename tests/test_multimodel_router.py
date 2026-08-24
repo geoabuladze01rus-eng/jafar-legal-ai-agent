@@ -38,7 +38,9 @@ def test_router_falls_back_when_primary_is_unavailable() -> None:
         "gemini": FakeProvider("gemini", "vision"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
+    decision = ModelRouter(providers).decide(
+        ModelRequest("p", "legal_analysis", confidential=False)
+    )
     assert decision.primary == "gemini"
 
 
@@ -48,7 +50,7 @@ def test_router_falls_back_when_primary_fails_at_runtime() -> None:
         "gemini": FakeProvider("gemini", "fallback"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    result = ModelRouter(providers).run(ModelRequest("p", "legal_analysis"))
+    result = ModelRouter(providers).run(ModelRequest("p", "legal_analysis", confidential=False))
     assert result[0].provider == "gemini"
     assert result[0].metadata["routing_fallback_from"] == "openai"
 
@@ -60,7 +62,7 @@ def test_verification_uses_independent_provider() -> None:
         "gemini": FakeProvider("gemini", "vision"),
     }
     result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
+        ModelRequest("p", "legal_analysis", verification=True, confidential=False)
     )
     assert result.primary.provider == "openai"
     assert result.verifier is not None
@@ -76,7 +78,7 @@ def test_verification_marks_disagreement_instead_of_hiding_it() -> None:
         "gemini": FakeProvider("gemini", "vision"),
     }
     result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
+        ModelRequest("p", "legal_analysis", verification=True, confidential=False)
     )
     assert result.verifier is not None
     assert result.confidence == 0.45
@@ -99,4 +101,6 @@ def test_verifier_runtime_failure_is_not_silently_downgraded() -> None:
         "deepseek": FakeProvider("deepseek", "broken", error=RuntimeError("timeout")),
     }
     with pytest.raises(RuntimeError, match="Independent verification provider"):
-        ModelRouter(providers).run(ModelRequest("p", "legal_analysis", verification=True))
+        ModelRouter(providers).run(
+            ModelRequest("p", "legal_analysis", verification=True, confidential=False)
+        )

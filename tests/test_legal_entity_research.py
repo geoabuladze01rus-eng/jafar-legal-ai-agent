@@ -12,7 +12,7 @@ def test_research_builds_auditable_profile_from_registered_sources():
         )
     )
 
-    report = service.research(EntityQuery("7701234567", "inn"))
+    report = service.research(EntityQuery(inn="7701234567"))
 
     assert report.query.value == "7701234567"
     assert report.profile["sources_checked"] == 2

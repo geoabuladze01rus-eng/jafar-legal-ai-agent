@@ -408,3 +408,55 @@ Deno.test("facts, statements, inference, and evidence gaps require provenance", 
     assert(result.errors.includes("significant_findings_without_citations"));
   }
 });
+
+Deno.test("synthetic OCR output keeps contradiction and evidence-gap provenance", () => {
+  const documentId = "synthetic-document-1";
+  const ocrText = [
+    "Уголовное дело № 99-000001/2026.",
+    "Подозреваемый сообщил, что 24 августа находился в другом городе.",
+    "Следователь указал, что он находился по адресу события.",
+    "Показания противоречат друг другу.",
+    "Упомянутое приложение № 3 с записью камеры отсутствует.",
+  ].join(" ");
+  const chunks = chunkPages([{ page_number: 1, extracted_text: ocrText }]);
+  assertEquals(chunks.length, 1);
+
+  const sourceChunks = chunks.map((chunk) => ({
+    id: `${documentId}-chunk-${chunk.chunk_index}`,
+    source_page: chunk.source_page,
+    chunk_index: chunk.chunk_index,
+  }));
+  const claims = [
+    "Документ относится к вымышленному делу № 99-000001/2026",
+    "Сторона заявляет об отсутствии по адресу события",
+    "Следователь утверждает обратное",
+    "Заявления о местонахождении противоречат друг другу",
+    "Упомянутое приложение № 3 отсутствует",
+    "Документ требует проверки адвокатом",
+  ];
+  const result = {
+    summary: claims[5],
+    facts: [claims[0]],
+    party_statements: [claims[1]],
+    investigator_or_court_statements: [claims[2]],
+    contradictions: [claims[3]],
+    evidence_gaps: [claims[4]],
+    confidence: 0.82,
+    requires_lawyer_review: true,
+    citations: claims.map((claim) => ({
+      claim,
+      page: 1,
+      chunk_index: 0,
+    })),
+  };
+
+  const validation = validateAnalysisResult(result, sourceChunks);
+  assert(validation.valid);
+  assertEquals(validation.citations.length, claims.length);
+  assert(
+    validation.citations.every((citation) =>
+      citation.source_chunk_id === `${documentId}-chunk-0`
+    ),
+  );
+  assert(result.requires_lawyer_review);
+});

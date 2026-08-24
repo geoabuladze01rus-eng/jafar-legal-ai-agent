@@ -22,17 +22,20 @@ lawyer or an explicit recovery workflow requeues the affected job. The legacy
   requires every document chunk to have an embedding.
 - `finish_document_pipeline_job` fences stale workers with `locked_by` and only
   marks the document `completed` after a successfully validated analyze stage.
-- OpenAI network failures, timeouts, 408, 409, 429, and 5xx responses use bounded
-  exponential retry with jitter. HTTP 400, 401, 403, and 404, malformed model
-  output, and non-recoverable schema validation errors are not retried. If
+- OpenAI network failures, timeouts, 408, 409, 429, and 5xx responses use
+  bounded exponential retry with jitter. HTTP 400, 401, 403, and 404, malformed
+  model output, and non-recoverable schema validation errors are not retried. If
   transient request retries are exhausted, the pipeline job is atomically
   returned to `queued` with a database backoff timestamp until
   `max_retry_attempts` is reached. Expired leases follow the same limit.
+- `resume_document_embedding_job` is the lease-fenced success path for a partial
+  embed batch. It requeues the job without consuming failure retry capacity;
+  `retry_document_pipeline_job` remains the requeue path for transient failures.
 
 The embedding worker processes at most `JAFAR_EMBEDDING_BATCH_SIZE` chunks per
 invocation. If unembedded chunks remain, it atomically requeues the same embed
-job. Already populated embeddings are selected out and cannot be overwritten.
-A 250-chunk document therefore completes as 100 + 100 + 50, with the first two
+job. Already populated embeddings are selected out and cannot be overwritten. A
+250-chunk document therefore completes as 100 + 100 + 50, with the first two
 batches requeued. Analyze cannot be claimed during this period.
 
 ## Analysis provenance
@@ -40,10 +43,10 @@ batches requeued. Analyze cannot be claimed during this period.
 Every persisted document analysis includes `document_id`, `matter_id`, validated
 citations, the complete source-chunk map (`id`, `page`, `chunk_index`), bounded
 confidence, and `requires_lawyer_review = true`. Significant findings without a
-valid `{claim, page, chunk_index}` citation are persisted as `manual_review`, not
-as a completed analysis. Each result carries its pipeline job ID; a lease replay
-reuses an already persisted terminal result instead of inserting a duplicate.
-Earlier successful analyses are never deleted or overwritten.
+valid `{claim, page, chunk_index}` citation are persisted as `manual_review`,
+not as a completed analysis. Each result carries its pipeline job ID; a lease
+replay reuses an already persisted terminal result instead of inserting a
+duplicate. Earlier successful analyses are never deleted or overwritten.
 
 ## Worker authentication and deployment
 
@@ -53,12 +56,13 @@ application caller themselves. Scheduled requests must send:
 - `apikey`: the Supabase publishable key, for gateway semantics;
 - `x-jafar-worker-secret`: the independent `JAFAR_WORKER_SECRET` value.
 
-Provision `project_url`, `supabase_publishable_key`, and `jafar_worker_secret` in
-Supabase Vault without committing or printing their values. The corrective
+Provision `project_url`, `supabase_publishable_key`, and `jafar_worker_secret`
+in Supabase Vault without committing or printing their values. The corrective
 migration removes legacy schedules. When all three names exist it schedules the
 workers automatically; otherwise it leaves them safely unscheduled. After
-provisioning missing values, run `select public.schedule_jafar_document_workers();`
-as `service_role` or an administrative database role.
+provisioning missing values, run
+`select public.schedule_jafar_document_workers();` as `service_role` or an
+administrative database role.
 
 Deploy the database migrations before the two Edge Functions so the new RPC
 signatures and lease-fencing columns exist when the workers start.
@@ -67,5 +71,9 @@ signatures and lease-fencing columns exist when the workers start.
 `JAFAR_PIPELINE_MAX_RETRIES` are validated runtime settings. Each OpenAI attempt
 also sends a unique `X-Client-Request-Id`; neither credentials nor document text
 is included in that identifier. Structured request logs contain only request ID,
-stage, attempt, HTTP status, latency, and error category. They never contain API
-keys, worker/service-role secrets, request bodies, or document text.
+worker, stage, job ID, document ID, attempt, HTTP status, latency, and error
+category. They never contain API keys, worker/service-role secrets, request
+bodies, provider error bodies, or document text.
+
+The complete staging deployment and synthetic legal-document smoke procedure is
+in [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md).

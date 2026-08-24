@@ -1,11 +1,13 @@
 # Jafar — AI Legal Agent
 
-Private AI assistant for legal practice: document analysis, email triage, drafting, deadlines, voice workflows and controlled automation.
+Private AI assistant for legal practice: document analysis, email triage,
+drafting, deadlines, voice workflows and controlled automation.
 
 ## Current foundation
 
 - FastAPI service with `/health` and `/v1/analyze` endpoints.
-- Typed legal domain primitives for criminal, arbitration, civil and administrative work.
+- Typed legal domain primitives for criminal, arbitration, civil and
+  administrative work.
 - Architecture and security boundaries documented in `docs/ARCHITECTURE.md`.
 - Environment template without credentials.
 - API smoke tests.
@@ -32,4 +34,10 @@ Health check: `GET http://127.0.0.1:8000/health`
 
 ## Security rule
 
-No credentials, tokens, private documents or client secrets belong in Git. Consequential external actions require explicit approval.
+No credentials, tokens, private documents or client secrets belong in Git.
+Consequential external actions require explicit approval.
+
+## Operations
+
+- [Production document pipeline](docs/DOCUMENT_PIPELINE.md)
+- [Production-readiness and synthetic E2E runbook](docs/PRODUCTION_RUNBOOK.md)

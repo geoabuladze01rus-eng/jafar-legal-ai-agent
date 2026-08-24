@@ -7,7 +7,12 @@ from .attachment_storage import AttachmentStorage
 from .document_status import DocumentStatus
 from .document_status_store import DocumentStatusStore, NullDocumentStatusStore
 from .document_workflow import DocumentWorkflow, DocumentWorkflowResult
-from .inbox import AttachmentProcessingIssue, ExtractedInboxDocument, InboxDocumentIntake, InboxMessage
+from .inbox import (
+    AttachmentProcessingIssue,
+    ExtractedInboxDocument,
+    InboxDocumentIntake,
+    InboxMessage,
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +60,7 @@ class InboxProcessor:
         self.status_store.set_status(message_id=item.message_id, storage_path=storage_path, status=DocumentStatus.PROCESSING)
         try:
             workflow_result = self.workflow.process(document_name=item.attachment.filename, extracted=item.document)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve failure state for every attachment.
             error = f"{type(exc).__name__}: {exc}"
             self.status_store.set_status(message_id=item.message_id, storage_path=storage_path, status=DocumentStatus.FAILED, error=error)
             return InboxDocumentResult(message_id=item.message_id, sender=item.sender, subject=item.subject, attachment_name=item.attachment.filename, content_type=item.attachment.media_type, storage_path=storage_path, fingerprint=fingerprint, status=DocumentStatus.FAILED, error=error, workflow=None)

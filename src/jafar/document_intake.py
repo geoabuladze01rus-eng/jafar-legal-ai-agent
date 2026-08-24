@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,7 @@ class ExtractedDocument:
     @property
     def fingerprint(self) -> str:
         """Stable identity for the extracted document content."""
-        payload = f"{self.media_type}\n{self.text}".encode("utf-8")
+        payload = f"{self.media_type}\n{self.text}".encode()
         return sha256(payload).hexdigest()
 
 
@@ -27,7 +28,7 @@ class DocumentExtractor:
     """Extract text from legal documents supported by Jafar."""
 
     MAX_BYTES = 20 * 1024 * 1024
-    SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
     def extract(self, filename: str, content: bytes, media_type: str | None = None) -> ExtractedDocument:
         if len(content) > self.MAX_BYTES:

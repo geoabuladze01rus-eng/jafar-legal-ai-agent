@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -37,7 +37,7 @@ class LegalAnalysis(BaseModel):
     key_facts: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Matter(BaseModel):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .document_recovery import DocumentRecoveryWorker, RecoveryCandidate
 
@@ -23,13 +23,13 @@ class ScheduledRecoveryRunner:
         self.heartbeat_store = heartbeat_store
 
     def tick(self, *, limit: int = 10) -> RecoveryRun:
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         try:
             candidates: list[RecoveryCandidate] = self.worker.run_once(limit=limit)
-            finished = datetime.now(timezone.utc)
+            finished = datetime.now(UTC)
             run = RecoveryRun(started_at=started, finished_at=finished, claimed=len(candidates))
-        except Exception as exc:
-            finished = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001 - scheduler records terminal run state.
+            finished = datetime.now(UTC)
             run = RecoveryRun(started_at=started, finished_at=finished, claimed=0, status="failed", error=f"{type(exc).__name__}: {exc}")
         if self.heartbeat_store is not None:
             self.heartbeat_store.record(run)

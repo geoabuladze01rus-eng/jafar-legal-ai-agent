@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
-from urllib.parse import quote
+from typing import Any
 
 from .legal_entity_adapters import SourceResult
 from .legal_entity_intelligence import EntityQuery
@@ -39,5 +39,5 @@ class FedresursPublicAdapter:
             return SourceResult(self.source_key, status, response.url, data)
         except TimeoutError as exc:
             return SourceResult(self.source_key, "timeout", error=str(exc))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public source failures are isolated.
             return SourceResult(self.source_key, "error", error=str(exc))

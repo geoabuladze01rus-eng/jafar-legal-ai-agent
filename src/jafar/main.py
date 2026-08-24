@@ -1,22 +1,22 @@
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from uuid import uuid4
 import os
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
+from .command_runtime import JafarCommandRuntime
 from .config import settings
-from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 from .telegram_runtime import TelegramRuntime
-from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
-from .command_runtime import JafarCommandRuntime
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -129,7 +129,7 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
 
 @app.post("/v1/documents/analyze", response_model=AnalysisResponse)
 async def analyze_document(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration.
     task: str = "legal_analysis",
     matter_type: MatterType = MatterType.GENERAL,
     matter_id: str | None = None,
@@ -158,7 +158,7 @@ async def analyze_document(
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)
 def create_matter(request: CreateMatterRequest) -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     matter = Matter(id=str(uuid4()), title=request.title, matter_type=request.matter_type, client_name=request.client_name, opposing_party=request.opposing_party, court_or_authority=request.court_or_authority, case_number=request.case_number, created_at=now, updated_at=now)
     return matter_store.create(matter)
 

@@ -10,14 +10,14 @@ if TYPE_CHECKING:
 
 
 class ProcessingResultStore(Protocol):
-    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None: ...
+    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None: ...
 
 
 class InMemoryProcessingResultStore:
     def __init__(self) -> None:
-        self.results: dict[str, "EmailPipelineResult"] = {}
+        self.results: dict[str, EmailPipelineResult] = {}
 
-    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None:
+    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None:
         self.results[message.message_id] = result
 
 
@@ -27,7 +27,7 @@ class SupabaseProcessingResultStore:
     def __init__(self, client: object) -> None:
         self.client = client
 
-    def save(self, message: InboxMessage, result: "EmailPipelineResult") -> None:
+    def save(self, message: InboxMessage, result: EmailPipelineResult) -> None:
         triage = result.email.triage
         documents = []
         for item in result.documents:
@@ -75,7 +75,7 @@ def _jsonable(value: object) -> object:
     if isinstance(value, (list, tuple, set)):
         return [_jsonable(item) for item in value]
     if hasattr(value, "value"):
-        return _jsonable(getattr(value, "value"))
+        return _jsonable(value.value)
     if hasattr(value, "__dict__"):
         return {k: _jsonable(v) for k, v in vars(value).items()}
     return str(value)

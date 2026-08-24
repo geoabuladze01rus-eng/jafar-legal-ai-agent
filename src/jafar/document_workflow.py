@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .document_intake import ExtractedDocument
 from .domains import DocumentTask, MatterType
@@ -42,7 +42,7 @@ class DocumentWorkflow:
             event = self.store.record_document_event(
                 matter_id=matter.id,
                 title=f"Анализ документа: {document_name}",
-                event_date=datetime.now(timezone.utc),
+                event_date=datetime.now(UTC),
                 description=analysis.summary,
                 source_document=document_name,
                 document_fingerprint=extracted.fingerprint,

@@ -32,5 +32,5 @@ class FnsEgrulAdapter:
             return SourceResult(self.name, "found", data)
         except TimeoutError as exc:
             return SourceResult(self.name, "timeout", {}, str(exc))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - public source failures are isolated.
             return SourceResult(self.name, "error", {}, str(exc))

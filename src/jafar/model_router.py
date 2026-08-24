@@ -125,7 +125,7 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - fallback isolates provider failures.
                 last_error = exc
         raise RuntimeError("All permitted AI providers failed during completion") from last_error
 

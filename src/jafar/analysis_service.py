@@ -14,7 +14,7 @@ class LegalAnalysisService:
         self.router = router
 
     @classmethod
-    def from_environment(cls) -> "LegalAnalysisService":
+    def from_environment(cls) -> LegalAnalysisService:
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY is required to create the legal analysis service")
 
@@ -32,7 +32,9 @@ class LegalAnalysisService:
         primary = routed[0]
         payload = primary.metadata.get("legal_analysis")
         if not isinstance(payload, dict):
-            raise RuntimeError("AI provider returned no structured legal analysis")
+            raise RuntimeError(  # noqa: TRY004 - this is a provider contract failure.
+                "AI provider returned no structured legal analysis"
+            )
 
         analysis = LegalAnalysis.model_validate(payload)
         return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)

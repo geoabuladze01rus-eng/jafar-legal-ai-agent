@@ -43,6 +43,6 @@ class SourceCollector:
                 adapter = futures[future]
                 try:
                     results.append(future.result())
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - isolate concurrent source failures.
                     results.append(SourceResult(adapter.name, "error", {}, str(exc)))
         return sorted(results, key=lambda item: item.source)

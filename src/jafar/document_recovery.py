@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,10 @@ class DocumentRecoveryWorker:
         for candidate in candidates:
             try:
                 self.retry_service.retry(storage_path=candidate.storage_path)
-            except Exception:
-                continue
+            except Exception as exc:  # noqa: BLE001 - one bad document must not stop the batch.
+                logger.warning(
+                    "Document recovery failed retry_attempts=%s error_type=%s",
+                    candidate.retry_attempts,
+                    type(exc).__name__,
+                )
         return candidates

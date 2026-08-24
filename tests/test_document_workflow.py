@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.document_intake import ExtractedDocument
+from jafar.document_workflow import DocumentWorkflow
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import Matter
-from jafar.document_workflow import DocumentWorkflow
 from jafar.matters import MatterStore
 
 
@@ -13,7 +13,7 @@ def make_matter(
     case_number: str = "А40-12345/2026",
     title: str = "Взыскание задолженности",
 ) -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Matter(
         id=matter_id,
         title=title,

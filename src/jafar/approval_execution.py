@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,5 +42,5 @@ class ApprovalExecutionService:
         try:
             result = handler(payload)
             return ExecutionResult(request.approval_id, "executed", "Действие выполнено.", result if isinstance(result, dict) else {"result": result})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - execution boundary must return an audit result.
             return ExecutionResult(request.approval_id, "error", "Действие не выполнено.", {"error": str(exc)})

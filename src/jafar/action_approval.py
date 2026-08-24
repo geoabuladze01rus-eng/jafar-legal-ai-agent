@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -34,7 +34,7 @@ class LegalActionApprovalEngine:
             action_type=action_type,
             description=description,
             evidence_ids=tuple(evidence_ids or ()),
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     def approve(self, request: ActionRequest, approver: str) -> dict[str, Any]:

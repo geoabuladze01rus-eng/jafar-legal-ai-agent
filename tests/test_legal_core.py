@@ -2,8 +2,8 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from jafar.legal_analysis import LegalAnalyzer
 from jafar.domains import DocumentTask, MatterType
+from jafar.legal_analysis import LegalAnalyzer
 from jafar.main import app
 
 

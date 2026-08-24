@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .legal_entity_intelligence import LegalEntityIntelligence, SourceFinding
@@ -43,7 +43,7 @@ class LegalEntityDossierBuilder:
         return LegalEntityDossier(
             query=query,
             query_type=query_type,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             profile=profile,
             sources=findings,
         )

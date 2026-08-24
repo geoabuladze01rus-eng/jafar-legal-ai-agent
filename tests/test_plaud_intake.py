@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.plaud_intake import PlaudFinding, PlaudIntakeService, PlaudRecording
 
@@ -22,7 +22,7 @@ def test_plaud_recording_enters_legal_workflow():
             recording_id="pl-001",
             title="Разговор со следователем",
             transcript="Постановление обещали подготовить до 25 августа",
-            recorded_at=datetime(2026, 8, 21, 10, 0, tzinfo=timezone.utc),
+            recorded_at=datetime(2026, 8, 21, 10, 0, tzinfo=UTC),
         )
     )
     assert result["recording_id"] == "pl-001"

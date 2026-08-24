@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .legal_entity_adapters import SourceResult
@@ -20,7 +20,7 @@ class AuditRecord:
 
 
 def build_audit_records(query: EntityQuery, results: list[SourceResult]) -> list[AuditRecord]:
-    checked_at = datetime.now(timezone.utc).isoformat()
+    checked_at = datetime.now(UTC).isoformat()
     return [
         AuditRecord(
             query=query.value,

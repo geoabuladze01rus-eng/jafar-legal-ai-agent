@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
@@ -39,7 +40,7 @@ async def run_polling(
             update_id = int(update["update_id"])
             try:
                 await handler(update)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - polling must isolate individual updates.
                 if on_error is not None:
                     await on_error(update, exc)
             finally:

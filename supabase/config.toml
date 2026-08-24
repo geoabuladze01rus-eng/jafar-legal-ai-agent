@@ -1,5 +1,9 @@
 [functions.document-ocr-worker-v4]
+# pg_cron supplies a gateway publishable key and the function verifies
+# x-jafar-worker-secret itself.
 verify_jwt = false
 
 [functions.document-pipeline-worker-v3]
+# pg_cron supplies a gateway publishable key and the function verifies
+# x-jafar-worker-secret itself.
 verify_jwt = false

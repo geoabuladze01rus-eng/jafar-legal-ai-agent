@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from jafar.telegram_runtime import TelegramRuntime
 
@@ -53,3 +54,22 @@ def test_runtime_does_not_send_blocked_comment() -> None:
     asyncio.run(runtime.handle_update(update))
 
     assert fake.calls == []
+
+
+def test_dry_run_log_does_not_include_response_text(caplog) -> None:
+    runtime = TelegramRuntime("test-token", production_send=False, dry_run=True)
+    update = {
+        "update_id": 103,
+        "message": {
+            "message_id": 9,
+            "chat": {"id": -100123, "type": "group"},
+            "from": {"id": 42},
+            "text": "Почему это важно?",
+        },
+    }
+
+    with caplog.at_level(logging.INFO, logger="jafar.telegram_runtime"):
+        asyncio.run(runtime.handle_update(update))
+
+    assert "intent=question" in caplog.text
+    assert "Спасибо за вопрос" not in caplog.text

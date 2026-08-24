@@ -38,3 +38,13 @@ def test_escalation_topic_is_blocked_before_outbound() -> None:
     assert result.safety.allowed is False
     assert result.safety.reason == "requires_moderation_or_editor_review"
     assert result.audit.status == "blocked_for_review"
+
+
+def test_personalized_legal_help_requires_editor_review() -> None:
+    result = process_update(_update("У меня спор с судом, что делать?"))
+
+    assert result is not None
+    assert result.draft.intent == "legal_help"
+    assert result.safety.allowed is False
+    assert result.safety.reason == "human_review_required"
+    assert result.audit.status == "blocked_for_review"

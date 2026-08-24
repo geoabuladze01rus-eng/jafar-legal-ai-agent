@@ -10,6 +10,9 @@ PIPELINE_MIGRATION = (
 AUTH_MIGRATION = (
     ROOT / "supabase/migrations/20260825011000_separate_document_worker_auth.sql"
 ).read_text()
+RETRY_MIGRATION = (
+    ROOT / "supabase/migrations/20260825012000_add_document_pipeline_retry_scheduling.sql"
+).read_text()
 OCR_COMPACT = " ".join(OCR_WORKER.split())
 PIPELINE_COMPACT = " ".join(PIPELINE_WORKER.split())
 
@@ -54,7 +57,8 @@ def test_claims_are_ordered_fenced_and_skip_locked() -> None:
 
 def test_ocr_retries_backoff_and_recover_abandoned_claims() -> None:
     assert 'db.rpc("fail_document_ocr_job"' in OCR_WORKER
-    assert "2 ** Math.max(0, attempts - 1)" in OCR_WORKER
+    assert "jobRetryDelayMs(attempts)" in OCR_WORKER
+    assert "jobRetryDelayMs(attempts)" in PIPELINE_WORKER
     assert "lease_expires_at < now()" in PIPELINE_MIGRATION
     assert "ocr_worker_lease_expired" in PIPELINE_MIGRATION
     assert "ocr_retry_limit_exhausted" in PIPELINE_MIGRATION
@@ -75,7 +79,7 @@ def test_analysis_provenance_is_validated_and_previous_rows_are_preserved() -> N
         "matter_id: doc.matter_id",
         "document_id: doc.id",
         "citations: validation.citations",
-        "source_chunks: chunks.map",
+        "source_chunks: sourceChunks",
         "page: chunk.source_page",
         "chunk_index: chunk.chunk_index",
         "confidence: clampConfidence",
@@ -86,6 +90,9 @@ def test_analysis_provenance_is_validated_and_previous_rows_are_preserved() -> N
     assert 'status: validation.valid ? "completed" : "manual_review"' in PIPELINE_WORKER
     assert '.from("ai_analyses").insert' in PIPELINE_WORKER
     assert '.from("ai_analyses").delete' not in PIPELINE_WORKER
+    assert '.contains("result", { pipeline_job_id: pipelineJobId })' in PIPELINE_WORKER
+    assert "idempotent_replay: true" in PIPELINE_WORKER
+    assert "pipeline_job_id: pipelineJobId" in PIPELINE_WORKER
 
 
 def test_worker_auth_separates_gateway_and_application_secrets() -> None:
@@ -95,6 +102,8 @@ def test_worker_auth_separates_gateway_and_application_secrets() -> None:
     assert "name = 'supabase_publishable_key'" in AUTH_MIGRATION
     assert "'x-jafar-worker-secret', (select decrypted_secret" in AUTH_MIGRATION
     assert "name = 'jafar_worker_secret'" in AUTH_MIGRATION
+    assert 'return json({ error: "unauthorized_worker" }, 401)' in OCR_WORKER
+    assert 'return json({ error: "unauthorized_worker" }, 401)' in PIPELINE_WORKER
 
 
 def test_models_come_from_validated_environment_configuration() -> None:
@@ -102,3 +111,31 @@ def test_models_come_from_validated_environment_configuration() -> None:
     assert 'configuredModel("JAFAR_OCR_MODEL", "gpt-5.6")' in OCR_WORKER
     assert 'configuredModel("JAFAR_ANALYSIS_MODEL", "gpt-5.6")' in PIPELINE_WORKER
     assert '"JAFAR_EMBEDDING_MODEL", "text-embedding-3-small"' in PIPELINE_COMPACT
+
+
+def test_timeout_and_rate_limit_failures_are_bounded_and_requeued() -> None:
+    assert "fetchWithRetry" in SHARED
+    for status in ("status === 408", "status === 409", "status === 429"):
+        assert status in SHARED
+    assert "status >= 500 && status <= 599" in SHARED
+    assert "0.75 + Math.max(0, Math.min(1, random())) * 0.5" in SHARED
+    assert '"JAFAR_OPENAI_MAX_ATTEMPTS"' in OCR_WORKER
+    assert '"JAFAR_OPENAI_TIMEOUT_MS"' in OCR_WORKER
+    assert OCR_WORKER.count("fetchWithRetry") >= 3
+    assert PIPELINE_WORKER.count("fetchWithRetry") >= 3
+    assert '"x-client-request-id"' in OCR_WORKER
+    assert '"x-client-request-id"' in PIPELINE_WORKER
+    assert '"retry_document_pipeline_job"' in PIPELINE_WORKER
+    assert "pipelineFailureDisposition" in PIPELINE_WORKER
+    assert "isTransientRequestFailure(message)" in SHARED
+    assert "pipeline_retry_limit_exhausted" in RETRY_MIGRATION
+    assert "p_available_at" in RETRY_MIGRATION
+    assert "j.attempts < greatest(1, coalesce(d.max_retry_attempts, 1))" in RETRY_MIGRATION
+
+
+def test_stage_replays_preserve_completed_work() -> None:
+    assert '.delete()\n        .eq("document_id", doc.id)' in PIPELINE_WORKER
+    assert '.is("embedding", null)' in PIPELINE_WORKER
+    assert '.update({ embedding })' in PIPELINE_WORKER
+    assert "idempotent_replay: true" in PIPELINE_WORKER
+    assert "v_job.status = 'completed' and p_status = 'completed'" in PIPELINE_MIGRATION

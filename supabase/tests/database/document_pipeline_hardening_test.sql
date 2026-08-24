@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions, pg_catalog;
 
-select plan(37);
+select plan(41);
 
 insert into public.matters (id, title, matter_type, owner_user_id)
 values ('00000000-0000-0000-0000-000000000201', 'Pipeline test', 'general', 'pipeline-test-owner');
@@ -171,6 +171,33 @@ select is(
   (select stage from public.claim_document_pipeline_job('embed-worker', 60)),
   'embed',
   'embed becomes claimable only after chunk completion and chunk creation'
+);
+select lives_ok(
+  $$
+    select public.resume_document_embedding_job(
+      (select id from public.document_pipeline_jobs where document_id = '00000000-0000-0000-0000-000000000101' and stage = 'embed'),
+      '00000000-0000-0000-0000-000000000101', 'embed-worker'
+    )
+  $$,
+  'a successful partial embedding batch is safely resumed'
+);
+select is(
+  (select attempts from public.document_pipeline_jobs where document_id = '00000000-0000-0000-0000-000000000101' and stage = 'embed'),
+  0,
+  'successful embedding resume does not consume the failure retry budget'
+);
+select ok(
+  (
+    select status = 'queued' and locked_at is null and lease_expires_at is null and locked_by is null
+    from public.document_pipeline_jobs
+    where document_id = '00000000-0000-0000-0000-000000000101' and stage = 'embed'
+  ),
+  'embedding resume clears the completed batch lease'
+);
+select is(
+  (select stage from public.claim_document_pipeline_job('embed-worker', 60)),
+  'embed',
+  'the next embedding batch can be claimed without spending retry capacity'
 );
 select throws_ok(
   $$

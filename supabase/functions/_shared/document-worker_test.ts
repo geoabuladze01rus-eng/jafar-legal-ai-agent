@@ -336,12 +336,18 @@ Deno.test("request logs contain safe operational metadata only", async () => {
     timeoutMs: 100,
     requestIdPrefix: "job-7-analyze",
     stage: "analyze",
+    worker: "document-pipeline-worker-v3",
+    jobId: "job-7",
+    documentId: "document-3",
     logger: (event) => events.push(event),
   });
 
   assertEquals(events.length, 1);
   assertEquals(events[0].request_id, "job-7-analyze-1");
+  assertEquals(events[0].worker, "document-pipeline-worker-v3");
   assertEquals(events[0].stage, "analyze");
+  assertEquals(events[0].job_id, "job-7");
+  assertEquals(events[0].document_id, "document-3");
   assertEquals(events[0].attempt, 1);
   assertEquals(events[0].http_status, 200);
   assertEquals(events[0].error_category, "none");
@@ -377,4 +383,28 @@ Deno.test("analysis validation rejects incomplete factual provenance", () => {
     ),
     "manual_review",
   );
+});
+
+Deno.test("facts, statements, inference, and evidence gaps require provenance", () => {
+  const chunks = [{ id: "chunk-1", source_page: 1, chunk_index: 0 }];
+  const fields = [
+    "facts",
+    "party_statements",
+    "investigator_or_court_statements",
+    "third_party_statements",
+    "model_inferences",
+    "risks",
+    "contradictions",
+    "evidence_gaps",
+  ];
+
+  for (const field of fields) {
+    const result = validateAnalysisResult({
+      [field]: ["Unsupported claim"],
+      confidence: 0.6,
+      citations: [],
+    }, chunks);
+    assert(!result.valid, `${field} must not be accepted without provenance`);
+    assert(result.errors.includes("significant_findings_without_citations"));
+  }
 });

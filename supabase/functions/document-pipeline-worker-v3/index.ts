@@ -165,6 +165,20 @@ Deno.serve(async (req) => {
     });
   };
 
+  const resumeEmbedding = async () => {
+    const { error: resumeError } = await db.rpc(
+      "resume_document_embedding_job",
+      {
+        p_job_id: job.id,
+        p_document_id: job.document_id,
+        p_worker_id: workerId,
+      },
+    );
+    if (resumeError) {
+      throw new Error(`embedding_resume_failed:${resumeError.message}`);
+    }
+  };
+
   try {
     const { data: doc, error: docError } = await db.from("documents")
       .select(
@@ -250,15 +264,14 @@ Deno.serve(async (req) => {
             maxAttempts: OPENAI_MAX_ATTEMPTS,
             timeoutMs: OPENAI_TIMEOUT_MS,
             stage: "embed",
+            worker: "document-pipeline-worker-v3",
+            jobId: String(job.id),
+            documentId: String(job.document_id),
             requestIdPrefix: `${requestTrace}-embedding`,
           },
         );
         if (!response.ok) {
-          throw new Error(
-            `embedding_api:${response.status}:${
-              (await response.text()).slice(0, 800)
-            }`,
-          );
+          throw new Error(`embedding_api:${response.status}`);
         }
         const output = await response.json() as EmbeddingResponse;
         for (let index = 0; index < pendingChunks.length; index++) {
@@ -287,7 +300,7 @@ Deno.serve(async (req) => {
         throw new Error(`embedding_count_failed:${remainingError.message}`);
       }
       if (embeddingStageStatus(remaining ?? 0) === "queued") {
-        await finish("queued");
+        await resumeEmbedding();
         await heartbeat();
         return json({
           ok: true,
@@ -366,7 +379,7 @@ Deno.serve(async (req) => {
       }
 
       const prompt =
-        `Analyze ONLY the supplied legal document. Do not invent facts and do not silently correct the source. Return JSON with summary, persons, dates, case_numbers, statutes, monetary_amounts, procedural_events, contradictions, risks, missing_information, confidence, requires_lawyer_review, citations. citations must be an array of {claim, page, chunk_index}; every significant factual finding must have a citation to the supplied page and chunk. Explicitly distinguish: (1) statements of the suspect, (2) questions/statements of the investigator, (3) information about third parties, and (4) procedural boilerplate. If the supplied pages are incomplete, say so.\n\nDOCUMENT:\n${context}`;
+        `Analyze ONLY the supplied legal document. Do not invent facts and do not silently correct the source. Return JSON with summary, facts, party_statements, investigator_or_court_statements, third_party_statements, procedural_boilerplate, model_inferences, persons, dates, case_numbers, statutes, monetary_amounts, procedural_events, contradictions, risks, evidence_gaps, missing_information, confidence, requires_lawyer_review, citations. Keep facts and attributed statements separate from model_inferences and risks. citations must be an array of {claim, page, chunk_index}; every significant factual finding must have a citation to the supplied page and chunk. Explicitly distinguish: (1) statements of parties including the suspect, (2) questions/statements of the investigator or court, (3) information about third parties, and (4) procedural boilerplate. If evidence or referenced attachments are missing, record an evidence_gaps entry and do not infer their contents. If the supplied pages are incomplete, say so.\n\nDOCUMENT:\n${context}`;
       const response = await fetchWithRetry(
         (signal, _attempt, requestId) => {
           return fetch("https://api.openai.com/v1/responses", {
@@ -388,15 +401,14 @@ Deno.serve(async (req) => {
           maxAttempts: OPENAI_MAX_ATTEMPTS,
           timeoutMs: OPENAI_TIMEOUT_MS,
           stage: "analyze",
+          worker: "document-pipeline-worker-v3",
+          jobId: String(job.id),
+          documentId: String(job.document_id),
           requestIdPrefix: `${requestTrace}-analysis`,
         },
       );
       if (!response.ok) {
-        throw new Error(
-          `analysis_api:${response.status}:${
-            (await response.text()).slice(0, 1200)
-          }`,
-        );
+        throw new Error(`analysis_api:${response.status}`);
       }
       const output = await response.json();
       let parsed: unknown;
@@ -413,13 +425,20 @@ Deno.serve(async (req) => {
       const validation = validateAnalysisResult(result, chunks);
       const sourceChunks = chunks.map((chunk) => ({
         id: chunk.id,
+        document_id: doc.id,
         page: chunk.source_page,
         chunk_index: chunk.chunk_index,
       }));
+      const provenanceCitations = validation.citations.map((citation) => ({
+        ...citation,
+        document_id: doc.id,
+        confidence: clampConfidence(result.confidence),
+      }));
       const persistedResult = {
         ...result,
+        document_id: doc.id,
         pipeline_job_id: pipelineJobId,
-        citations: validation.citations,
+        citations: provenanceCitations,
         source_chunks: sourceChunks,
         confidence: clampConfidence(result.confidence),
         requires_lawyer_review: true,
@@ -430,7 +449,7 @@ Deno.serve(async (req) => {
         document_id: doc.id,
         analysis_type: "document_pipeline",
         result: persistedResult,
-        citations: validation.citations,
+        citations: provenanceCitations,
         source_chunks: sourceChunks,
         confidence: clampConfidence(result.confidence),
         requires_lawyer_review: true,

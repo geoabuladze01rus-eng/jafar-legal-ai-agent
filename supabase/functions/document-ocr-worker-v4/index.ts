@@ -61,7 +61,13 @@ function configuredServiceKey(): string | undefined {
   return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || undefined;
 }
 
-async function openaiFile(key: string, file: Blob, requestTrace: string) {
+async function openaiFile(
+  key: string,
+  file: Blob,
+  requestTrace: string,
+  jobId: string,
+  documentId: string,
+) {
   const response = await fetchWithRetry((signal, _attempt, requestId) => {
     const form = new FormData();
     form.append("purpose", "user_data");
@@ -79,12 +85,13 @@ async function openaiFile(key: string, file: Blob, requestTrace: string) {
     maxAttempts: OPENAI_MAX_ATTEMPTS,
     timeoutMs: OPENAI_TIMEOUT_MS,
     stage: "ocr_upload",
+    worker: "document-ocr-worker-v4",
+    jobId,
+    documentId,
     requestIdPrefix: `${requestTrace}-upload`,
   });
   if (!response.ok) {
-    throw new Error(
-      `file_upload:${response.status}:${(await response.text()).slice(0, 700)}`,
-    );
+    throw new Error(`file_upload:${response.status}`);
   }
   return await response.json();
 }
@@ -174,7 +181,13 @@ Deno.serve(async (req) => {
 
   let uploaded;
   try {
-    uploaded = await openaiFile(key, file, requestTrace);
+    uploaded = await openaiFile(
+      key,
+      file,
+      requestTrace,
+      String(job.id),
+      String(job.document_id),
+    );
   } catch (error) {
     await fail(String(error), isTransientRequestFailure(error));
     return json({ error: "openai_file_upload_failed" }, 502);
@@ -213,6 +226,9 @@ Deno.serve(async (req) => {
       maxAttempts: OPENAI_MAX_ATTEMPTS,
       timeoutMs: OPENAI_TIMEOUT_MS,
       stage: "ocr",
+      worker: "document-ocr-worker-v4",
+      jobId: String(job.id),
+      documentId: String(job.document_id),
       requestIdPrefix: `${requestTrace}-response`,
     });
   } catch (error) {
@@ -222,7 +238,7 @@ Deno.serve(async (req) => {
   }
   if (!response.ok) {
     await fail(
-      `responses:${response.status}:${(await response.text()).slice(0, 1500)}`,
+      `responses:${response.status}`,
       isRetryableStatus(response.status),
     );
     return json({ error: "openai_ocr_failed" }, 502);

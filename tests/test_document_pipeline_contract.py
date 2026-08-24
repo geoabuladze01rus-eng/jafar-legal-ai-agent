@@ -13,6 +13,10 @@ AUTH_MIGRATION = (
 RETRY_MIGRATION = (
     ROOT / "supabase/migrations/20260825012000_add_document_pipeline_retry_scheduling.sql"
 ).read_text()
+EMBED_RESUME_MIGRATION = (
+    ROOT
+    / "supabase/migrations/20260825013000_preserve_embedding_resume_retry_budget.sql"
+).read_text()
 OCR_COMPACT = " ".join(OCR_WORKER.split())
 PIPELINE_COMPACT = " ".join(PIPELINE_WORKER.split())
 
@@ -70,15 +74,22 @@ def test_embedding_stage_requeues_until_every_chunk_is_embedded() -> None:
     assert ".limit(EMBEDDING_BATCH_SIZE)" in PIPELINE_WORKER
     assert 'select("id", { count: "exact", head: true })' in PIPELINE_WORKER
     assert '.is("embedding", null)' in PIPELINE_WORKER
-    assert 'await finish("queued")' in PIPELINE_WORKER
+    assert "await resumeEmbedding()" in PIPELINE_WORKER
+    assert '"resume_document_embedding_job"' in PIPELINE_WORKER
     assert "remaining_chunks: remaining" in PIPELINE_WORKER
+    assert "v_attempts := greatest(v_job.attempts - 1, 0)" in EMBED_RESUME_MIGRATION
+    assert "v_job.stage <> 'embed'" in EMBED_RESUME_MIGRATION
+    assert "stale_pipeline_worker_lease" in EMBED_RESUME_MIGRATION
+    assert "locked_at = null" in EMBED_RESUME_MIGRATION
+    assert "lease_expires_at = null" in EMBED_RESUME_MIGRATION
+    assert "locked_by = null" in EMBED_RESUME_MIGRATION
 
 
 def test_analysis_provenance_is_validated_and_previous_rows_are_preserved() -> None:
     for field in (
         "matter_id: doc.matter_id",
         "document_id: doc.id",
-        "citations: validation.citations",
+        "citations: provenanceCitations",
         "source_chunks: sourceChunks",
         "page: chunk.source_page",
         "chunk_index: chunk.chunk_index",
@@ -93,6 +104,26 @@ def test_analysis_provenance_is_validated_and_previous_rows_are_preserved() -> N
     assert '.contains("result", { pipeline_job_id: pipelineJobId })' in PIPELINE_WORKER
     assert "idempotent_replay: true" in PIPELINE_WORKER
     assert "pipeline_job_id: pipelineJobId" in PIPELINE_WORKER
+    assert "document_id: doc.id" in PIPELINE_WORKER
+    assert "confidence: clampConfidence(result.confidence)" in PIPELINE_WORKER
+    for field in (
+        "facts",
+        "party_statements",
+        "investigator_or_court_statements",
+        "third_party_statements",
+        "model_inferences",
+        "evidence_gaps",
+    ):
+        assert field in PIPELINE_WORKER
+
+
+def test_worker_logs_include_safe_pipeline_correlation_fields() -> None:
+    for field in ("worker", "job_id", "document_id", "request_id", "latency_ms"):
+        assert field in SHARED
+    assert 'worker: "document-ocr-worker-v4"' in OCR_WORKER
+    assert 'worker: "document-pipeline-worker-v3"' in PIPELINE_WORKER
+    assert "await response.text()" not in OCR_WORKER
+    assert "await response.text()" not in PIPELINE_WORKER
 
 
 def test_worker_auth_separates_gateway_and_application_secrets() -> None:

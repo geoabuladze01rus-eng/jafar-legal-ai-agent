@@ -19,6 +19,9 @@ export type FetchWithRetryOptions = {
   random?: () => number;
   requestIdPrefix?: string;
   stage?: string;
+  worker?: string;
+  jobId?: string;
+  documentId?: string;
   logger?: (event: OpenAIRequestLog) => void;
   sleep?: (milliseconds: number) => Promise<void>;
 };
@@ -26,7 +29,10 @@ export type FetchWithRetryOptions = {
 export type OpenAIRequestLog = {
   event: "openai_request";
   request_id: string;
+  worker: string;
   stage: string;
+  job_id: string | null;
+  document_id: string | null;
   attempt: number;
   http_status: number | null;
   latency_ms: number;
@@ -35,6 +41,12 @@ export type OpenAIRequestLog = {
 
 const MODEL_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const SIGNIFICANT_FIELDS = [
+  "facts",
+  "party_statements",
+  "investigator_or_court_statements",
+  "third_party_statements",
+  "procedural_boilerplate",
+  "model_inferences",
   "persons",
   "dates",
   "case_numbers",
@@ -43,6 +55,7 @@ const SIGNIFICANT_FIELDS = [
   "procedural_events",
   "contradictions",
   "risks",
+  "evidence_gaps",
 ];
 
 export function configuredModel(envName: string, fallback: string): string {
@@ -175,7 +188,10 @@ export async function fetchWithRetry(
       emitRequestLog(options, {
         event: "openai_request",
         request_id: requestId,
+        worker: options.worker ?? "unknown",
         stage: options.stage ?? "unknown",
+        job_id: options.jobId ?? null,
+        document_id: options.documentId ?? null,
         attempt,
         http_status: response.status,
         latency_ms: Date.now() - startedAt,
@@ -203,7 +219,10 @@ export async function fetchWithRetry(
       emitRequestLog(options, {
         event: "openai_request",
         request_id: requestId,
+        worker: options.worker ?? "unknown",
         stage: options.stage ?? "unknown",
+        job_id: options.jobId ?? null,
+        document_id: options.documentId ?? null,
         attempt,
         http_status: null,
         latency_ms: Date.now() - startedAt,

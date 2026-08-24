@@ -22,11 +22,10 @@ class MatterMatch:
 
 
 class MatterMatcher:
-    """Conservative document-to-matter matcher.
+    """Conservative deterministic document-to-matter matcher.
 
-    The legacy inbox scoring is preserved, but a document is only auto-linked
-    when the top candidate is strong enough and clearly separated from the
-    runner-up. Ambiguous or weak matches return None.
+    Exact case-number evidence is strongest. Party, authority and title signals
+    are supporting evidence. Weak or ambiguous matches are never auto-attached.
     """
 
     def __init__(self, min_score: float = 0.75, min_margin: float = 0.10) -> None:
@@ -78,7 +77,7 @@ class MatterMatcher:
                         reasons=tuple(reasons),
                     )
                 )
-        return sorted(results, key=lambda item: item.score, reverse=True)
+        return sorted(results, key=lambda item: (-item.score, item.matter_id))
 
     def best_match(self, text: str, matters: list[Matter]) -> MatterMatch | None:
         candidates = self.candidates(text, matters)

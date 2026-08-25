@@ -27,7 +27,12 @@ class OutlookProviderConfig:
 
 
 class OutlookEmailProvider:
-    """Maps Outlook connector data into Jafar's provider-neutral email contract."""
+    """Maps Outlook connector data into Jafar's provider-neutral email contract.
+
+    Unsupported or unsafe attachments are never silently discarded: a provider
+    issue is attached to the normalized email so the legal-review layer can tell
+    the lawyer that material exists but was not analyzed.
+    """
 
     def __init__(
         self,

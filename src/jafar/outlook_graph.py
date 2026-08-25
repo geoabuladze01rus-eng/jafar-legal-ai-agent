@@ -54,7 +54,7 @@ class MicrosoftGraphOutlookClient:
         )
         value = payload.get("value", [])
         if not isinstance(value, list):
-            raise RuntimeError("Microsoft Graph messages response has invalid value field")
+            raise TypeError("Microsoft Graph messages response has invalid value field")
         return [item for item in value if isinstance(item, dict)]
 
     def list_attachments(self, message_id: str) -> list[dict]:
@@ -65,7 +65,7 @@ class MicrosoftGraphOutlookClient:
         )
         value = payload.get("value", [])
         if not isinstance(value, list):
-            raise RuntimeError("Microsoft Graph attachments response has invalid value field")
+            raise TypeError("Microsoft Graph attachments response has invalid value field")
 
         attachments: list[dict] = []
         for item in value:
@@ -119,7 +119,7 @@ class MicrosoftGraphOutlookClient:
         self._raise_for_status(response)
         payload = response.json()
         if not isinstance(payload, dict):
-            raise RuntimeError("Microsoft Graph returned a non-object JSON response")
+            raise TypeError("Microsoft Graph returned a non-object JSON response")
         return payload
 
     def _headers(self, *, prefer_text: bool = False) -> dict[str, str]:

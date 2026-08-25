@@ -7,19 +7,22 @@ struct ContentView: View {
     )
     @State private var endpoint = JafarClientConfiguration.endpointString
     @State private var apiKey = ""
+    @State private var commandText = "проверка связи"
     @State private var configurationMessage: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Джафар") {
-                    if !voice.transcript.isEmpty {
-                        Text(voice.transcript)
-                    }
+                    TextField("Команда", text: $commandText)
 
-                    if !voice.response.isEmpty {
-                        Text(voice.response)
+                    Button("Отправить команду") {
+                        Task {
+                            await voice.send(text: commandText)
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Button(voice.isListening ? "Остановить и отправить" : "Голосовая команда") {
                         Task {
@@ -30,7 +33,15 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+
+                    if !voice.transcript.isEmpty {
+                        Text("Команда: \(voice.transcript)")
+                            .font(.footnote)
+                    }
+
+                    if !voice.response.isEmpty {
+                        Text(voice.response)
+                    }
 
                     if let error = voice.errorMessage {
                         Text(error)

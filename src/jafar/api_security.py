@@ -6,7 +6,6 @@ from fastapi import Header, HTTPException, status
 
 from .config import settings
 
-
 API_KEY_HEADER = "X-Jafar-API-Key"
 
 

@@ -7,7 +7,7 @@ from typing import Protocol
 
 from .attachment_materializer import AttachmentMaterializer
 from .email_adapter import ExternalEmail
-from .inbox import InboxAttachment
+from .inbox import AttachmentProcessingIssue, InboxAttachment
 
 
 class OutlookClient(Protocol):
@@ -44,16 +44,49 @@ class OutlookEmailProvider:
         for raw in self.client.list_messages(limit=limit):
             message_id = str(raw["id"])
             attachments: list[InboxAttachment] = []
+            provider_issues: list[AttachmentProcessingIssue] = []
             for item in self.client.list_attachments(message_id):
                 name = str(item.get("name") or "")
                 extension = Path(name).suffix.lower()
-                if item.get("is_inline") or extension not in self.config.supported_extensions:
+                if item.get("is_inline"):
+                    continue
+                if extension not in self.config.supported_extensions:
+                    provider_issues.append(
+                        AttachmentProcessingIssue(
+                            filename=name or "attachment",
+                            error_type="UnsupportedAttachment",
+                            message=(
+                                f"Outlook attachment type {extension or '<none>'} is not "
+                                "supported by the current legal-document intake."
+                            ),
+                        )
+                    )
                     continue
                 size = int(item.get("size_bytes") or 0)
                 if size > self.config.max_attachment_bytes:
+                    provider_issues.append(
+                        AttachmentProcessingIssue(
+                            filename=name or "attachment",
+                            error_type="AttachmentTooLarge",
+                            message=(
+                                f"Outlook attachment is {size} bytes; maximum supported "
+                                f"size is {self.config.max_attachment_bytes} bytes."
+                            ),
+                        )
+                    )
                     continue
-                file_uri = self.client.fetch_attachment(message_id, str(item["id"]))
-                content = self.materializer.materialize(file_uri)
+                try:
+                    file_uri = self.client.fetch_attachment(message_id, str(item["id"]))
+                    content = self.materializer.materialize(file_uri)
+                except (FileNotFoundError, OSError, RuntimeError) as exc:
+                    provider_issues.append(
+                        AttachmentProcessingIssue(
+                            filename=name or "attachment",
+                            error_type=type(exc).__name__,
+                            message=str(exc),
+                        )
+                    )
+                    continue
                 attachments.append(InboxAttachment(name, content, item.get("content_type")))
 
             sender = raw.get("sender", {}).get("emailAddress", {}).get("address", "")
@@ -66,6 +99,7 @@ class OutlookEmailProvider:
                     received_at=received_at,
                     body_text=self._body_text(raw),
                     attachments=tuple(attachments),
+                    provider_issues=tuple(provider_issues),
                 )
             )
         return result

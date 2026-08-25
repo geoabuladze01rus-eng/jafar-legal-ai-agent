@@ -2,97 +2,94 @@
 
 ## Executive status
 
-**Verified private-Beta readiness: 72%.**  
-**Implemented readiness awaiting the next local gate: ~80%.**
+**Verified private-Beta readiness: ~85%.**
 
-The verified score reflects code that has already passed local regression checks on the user's Mac. The implemented score includes the latest Apple, Outlook and command-surface work that is isolated in the audit branch but still needs the next combined local gate.
+This score reflects working code plus locally verified control gates. The remaining risk is concentrated in live connector/runtime smoke tests and production-database hardening, not in the core legal document pipeline.
 
 **Target private Beta date: 2026-09-15.**
 
-A cloud/production Beta should not be declared before database permissions and worker migrations are validated in an isolated Supabase environment. The working cloud/production target remains **2026-09-29**, conditional on that isolated database gate.
+A cloud/production Beta should not be declared before database permissions and worker migrations are validated in an isolated Supabase environment. With a zero-budget local validation path, the working target remains **2026-09-29**; without an isolated database gate, that date remains conditional.
 
-## Last verified control point
+## Latest verified control point
 
-On `codex/beta-readiness-audit`, the last local macOS control point is:
+Locally on macOS:
 
-- full Python suite: **186 passed, 1 warning**;
-- Ruff: **passed** after applying its canonical import-order fix;
-- real private 4-page Pavlik investigator-motion PDF E2E: **PASS**;
+- Python: **194 passed, 1 warning**;
+- Ruff: **All checks passed**;
+- iOS Simulator build: **PASS**;
+- macOS build: **PASS**;
+- real private 4-page Pavlik investigator-motion PDF E2E baseline: **PASS**;
 - no private PDF or secret committed;
-- external AI disabled by default;
-- production and `main` untouched.
+- production untouched.
 
-The remaining warning is the existing FastAPI/Starlette TestClient deprecation warning.
+The remaining Python warning is the existing FastAPI/Starlette TestClient deprecation warning.
 
 ## Readiness by subsystem
 
-| Subsystem | Readiness | Current assessment |
+| Subsystem | Readiness | Audit assessment |
 | --- | ---: | --- |
-| Document intake + Pavlik acceptance | 90% | Real source passed local E2E; page-preserving extraction, provenance and evidence gaps work. |
-| Legal reasoning + safety | 84% | Source types, confidence handling, chronology and human-review gates are in place. |
-| FastAPI / command core | 85% implemented | First four practical lawyer commands are now implemented; latest batch awaits local regression. |
-| Email intelligence pipeline | 78% implemented | Outlook read-only orchestration and synthetic end-to-end acceptance flow are implemented; one live private Outlook validation remains. |
-| Apple voice/client | 72% implemented | Remote API client, Keychain-backed key, runtime configuration and real App Intent execution are implemented; build and live smoke tests remain. |
-| Telegram | 65% | Safe runtime exists; not required for the first private Beta exit. |
-| Model routing | 65% | Multi-provider abstractions exist; external AI remains explicit opt-in. |
-| Persistence / Supabase | 55% | Production ACL/RPC and worker migrations still require isolated database validation. |
-| API/security boundary | 85% | Fail-closed API-key boundary and provider safety regression tests have passed locally. |
-| CI / release operations | 45% | Workflows exist, but GitHub Actions currently fails at startup before jobs execute. |
+| Document intake + Pavlik acceptance | 90% | Real source passed local E2E; page-preserving extraction, provenance and evidence gaps are working. |
+| Legal reasoning + safety | 84% | Source types, confidence handling, human-review gates and chronology exist. Broader real-document coverage remains useful. |
+| FastAPI / command core | 84% | Core endpoints, API auth and first four lawyer commands exist. Live Apple smoke remains. |
+| Email intelligence pipeline | 80% | Triage, attachments, idempotency, matter matching, review-only drafts and synthetic Outlook E2E exist. Live Outlook boundary still needs one end-to-end runtime validation. |
+| Apple voice/client | 82% | Remote client, Keychain-backed API key, App Intent and both iOS/macOS builds pass. Live `/v1/command` smoke remains. |
+| Telegram | 65% | Runtime, inbound/outbound, approval and safety layers exist; not required for first private Beta. |
+| Model routing | 65% | OpenAI/Gemini/DeepSeek abstractions exist; external AI remains explicit opt-in. |
+| Persistence / Supabase | 55% | Significant persistence/migrations exist; production ACL/RPC review still requires isolated database validation. |
+| API/security boundary | 85% | Fail-closed API key for `/v1/*`; legal external actions remain review-gated. |
+| CI / release operations | 55% | Local Mac gates are reliable; GitHub Actions still has an account/infrastructure startup blocker. |
 
-## Fixed or implemented in `codex/beta-readiness-audit`
+## Audit fixes implemented in `codex/beta-readiness-audit`
 
-1. Fail-closed `X-Jafar-API-Key` protection for private `/v1/*` endpoints and legal-entity routes.
-2. OpenAI document-path object/string mismatch fixed.
-3. Provider configuration unified through Pydantic settings.
-4. Deterministic local fallback when configured external analysis fails at runtime.
-5. External AI is explicit opt-in (`EXTERNAL_AI_ENABLED=false` by default), preventing accidental spend or data egress.
-6. Explicit `matter_id` is authoritative for document persistence.
-7. Package/service version aligned to `0.6.0`.
-8. Apple remote client uses the same API-key header contract as the backend.
-9. Apple API endpoint is stored in UserDefaults and API key in device-only Keychain storage; no key is committed.
-10. Apple voice screen switches to the configured remote client and can reconfigure at runtime.
-11. App Intent executes the real backend command and reports missing configuration transparently.
-12. App Shortcut phrases use the application-name token required by the App Intents contract.
-13. Speech delegate lifetime is retained correctly.
-14. Canonical PR trigger coverage is present in Python and Apple workflows.
-15. Outlook provider prefers the full plain-text body and falls back to `bodyPreview` for HTML bodies instead of passing raw markup.
-16. `OutlookReadOnlyService` now composes Outlook -> provider-neutral email -> triage -> attachment intake -> document workflow -> matter match -> review-only draft, with no send/archive/delete capability.
-17. Outlook read-only synthetic E2E covers attachment materialization, matter linkage, idempotency, review-only draft and shared lawyer context.
-18. First four Beta commands are implemented:
-   - `Что требует моего внимания?`
-   - `Что нового по делу …?`
-   - `Разбери последнее юридическое письмо`
-   - `Подготовь ответ`
-19. `Подготовь ответ` only exposes a draft with `requires_review=true` and `send_performed=false`; it does not send email.
-20. Superseded/divergent PRs were closed so the active development line is intentional and auditable.
+1. Fail-closed `X-Jafar-API-Key` boundary for `/v1/*` and legal-entity routes.
+2. Resilient local/provider analysis path and explicit external-AI opt-in.
+3. Configured-OpenAI document object/string runtime bug fixed.
+4. Explicit `matter_id` persistence fixed.
+5. Package/service version aligned at `0.6.0`.
+6. Apple endpoint in UserDefaults and API key in device-only Keychain.
+7. Apple main voice screen uses configured remote backend.
+8. App Intent executes the real backend command.
+9. Speech delegate lifetime fixed.
+10. Outlook full plain-text body preferred; HTML body falls back to safe preview.
+11. Read-only Outlook orchestration through email/document/matter pipeline.
+12. Synthetic Outlook E2E covers attachment processing, matter linkage, idempotency and review-only draft.
+13. First four lawyer commands implemented: attention summary, matter update, latest legal email, prepare reply.
+14. `prepare_reply` never sends and reports `requires_review=true`, `send_performed=false`.
+15. Canonical CI trigger coverage and repository hygiene improved.
+16. Live Outlook mailbox review exposed a real operational defect: unsupported/oversized/materialization-failed attachments could be silently skipped. The provider now surfaces those as `AttachmentProcessingIssue` records instead of hiding them or aborting the mailbox. This is particularly important for legal archive attachments such as `.zip` files, which remain intentionally unsupported until a bounded archive-extraction design is added.
 
-## Still blocking the private Beta exit
+## Live Outlook review performed
 
-1. Run the next combined Python/Ruff regression gate for the latest Outlook/command commits.
-2. Pass iOS Simulator and macOS Apple build gates.
-3. Perform one live local Apple -> `/v1/command` smoke test using Keychain-backed configuration.
-4. Validate one real, private, read-only Outlook message through the same pipeline without committing its content.
-5. Reconfirm Pavlik private PDF E2E after the branch is consolidated.
+A real connected Outlook mailbox was read in read-only mode. Message bodies/metadata and attachment metadata were accessible. A legal-context message with a non-inline ZIP attachment was found. The current Beta document intake intentionally does not extract ZIP archives, but the audit identified that the adapter previously skipped such files silently. The branch now records an explicit unsupported-attachment issue so the lawyer is told that material exists but was not analyzed.
+
+No message was sent, deleted, moved or modified during this review, and no private mailbox content was committed to GitHub.
+
+## Still blocking private Beta exit
+
+1. Re-run Python/Ruff after the latest Outlook attachment-visibility patch.
+2. One local Apple -> `/v1/command` smoke test with the Keychain-backed API key.
+3. One live Outlook -> Jafar runtime validation using a supported attachment type (PDF/DOCX/TXT/MD), if available; otherwise validate the explicit unsupported-attachment warning path against the real ZIP message.
+4. Final Pavlik E2E reconfirmation after consolidation.
 
 ## Blocking cloud/production Beta, but not private Beta
 
-1. Validate the Supabase ACL hardening candidate in an isolated database before any production change.
-2. Confirm client roles cannot obtain dangerous privileges such as `TRUNCATE` on RLS-protected legal tables.
+1. Validate Supabase ACL hardening in an isolated database before production changes.
+2. Verify client roles cannot obtain dangerous table privileges such as `TRUNCATE` on RLS-protected legal tables.
 3. Review `record_document_event(...)` execution grants and privileged RPC search paths.
-4. Validate worker/auth/retry migrations and rollback outside production.
-5. Restore a reliable CI execution path; current GitHub Actions runs fail at startup before jobs begin.
+4. Validate worker/auth/retry migrations and rollback procedure outside production.
+5. Restore a reliable GitHub Actions execution path; current runs fail before jobs begin.
 
 ## Beta scope
 
-The first private Beta remains intentionally narrow:
+The first private Beta remains deliberately narrow:
 
-- Mac/iPhone/iPad voice and text command shell;
+- Mac/iPhone/iPad voice/text command shell;
 - read-only legal document and email analysis;
 - matter matching, chronology, deadlines, risks and evidence gaps;
-- reply/document drafting for lawyer review;
-- explicit human control before consequential external actions;
-- external AI disabled by default;
-- no autonomous filing, sending, deletion or publishing;
+- reply/document drafting for review;
+- explicit human approval before consequential external action;
+- external AI disabled by default and enabled only deliberately;
+- no autonomous filing, sending or publishing;
 - production database changes excluded until isolated validation exists.
 
 ## Beta exit gate
@@ -103,13 +100,13 @@ Private Beta can be tagged only when all of the following are true:
 - Ruff passes;
 - iOS Simulator and macOS builds pass;
 - Pavlik private PDF E2E remains green;
-- Outlook read-only synthetic E2E is green;
-- one private Outlook read-only validation is green;
+- Outlook read-only E2E is green;
+- real Outlook skipped/unsupported attachments are visible to the lawyer rather than silently dropped;
 - API auth tests are green;
 - Apple remote-client command reaches `/v1/command` without secrets in Git;
-- approval/review gates remain enforced;
-- no client document or secret is committed.
+- approval gates remain enforced;
+- no client document, mailbox content or secret is committed.
 
 ## Current stop point
 
-The legal-document core and backend audit are locally verified. The latest autonomous batch has implemented the **Outlook read-only vertical, shared legal-email context, the first four lawyer commands, and App Intent phrase hardening**. The next control point is one combined local Python/Ruff gate, followed by the Apple build gate. `main` and production remain untouched.
+Core backend, first four commands, synthetic Outlook E2E and Apple compilation gates are green. The current audit patch hardens real-mail behavior so skipped Outlook attachments are surfaced for review. The next control gate is one combined local Python/Ruff run, followed by live Apple `/v1/command` and live Outlook smoke validation.

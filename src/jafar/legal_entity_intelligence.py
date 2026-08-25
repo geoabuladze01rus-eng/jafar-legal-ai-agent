@@ -11,8 +11,53 @@ class EntityQuery:
     ogrn: str | None = None
     kpp: str | None = None
 
+    _LEGACY_QUERY_TYPES = frozenset({"name", "inn", "ogrn", "kpp"})
+
+    @property
+    def _legacy_query_type(self) -> str | None:
+        """Detect the historical ``EntityQuery(value, query_type)`` call shape."""
+        if (
+            self.name
+            and self.inn in self._LEGACY_QUERY_TYPES
+            and self.ogrn is None
+            and self.kpp is None
+        ):
+            return self.inn
+        return None
+
+    @property
+    def query_type(self) -> str:
+        legacy = self._legacy_query_type
+        if legacy:
+            return legacy
+        if self.inn:
+            return "inn"
+        if self.ogrn:
+            return "ogrn"
+        if self.kpp:
+            return "kpp"
+        return "name"
+
+    @property
+    def value(self) -> str:
+        legacy = self._legacy_query_type
+        if legacy:
+            return (self.name or "").strip()
+        value = {
+            "name": self.name,
+            "inn": self.inn,
+            "ogrn": self.ogrn,
+            "kpp": self.kpp,
+        }[self.query_type]
+        return (value or "").strip()
+
     def normalized(self) -> "EntityQuery":
-        return EntityQuery(*(value.strip() if value else None for value in (self.name, self.inn, self.ogrn, self.kpp)))
+        legacy = self._legacy_query_type
+        if legacy:
+            return EntityQuery(**{legacy: (self.name or "").strip()})
+        return EntityQuery(
+            *(value.strip() if value else None for value in (self.name, self.inn, self.ogrn, self.kpp))
+        )
 
 
 @dataclass(frozen=True)
@@ -27,6 +72,7 @@ class SourceFinding:
 
 class EntitySource(Protocol):
     source_key: str
+
     def lookup(self, query: EntityQuery) -> SourceFinding: ...
 
 
@@ -107,9 +153,12 @@ class LegalEntityIntelligence:
 
     @staticmethod
     def _risk_level(risks: list[RiskFinding]) -> str:
-        if any(r.severity == "critical" for r in risks): return "critical"
-        if any(r.severity == "high" for r in risks): return "high"
-        if any(r.severity == "medium" for r in risks): return "medium"
+        if any(r.severity == "critical" for r in risks):
+            return "critical"
+        if any(r.severity == "high" for r in risks):
+            return "high"
+        if any(r.severity == "medium" for r in risks):
+            return "medium"
         return "low" if risks else "unknown"
 
     def run(self, query: EntityQuery) -> InvestigationResult:

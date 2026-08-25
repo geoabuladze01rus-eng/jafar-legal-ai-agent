@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from jafar.microsoft_device_auth import MicrosoftDeviceCodeAuth
+from jafar.microsoft_device_auth import DeviceCodeChallenge, MicrosoftDeviceCodeAuth
 
 
 def test_device_code_auth_acquires_token_without_persisting_it():
@@ -11,7 +11,7 @@ def test_device_code_auth_acquires_token_without_persisting_it():
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request.url.path)
-        if request.url.path == "/oauth2/v2.0/devicecode":
+        if request.url.path == "/consumers/oauth2/v2.0/devicecode":
             return httpx.Response(
                 200,
                 json={
@@ -22,16 +22,19 @@ def test_device_code_auth_acquires_token_without_persisting_it():
                     "interval": 1,
                 },
             )
-        if request.url.path == "/oauth2/v2.0/token" and calls.count("/oauth2/v2.0/token") == 1:
+        if (
+            request.url.path == "/consumers/oauth2/v2.0/token"
+            and calls.count("/consumers/oauth2/v2.0/token") == 1
+        ):
             return httpx.Response(400, json={"error": "authorization_pending"})
-        if request.url.path == "/oauth2/v2.0/token":
+        if request.url.path == "/consumers/oauth2/v2.0/token":
             return httpx.Response(200, json={"access_token": "short-lived-token"})
         raise AssertionError(f"Unexpected request: {request.url}")
 
     transport = httpx.MockTransport(handler)
     http_client = httpx.Client(
         transport=transport,
-        base_url="https://login.microsoftonline.com/consumers",
+        base_url="https://login.microsoftonline.com/consumers/oauth2/v2.0/",
     )
     auth = MicrosoftDeviceCodeAuth("client-id", client=http_client)
 
@@ -60,15 +63,16 @@ def test_device_code_auth_does_not_leak_provider_error_description():
     transport = httpx.MockTransport(handler)
     http_client = httpx.Client(
         transport=transport,
-        base_url="https://login.microsoftonline.com/consumers",
+        base_url="https://login.microsoftonline.com/consumers/oauth2/v2.0/",
     )
     auth = MicrosoftDeviceCodeAuth("client-id", client=http_client)
-
-    challenge = type("Challenge", (), {
-        "device_code": "device-code",
-        "expires_in": 600,
-        "interval": 1,
-    })()
+    challenge = DeviceCodeChallenge(
+        device_code="device-code",
+        user_code="ABCD-EFGH",
+        verification_uri="https://microsoft.com/devicelogin",
+        expires_in=600,
+        interval=1,
+    )
 
     try:
         auth.poll_access_token(challenge, sleeper=lambda _: None, monotonic=lambda: 0.0)

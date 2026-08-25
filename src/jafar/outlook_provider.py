@@ -64,8 +64,19 @@ class OutlookEmailProvider:
                     sender=sender,
                     subject=str(raw.get("subject") or ""),
                     received_at=received_at,
-                    body_text=str(raw.get("bodyPreview") or ""),
+                    body_text=self._body_text(raw),
                     attachments=tuple(attachments),
                 )
             )
         return result
+
+    @staticmethod
+    def _body_text(raw: dict) -> str:
+        """Prefer the full plain-text Outlook body; fall back to the safe preview."""
+        body = raw.get("body")
+        if isinstance(body, dict):
+            content_type = str(body.get("contentType") or "").lower()
+            content = body.get("content")
+            if content_type == "text" and content:
+                return str(content)
+        return str(raw.get("bodyPreview") or "")

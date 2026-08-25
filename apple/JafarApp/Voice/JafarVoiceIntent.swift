@@ -35,9 +35,9 @@ struct JafarAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: JafarVoiceIntent(),
             phrases: [
-                "Спроси Джафара",
-                "Спросить Джафара",
-                "Команда Джафару"
+                "Спроси \(.applicationName)",
+                "Спросить \(.applicationName)",
+                "Команда \(.applicationName)"
             ],
             shortTitle: "Джафар",
             systemImageName: "waveform"

@@ -9,7 +9,24 @@ struct JafarVoiceIntent: AppIntent {
     var command: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: "Передаю команду Джафару: \(command)")
+        guard let client = JafarClientConfiguration.configuredRemoteClient() else {
+            return .result(
+                dialog: "Сначала откройте Джафар и настройте адрес API и API-ключ."
+            )
+        }
+
+        do {
+            let response = try await client.send(
+                request: CommandRequest(
+                    text: command,
+                    userId: "app-intent-user",
+                    sourceDevice: "apple-intent"
+                )
+            )
+            return .result(dialog: "\(response.message)")
+        } catch {
+            return .result(dialog: "Джафар не смог выполнить команду: \(error.localizedDescription)")
+        }
     }
 }
 

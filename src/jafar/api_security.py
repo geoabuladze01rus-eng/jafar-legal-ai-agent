@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, Header, status
 
 from .config import settings
 

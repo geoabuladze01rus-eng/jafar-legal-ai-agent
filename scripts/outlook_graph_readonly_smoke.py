@@ -2,22 +2,29 @@ from __future__ import annotations
 
 import argparse
 import os
-
-from jafar.attachment_storage import InMemoryAttachmentStorage
-from jafar.document_workflow import DocumentWorkflow
-from jafar.email_pipeline import EmailPipeline
-from jafar.email_processing import EmailProcessor
-from jafar.inbox import InboxDocumentIntake
-from jafar.inbox_processor import InboxProcessor
-from jafar.lawyer_context import LawyerContext
-from jafar.legal_analysis import LegalAnalyzer
-from jafar.matters import MatterStore
-from jafar.outlook_graph import MicrosoftGraphOutlookClient
-from jafar.outlook_provider import OutlookEmailProvider
-from jafar.outlook_readonly import OutlookReadOnlyService
+import sys
+from pathlib import Path
 
 
 def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    src_path = str(repo_root / "src")
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+
+    from jafar.attachment_storage import InMemoryAttachmentStorage
+    from jafar.document_workflow import DocumentWorkflow
+    from jafar.email_pipeline import EmailPipeline
+    from jafar.email_processing import EmailProcessor
+    from jafar.inbox import InboxDocumentIntake
+    from jafar.inbox_processor import InboxProcessor
+    from jafar.lawyer_context import LawyerContext
+    from jafar.legal_analysis import LegalAnalyzer
+    from jafar.matters import MatterStore
+    from jafar.outlook_graph import MicrosoftGraphOutlookClient
+    from jafar.outlook_provider import OutlookEmailProvider
+    from jafar.outlook_readonly import OutlookReadOnlyService
+
     parser = argparse.ArgumentParser(
         description=(
             "Run a local, read-only Outlook -> Jafar pipeline smoke using a short-lived "

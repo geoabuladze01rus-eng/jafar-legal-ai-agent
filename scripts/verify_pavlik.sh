@@ -3,6 +3,17 @@ set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+if ! "$PYTHON_BIN" -c 'import pytest, ruff' >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+[JAFAR] Missing development dependencies.
+Install once in your virtual environment with:
+  python3 -m pip install -e '.[dev]'
+Then rerun:
+  bash scripts/verify_pavlik.sh
+EOF
+  exit 2
+fi
+
 printf '\n[JAFAR] Python compile check\n'
 "$PYTHON_BIN" -m compileall -q src
 

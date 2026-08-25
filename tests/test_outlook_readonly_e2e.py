@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 
 from jafar.attachment_materializer import InMemoryAttachmentMaterializer
 from jafar.attachment_storage import InMemoryAttachmentStorage
+from jafar.command_runtime import JafarCommandRuntime
 from jafar.document_workflow import DocumentWorkflow
 from jafar.domains import MatterType
 from jafar.email_pipeline import EmailPipeline
 from jafar.email_processing import EmailProcessor
 from jafar.inbox import InboxDocumentIntake
 from jafar.inbox_processor import InboxProcessor
+from jafar.lawyer_context import LawyerContext
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import Matter
 from jafar.matters import MatterStore
@@ -72,9 +74,15 @@ def _matter() -> Matter:
     )
 
 
-def _service() -> tuple[OutlookReadOnlyService, MatterStore, SyntheticOutlookClient]:
+def _service() -> tuple[
+    OutlookReadOnlyService,
+    MatterStore,
+    SyntheticOutlookClient,
+    LawyerContext,
+]:
     store = MatterStore()
     store.create(_matter())
+    context = LawyerContext()
     client = SyntheticOutlookClient()
     provider = OutlookEmailProvider(
         client,
@@ -94,11 +102,11 @@ def _service() -> tuple[OutlookReadOnlyService, MatterStore, SyntheticOutlookCli
         InMemoryAttachmentStorage(),
     )
     pipeline = EmailPipeline(EmailProcessor(), inbox)
-    return OutlookReadOnlyService(provider, pipeline), store, client
+    return OutlookReadOnlyService(provider, pipeline, context), store, client, context
 
 
 def test_outlook_readonly_e2e_links_matter_analyzes_attachment_and_drafts_for_review():
-    service, store, client = _service()
+    service, store, client, context = _service()
 
     results = service.run(limit=1)
 
@@ -115,10 +123,26 @@ def test_outlook_readonly_e2e_links_matter_analyzes_attachment_and_drafts_for_re
     assert document.workflow.match.matter_id == "matter-pavlik"
     assert len(store.events("matter-pavlik")) == 1
     assert client.fetched_attachments == ["attachment-1"]
+    assert context.latest_legal_email is not None
+    assert context.latest_legal_email.matter_ids == ("matter-pavlik",)
+
+
+def test_outlook_readonly_e2e_feeds_latest_email_and_review_only_reply_commands():
+    service, store, _, context = _service()
+    service.run(limit=1)
+    runtime = JafarCommandRuntime(store, context)
+
+    latest = runtime.execute("latest_legal_email")
+    reply = runtime.execute("prepare_reply")
+
+    assert latest.data["email"]["matter_ids"] == ["matter-pavlik"]
+    assert reply.data["draft"]["requires_review"] is True
+    assert reply.data["draft"]["send_performed"] is False
+    assert reply.approval_required is False
 
 
 def test_outlook_readonly_e2e_is_idempotent_for_same_message():
-    service, store, _ = _service()
+    service, store, _, _ = _service()
 
     first = service.run(limit=1)[0]
     second = service.run(limit=1)[0]

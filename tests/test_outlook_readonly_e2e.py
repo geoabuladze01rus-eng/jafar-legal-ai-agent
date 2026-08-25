@@ -50,7 +50,14 @@ class SyntheticOutlookClient:
                 "size_bytes": 256,
                 "content_type": "text/plain",
                 "is_inline": False,
-            }
+            },
+            {
+                "id": "archive-1",
+                "name": "source-materials.zip",
+                "size_bytes": 4096,
+                "content_type": "application/zip",
+                "is_inline": False,
+            },
         ]
 
     def fetch_attachment(self, message_id: str, attachment_id: str) -> str:
@@ -123,6 +130,9 @@ def test_outlook_readonly_e2e_links_matter_analyzes_attachment_and_drafts_for_re
     assert document.workflow.match.matter_id == "matter-pavlik"
     assert len(store.events("matter-pavlik")) == 1
     assert client.fetched_attachments == ["attachment-1"]
+    assert len(result.pipeline.issues) == 1
+    assert result.pipeline.issues[0].filename == "source-materials.zip"
+    assert result.pipeline.issues[0].error_type == "UnsupportedAttachment"
     assert context.latest_legal_email is not None
     assert context.latest_legal_email.matter_ids == ("matter-pavlik",)
 

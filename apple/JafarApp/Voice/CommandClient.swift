@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 struct CommandRequest: Codable, Sendable {
     let text: String
@@ -54,4 +55,100 @@ struct RemoteCommandClient: CommandClient {
 enum CommandClientError: Error, Sendable {
     case invalidResponse
     case httpStatus(Int)
+}
+
+enum JafarClientConfiguration {
+    private static let endpointDefaultsKey = "jafar.api.endpoint"
+    private static let keychainService = "com.jafar.legal-ai-agent"
+    private static let keychainAccount = "api-key"
+
+    static var endpointString: String {
+        UserDefaults.standard.string(forKey: endpointDefaultsKey) ?? ""
+    }
+
+    static func configuredRemoteClient() -> RemoteCommandClient? {
+        guard
+            let endpoint = validatedEndpoint(endpointString),
+            let apiKey = readAPIKey(),
+            !apiKey.isEmpty
+        else {
+            return nil
+        }
+        return RemoteCommandClient(endpoint: endpoint, apiKey: apiKey)
+    }
+
+    static func makeCommandClient() -> any CommandClient {
+        configuredRemoteClient() ?? LocalCommandClient()
+    }
+
+    static func save(endpoint: String, apiKey: String?) throws {
+        guard let validated = validatedEndpoint(endpoint) else {
+            throw JafarConfigurationError.invalidEndpoint
+        }
+        UserDefaults.standard.set(validated.absoluteString, forKey: endpointDefaultsKey)
+        if let apiKey, !apiKey.isEmpty {
+            try saveAPIKey(apiKey)
+        }
+    }
+
+    private static func validatedEndpoint(_ rawValue: String) -> URL? {
+        guard
+            let url = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+            let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            url.host != nil
+        else {
+            return nil
+        }
+        return url
+    }
+
+    private static func saveAPIKey(_ apiKey: String) throws {
+        let encoded = Data(apiKey.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        var insert = query
+        insert[kSecValueData as String] = encoded
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(insert as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw JafarConfigurationError.keychain(status)
+        }
+    }
+
+    private static func readAPIKey() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
+enum JafarConfigurationError: Error, LocalizedError {
+    case invalidEndpoint
+    case keychain(OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidEndpoint:
+            return "Укажите полный адрес API, например http://127.0.0.1:8000/v1/command."
+        case let .keychain(status):
+            return "Не удалось сохранить API-ключ в Keychain (\(status))."
+        }
+    }
 }

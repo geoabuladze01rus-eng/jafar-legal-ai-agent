@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any
 
 
@@ -32,13 +33,15 @@ class LegalReasoningEngine:
             basis = tuple(
                 str(item) for item in fact.get("evidence_ids", []) if item in evidence_ids
             )
-            confidence = max(0.0, min(1.0, float(fact.get("confidence", 0.0))))
+            confidence, confidence_invalid = self._safe_confidence(fact.get("confidence"))
             metadata = dict(fact.get("metadata") or {})
             source_type = fact.get("source_type")
             if source_type:
                 metadata["source_type"] = str(source_type)
             if not basis:
                 metadata["evidence_gap"] = True
+            if confidence_invalid:
+                metadata["confidence_invalid"] = True
 
             findings.append(
                 LegalFinding(
@@ -46,27 +49,32 @@ class LegalReasoningEngine:
                     str(fact.get("statement", "")),
                     basis,
                     confidence,
-                    confidence < 0.95 or not basis,
+                    confidence_invalid or confidence < 0.95 or not basis,
                     metadata,
                 )
             )
 
         for risk in risks or []:
+            risk_basis = tuple(
+                str(item) for item in risk.get("evidence_ids", []) if item in evidence_ids
+            )
+            risk_confidence, confidence_invalid = self._safe_confidence(risk.get("confidence"))
             risk_metadata = dict(risk.get("metadata") or {})
             risk_metadata["severity"] = risk.get("severity")
             source_type = risk.get("source_type")
             if source_type:
                 risk_metadata["source_type"] = str(source_type)
+            if not risk_basis:
+                risk_metadata["evidence_gap"] = True
+            if confidence_invalid:
+                risk_metadata["confidence_invalid"] = True
+
             findings.append(
                 LegalFinding(
                     "risk_signal",
                     str(risk.get("statement", risk.get("title", ""))),
-                    tuple(
-                        str(item)
-                        for item in risk.get("evidence_ids", [])
-                        if item in evidence_ids
-                    ),
-                    max(0.0, min(1.0, float(risk.get("confidence", 0.0)))),
+                    risk_basis,
+                    risk_confidence,
                     True,
                     risk_metadata,
                 )
@@ -83,6 +91,23 @@ class LegalReasoningEngine:
                 "before legal reliance or external action."
             ),
         }
+
+    @staticmethod
+    def _safe_confidence(value: Any) -> tuple[float, bool]:
+        """Return a bounded confidence and whether the input was invalid.
+
+        Model output is untrusted input. Malformed, missing, NaN or infinite values must not
+        crash legal analysis or be promoted to a high-confidence conclusion.
+        """
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return 0.0, True
+
+        if not isfinite(confidence):
+            return 0.0, True
+
+        return max(0.0, min(1.0, confidence)), False
 
     @staticmethod
     def _serialize(item: LegalFinding) -> dict[str, Any]:

@@ -1,6 +1,5 @@
 from jafar.legal_reasoning import LegalReasoningEngine
 
-
 MAIN_CASE = "12604008104000012"
 
 

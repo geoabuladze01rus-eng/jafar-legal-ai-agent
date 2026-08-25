@@ -13,13 +13,18 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private let recognizer = VoiceRecognizer()
     private let synthesizer = AVSpeechSynthesizer()
-    private let commandClient: any CommandClient
+    private var commandClient: any CommandClient
     private let userId: String
     private var speechDelegate: SpeechDelegate?
 
     init(commandClient: any CommandClient, userId: String) {
         self.commandClient = commandClient
         self.userId = userId
+    }
+
+    func configure(commandClient: any CommandClient) {
+        self.commandClient = commandClient
+        errorMessage = nil
     }
 
     func start() async {

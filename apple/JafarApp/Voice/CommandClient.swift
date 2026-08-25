@@ -23,20 +23,20 @@ struct LocalCommandClient: CommandClient {
 struct RemoteCommandClient: CommandClient {
     let endpoint: URL
     let session: URLSession
-    let authorizationToken: String?
+    let apiKey: String?
 
-    init(endpoint: URL, session: URLSession = .shared, authorizationToken: String? = nil) {
+    init(endpoint: URL, session: URLSession = .shared, apiKey: String? = nil) {
         self.endpoint = endpoint
         self.session = session
-        self.authorizationToken = authorizationToken
+        self.apiKey = apiKey
     }
 
     func send(request: CommandRequest) async throws -> CommandResponse {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let authorizationToken {
-            urlRequest.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
+        if let apiKey {
+            urlRequest.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key")
         }
         urlRequest.httpBody = try JSONEncoder().encode(request)
 

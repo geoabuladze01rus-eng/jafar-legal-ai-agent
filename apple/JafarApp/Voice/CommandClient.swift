@@ -5,6 +5,12 @@ struct CommandRequest: Codable, Sendable {
     let text: String
     let userId: String
     let sourceDevice: String
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case userId = "user_id"
+        case sourceDevice = "source_device"
+    }
 }
 
 struct CommandResponse: Codable, Sendable {
@@ -52,9 +58,18 @@ struct RemoteCommandClient: CommandClient {
     }
 }
 
-enum CommandClientError: Error, Sendable {
+enum CommandClientError: Error, Sendable, LocalizedError {
     case invalidResponse
     case httpStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "API вернул некорректный ответ."
+        case let .httpStatus(statusCode):
+            return "API вернул HTTP \(statusCode)."
+        }
+    }
 }
 
 enum JafarClientConfiguration {

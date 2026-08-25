@@ -1,9 +1,10 @@
 # Jafar production-readiness runbook
 
 This runbook is for a non-production Supabase project or development branch.
-Never start with production. The current recovery Git history is not mergeable
-until the canonical `836f900` object is recovered and the reviewed commits are
-transferred onto a branch created from that commit.
+Never start with production. Deploy only from the tested
+`codex/jafar-canonical-v2` branch after confirming that its current `HEAD` is a
+descendant of the recorded `origin/main` base. Recovery-only commits and roots
+must not be present in that branch's ancestry.
 
 ## Document state machine
 
@@ -74,9 +75,11 @@ failure retry budget. Existing embeddings are never overwritten.
 
 ## Staging deployment checklist
 
-1. Recover a Git bundle, clone, or other object database containing `836f900`.
-2. Create `codex/document-pipeline-hardening-v2` exactly from `836f900` and
-   transfer the reviewed commits. Confirm with `git merge-base --is-ancestor`.
+1. Record the current `origin/main` SHA and the tested
+   `codex/jafar-canonical-v2` SHA. Confirm ancestry with
+   `git merge-base --is-ancestor origin/main HEAD`.
+2. Confirm the canonical branch passes Python, Ruff, Deno, migration parse, and
+   secret-scan gates, and that no recovery-only root is in its ancestry.
 3. Create or select an isolated Supabase staging project/branch. If branch
    creation is billable, obtain cost approval first.
 4. Take a schema backup and record the current migrations, function versions,

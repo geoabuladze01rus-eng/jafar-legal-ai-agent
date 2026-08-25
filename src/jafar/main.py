@@ -201,6 +201,7 @@ async def analyze_document(
         extracted,
         document_task,
         matter_type,
+        matter_id=matter_id,
     )
     resolved_matter_id = result.match.matter_id if result.match else matter_id
     return AnalysisResponse(analysis=result.analysis, matter_id=resolved_matter_id)

@@ -181,7 +181,7 @@ class JafarCommandRuntime:
                 "matter": None,
             }
 
-        matter = sorted(matches, key=lambda item: item.updated_at, reverse=True)[0]
+        matter = max(matches, key=lambda item: item.updated_at)
         events = sorted(self.matter_store.events(matter.id), key=lambda item: item.event_date, reverse=True)
         latest_event = events[0] if events else None
         deadlines = sorted(

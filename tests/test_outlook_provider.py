@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from jafar.attachment_materializer import InMemoryAttachmentMaterializer
 from jafar.outlook_provider import OutlookEmailProvider, OutlookProviderConfig
 
@@ -25,7 +23,7 @@ class FakeOutlook:
         return f"file://{attachment_id}"
 
 
-def test_provider_materializes_supported_attachment_bytes():
+def test_provider_materializes_supported_attachment_bytes_and_surfaces_unsupported_files():
     client = FakeOutlook()
     materializer = InMemoryAttachmentMaterializer({"file://pdf-1": b"real-pdf-bytes"})
     messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
@@ -34,6 +32,9 @@ def test_provider_materializes_supported_attachment_bytes():
     assert messages[0].attachments[0].filename == "court.pdf"
     assert messages[0].attachments[0].content == b"real-pdf-bytes"
     assert client.fetched == ["pdf-1"]
+    assert len(messages[0].provider_issues) == 1
+    assert messages[0].provider_issues[0].filename == "archive.zip"
+    assert messages[0].provider_issues[0].error_type == "UnsupportedAttachment"
 
 
 def test_provider_prefers_full_plain_text_body_over_preview():
@@ -75,7 +76,7 @@ def test_provider_uses_preview_for_html_body_to_avoid_raw_markup():
     assert messages[0].body_text == "Безопасный текстовый preview"
 
 
-def test_provider_skips_oversized_attachment():
+def test_provider_surfaces_oversized_attachment_without_fetching():
     class LargeAttachmentClient(FakeOutlook):
         def list_attachments(self, message_id):
             return [{"id":"large","name":"large.pdf","size_bytes":101,"content_type":"application/pdf","is_inline":False}]
@@ -85,10 +86,15 @@ def test_provider_skips_oversized_attachment():
     messages = OutlookEmailProvider(client, materializer, OutlookProviderConfig(max_attachment_bytes=100)).fetch_messages()
     assert messages[0].attachments == ()
     assert client.fetched == []
+    assert messages[0].provider_issues[0].error_type == "AttachmentTooLarge"
 
 
-def test_provider_surfaces_materialization_failure():
+def test_provider_surfaces_materialization_failure_without_aborting_mailbox():
     client = FakeOutlook()
     materializer = InMemoryAttachmentMaterializer({})
-    with pytest.raises(FileNotFoundError):
-        OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    assert messages[0].attachments == ()
+    assert {issue.error_type for issue in messages[0].provider_issues} == {
+        "FileNotFoundError",
+        "UnsupportedAttachment",
+    }

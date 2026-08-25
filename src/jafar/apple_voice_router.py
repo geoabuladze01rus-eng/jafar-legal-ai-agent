@@ -21,9 +21,11 @@ class AppleVoiceCommandRouter:
         ("create_draft", re.compile(r"(?:создай|подготовь)\s+(?:черновик|ответ)(?:\s+(?P<topic>.+))?", re.I)),
         ("set_reminder", re.compile(r"(?:напомни|поставь напоминание)\s+(?P<task>.+)", re.I)),
     )
+    WAKE_WORD = re.compile(r"^джафар\s*[,.:;!?-]?\s*", re.I)
 
     def route(self, phrase: str) -> VoiceIntent:
         normalized = " ".join(phrase.strip().split())
+        normalized = self.WAKE_WORD.sub("", normalized).strip()
         for intent, pattern in self.PATTERNS:
             match = pattern.fullmatch(normalized)
             if match:

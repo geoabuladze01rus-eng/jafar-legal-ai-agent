@@ -139,3 +139,27 @@ def test_same_filename_with_different_content_is_not_deduplicated():
     assert second.event is not None
     assert first.event.id != second.event.id
     assert len(store.events("matter-1")) == 2
+
+
+def test_explicit_matter_id_links_and_persists_unmatched_document():
+    store = MatterStore()
+    store.create(make_matter())
+    workflow = DocumentWorkflow(store, LegalAnalyzer())
+
+    result = workflow.process(
+        "explicit.txt",
+        ExtractedDocument(
+            filename="explicit.txt",
+            media_type="text/plain",
+            text="Документ без номера дела. Срок обжалования до 31.08.2026.",
+        ),
+        matter_id="matter-1",
+    )
+
+    assert result.match is not None
+    assert result.match.matter_id == "matter-1"
+    assert result.match.score == 1.0
+    assert result.event is not None
+    assert result.event.matter_id == "matter-1"
+    assert store.events("matter-1")
+    assert store.get("matter-1").deadlines

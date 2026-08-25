@@ -34,7 +34,7 @@ class MicrosoftDeviceCodeAuth:
         self._tenant = normalized_tenant
         self._owns_client = client is None
         self._client = client or httpx.Client(
-            base_url=f"https://login.microsoftonline.com/{normalized_tenant}/oauth2/v2.0",
+            base_url=f"https://login.microsoftonline.com/{normalized_tenant}/oauth2/v2.0/",
             timeout=15.0,
         )
 
@@ -42,9 +42,13 @@ class MicrosoftDeviceCodeAuth:
         if self._owns_client:
             self._client.close()
 
-    def request_device_code(self, *, scope: str = "https://graph.microsoft.com/Mail.Read") -> DeviceCodeChallenge:
+    def request_device_code(
+        self,
+        *,
+        scope: str = "https://graph.microsoft.com/Mail.Read",
+    ) -> DeviceCodeChallenge:
         response = self._client.post(
-            "/devicecode",
+            "devicecode",
             data={"client_id": self._client_id, "scope": scope},
         )
         self._raise_for_status(response)
@@ -82,7 +86,7 @@ class MicrosoftDeviceCodeAuth:
 
         while monotonic() < deadline:
             response = self._client.post(
-                "/token",
+                "token",
                 data={
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                     "client_id": self._client_id,

@@ -1,8 +1,14 @@
 import re
 from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
+
+from pydantic import ValidationError
 
 from .domains import DocumentTask, MatterType
 from .legal_models import Deadline, LegalAnalysis, LegalIssue, RiskLevel
+
+if TYPE_CHECKING:
+    from .model_provider import ModelProvider
 
 
 DATE_PATTERNS = (
@@ -13,14 +19,39 @@ CASE_NUMBER = re.compile(r"(?:дело|дела|№)\s*№?\s*([A-Za-zА-Яа-я
 
 
 class LegalAnalyzer:
-    """Provider-neutral first-pass analyzer.
+    """Provider-neutral first-pass analyzer with deterministic fallback.
 
-    This layer deliberately does not claim that regex heuristics are legal advice.
-    A model provider can replace/enrich this implementation while preserving the
-    structured output contract.
+    When a provider is configured, its structured response is validated against
+    ``LegalAnalysis`` before use. Invalid or unavailable provider output safely
+    falls back to the deterministic local heuristics.
     """
 
+    def __init__(self, provider: "ModelProvider | None" = None) -> None:
+        self.provider = provider
+
     def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
+        if self.provider is not None:
+            try:
+                payload = self.provider.analyze(text, task, matter_type)
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                enriched = dict(payload)
+                enriched.update(
+                    task=task,
+                    matter_type=matter_type,
+                    generated_at=datetime.now(timezone.utc),
+                )
+                try:
+                    return LegalAnalysis.model_validate(enriched)
+                except (ValidationError, TypeError, ValueError):
+                    pass
+
+        return self._analyze_heuristically(text, task, matter_type)
+
+    def _analyze_heuristically(
+        self, text: str, task: DocumentTask, matter_type: MatterType
+    ) -> LegalAnalysis:
         normalized = " ".join(text.split())
         issues = self._find_risk_signals(normalized)
         deadlines = self._extract_dates(normalized)

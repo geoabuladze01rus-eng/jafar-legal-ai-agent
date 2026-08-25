@@ -22,13 +22,22 @@ class FakeProvider:
         return ModelResponse(self.key, "test-model", self.text, {})
 
 
+def routing_request(*, verification: bool = False) -> ModelRequest:
+    """Synthetic routing tests are non-confidential by design.
+
+    Confidential legal requests remain restricted by ProviderPrivacyPolicy and
+    must not silently fall back to providers that are disallowed for client data.
+    """
+    return ModelRequest("p", "legal_analysis", verification=verification, confidential=False)
+
+
 def test_router_prefers_openai_for_legal_analysis() -> None:
     providers = {
         "openai": FakeProvider("openai", "ok"),
         "gemini": FakeProvider("gemini", "vision"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
+    decision = ModelRouter(providers).decide(routing_request())
     assert decision.primary == "openai"
 
 
@@ -38,7 +47,7 @@ def test_router_falls_back_when_primary_is_unavailable() -> None:
         "gemini": FakeProvider("gemini", "vision"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
+    decision = ModelRouter(providers).decide(routing_request())
     assert decision.primary == "gemini"
 
 
@@ -48,7 +57,7 @@ def test_router_falls_back_when_primary_fails_at_runtime() -> None:
         "gemini": FakeProvider("gemini", "fallback"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    result = ModelRouter(providers).run(ModelRequest("p", "legal_analysis"))
+    result = ModelRouter(providers).run(routing_request())
     assert result[0].provider == "gemini"
     assert result[0].metadata["routing_fallback_from"] == "openai"
 
@@ -59,9 +68,7 @@ def test_verification_uses_independent_provider() -> None:
         "deepseek": FakeProvider("deepseek", "same conclusion"),
         "gemini": FakeProvider("gemini", "vision"),
     }
-    result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
-    )
+    result = ModelConsensus(ModelRouter(providers)).evaluate(routing_request(verification=True))
     assert result.primary.provider == "openai"
     assert result.verifier is not None
     assert result.verifier.provider == "deepseek"
@@ -75,9 +82,7 @@ def test_verification_marks_disagreement_instead_of_hiding_it() -> None:
         "deepseek": FakeProvider("deepseek", "conclusion B"),
         "gemini": FakeProvider("gemini", "vision"),
     }
-    result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
-    )
+    result = ModelConsensus(ModelRouter(providers)).evaluate(routing_request(verification=True))
     assert result.verifier is not None
     assert result.confidence == 0.45
     assert result.disagreements
@@ -90,7 +95,7 @@ def test_requested_verification_fails_closed_when_verifier_unavailable() -> None
         "deepseek": FakeProvider("deepseek", "unavailable", available=False),
     }
     with pytest.raises(RuntimeError, match="Verification requested"):
-        ModelRouter(providers).decide(ModelRequest("p", "legal_analysis", verification=True))
+        ModelRouter(providers).decide(routing_request(verification=True))
 
 
 def test_verifier_runtime_failure_is_not_silently_downgraded() -> None:
@@ -99,4 +104,4 @@ def test_verifier_runtime_failure_is_not_silently_downgraded() -> None:
         "deepseek": FakeProvider("deepseek", "broken", error=RuntimeError("timeout")),
     }
     with pytest.raises(RuntimeError, match="Independent verification provider"):
-        ModelRouter(providers).run(ModelRequest("p", "legal_analysis", verification=True))
+        ModelRouter(providers).run(routing_request(verification=True))

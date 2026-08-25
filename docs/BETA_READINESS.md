@@ -47,12 +47,15 @@ The remaining test warning is the existing FastAPI/Starlette TestClient deprecat
 
 1. **Unauthenticated private API surface.** `/v1/*` endpoints and legal-entity routes had no authentication dependency. A fail-closed `X-Jafar-API-Key` boundary is now added for non-development environments.
 2. **OpenAI document path type error.** The document endpoint could pass an `ExtractedDocument` object to an analyzer that requires `str`, causing a runtime failure when OpenAI was configured. The endpoint now routes through one resilient analyzer and always analyzes extracted text.
-3. **Provider configuration mismatch.** Main application initialization checked `os.getenv()` rather than the already-loaded settings object. The audit branch uses `settings.openai_api_key`.
+3. **Provider configuration mismatch.** Main application initialization checked `os.getenv()` rather than the already-loaded settings object. The audit branch uses the Pydantic settings object consistently.
 4. **Provider outage behavior.** The main legal path could fail hard on a provider runtime error. The audit branch falls back to deterministic local legal heuristics while preserving invalid-input errors.
-5. **Version drift.** Package metadata was `0.3.1` while the FastAPI service reported `0.6.0`. Package metadata is aligned to `0.6.0`.
-6. **Apple authentication mismatch.** The Swift remote client sent `Authorization: Bearer`, while the hardened API contract uses `X-Jafar-API-Key`. The client now uses the same header contract.
-7. **Apple speech delegate lifetime.** The speech synthesizer delegate was not retained strongly, which could leave `isSpeaking` stuck. The view model now retains the delegate for the duration of speech.
-8. **Canonical CI coverage.** Python and Apple workflows only targeted `main`. They now also target pull requests into `codex/jafar-canonical-v2`.
+5. **Accidental external-AI spend/data egress risk.** Merely having an API key available could activate the external provider path. External AI is now explicit opt-in with `EXTERNAL_AI_ENABLED=false` by default.
+6. **Explicit matter-link persistence bug.** `/v1/documents/analyze?matter_id=...` could return the requested matter ID without guaranteeing that the document event/deadlines were persisted to that matter. Explicit matter IDs are now authoritative in `DocumentWorkflow` and covered by a regression test.
+7. **Version drift.** Package metadata was `0.3.1` while the FastAPI service reported `0.6.0`. Package metadata is aligned to `0.6.0`.
+8. **Apple authentication mismatch.** The Swift remote client sent `Authorization: Bearer`, while the hardened API contract uses `X-Jafar-API-Key`. The client now uses the same header contract.
+9. **Apple speech delegate lifetime.** The speech synthesizer delegate was not retained strongly, which could leave `isSpeaking` stuck. The view model now retains the delegate for the duration of speech.
+10. **Canonical CI coverage.** Python and Apple workflows only targeted `main`. They now also target pull requests into `codex/jafar-canonical-v2`.
+11. **Repository hygiene.** Superseded/divergent PRs were closed so the active development line is limited to Pavlik/canonical, isolated DB hardening, and Beta audit stacks.
 
 ### Still blocking the private Beta exit
 
@@ -80,6 +83,7 @@ The first private Beta is intentionally narrow:
 - matter matching, chronology, deadlines, risks and evidence gaps;
 - reply/document drafting for review;
 - explicit human approval before any consequential external action;
+- external AI disabled by default and enabled only deliberately;
 - no autonomous filing, sending or publishing;
 - production database changes excluded from the Beta gate until isolated validation exists.
 

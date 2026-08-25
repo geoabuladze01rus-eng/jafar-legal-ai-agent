@@ -18,7 +18,7 @@ from .legal_analysis import LegalAnalyzer
 from .legal_reasoning import LegalReasoningEngine
 
 DEFAULT_EXPECTED_CASE = "12604008104000012"
-PERSON_TOKEN = re.compile(r"\b([А-ЯЁ][а-яё]{3,})\s+([А-ЯЁ])\.([А-ЯЁ])\.")
+PERSON_TOKEN = re.compile(r"\b([А-ЯЁ][а-яё]{3,})\s+([А-ЯЁ])\s*\.\s*([А-ЯЁ])\s*\.")
 RUSSIAN_MONTHS = {
     "января": 1,
     "февраля": 2,
@@ -71,7 +71,7 @@ def _match(pattern: str, text: str, label: str, flags: int = 0) -> re.Match[str]
 
 
 def _iso_date(value: str) -> str:
-    return datetime.strptime(value, "%d.%m.%Y").date().isoformat()
+    return datetime.strptime(value, "%d.%m.%Y").replace(tzinfo=UTC).date().isoformat()
 
 
 def _natural_date(text: str) -> str:
@@ -112,29 +112,29 @@ def _has_initials_conflict(text: str) -> bool:
     return any(len(initials) > 1 for initials in by_surname.values())
 
 
-def _has_duplicate_participant(page_two: str) -> bool:
-    section = _match(
+def _has_duplicate_participant(text: str) -> bool:
+    sections = re.finditer(
         r"организованной\s+преступной\s+деятельности(?P<body>.*?)в\s+период\s+времени",
-        page_two,
-        "alleged participant list",
+        text,
         re.IGNORECASE | re.DOTALL,
-    ).group("body")
-    identities = [
-        (_surname_key(surname), f"{first}.{second}.")
-        for surname, first, second in PERSON_TOKEN.findall(section)
-    ]
-    return any(count > 1 for count in Counter(identities).values())
-
+    )
+    for match in sections:
+        identities = [
+            (_surname_key(surname), f"{first}.{second}.")
+            for surname, first, second in PERSON_TOKEN.findall(match.group("body"))
+        ]
+        if any(count > 1 for count in Counter(identities).values()):
+            return True
+    return False
 
 def _source_anomalies(pages: tuple[ExtractedPage, ...]) -> tuple[str, ...]:
     whole_text = "\n".join(page.text for page in pages)
-    page_two = _page(pages, 2)
     page_three = _page(pages, 3)
     anomalies: list[str] = []
 
     if _has_initials_conflict(whole_text):
         anomalies.append("participant_initials_conflict")
-    if _has_duplicate_participant(page_two):
+    if _has_duplicate_participant(whole_text):
         anomalies.append("duplicate_participant_in_source")
     if re.search(
         r"сотрудниками\s+ПУ\s+ФСБ\s+России\s+по\s+[А-ЯЁа-яё-]+скому\.",
@@ -199,7 +199,7 @@ def extract_motion_contract(
         re.IGNORECASE | re.DOTALL,
     )
     charge = _match(
-        r"(\d{2}\.\d{2}\.\d{4}).{0,100}?предъявлено\s+обвинение",
+        r"(\d{2}\.\d{2}\.\d{4})(?:(?!\d{2}\.\d{2}\.\d{4}).){0,160}?предъявлено\s+обвинение",
         page_three,
         "charge date",
         re.IGNORECASE | re.DOTALL,
@@ -224,7 +224,7 @@ def extract_motion_contract(
     formal_request = _match(
         r"Ходатайствовать\s+перед.*?о\s+продлении.*?то\s+есть\s+до\s+"
         r"(\d{2}\.\d{2}\.\d{4})",
-        page_four,
+        f"{page_three}\n{page_four}",
         "formal investigator request",
         re.IGNORECASE | re.DOTALL,
     ).group(1)

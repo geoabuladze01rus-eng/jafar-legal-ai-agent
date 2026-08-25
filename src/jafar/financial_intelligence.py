@@ -19,7 +19,7 @@ class FinancialIntelligence:
     def analyze(self, periods: list[FinancialPeriod]) -> dict[str, Any]:
         ordered = sorted(periods, key=lambda p: p.year)
         signals: list[dict[str, Any]] = []
-        for current, previous in zip(ordered, ordered[1:]):
+        for previous, current in zip(ordered, ordered[1:]):
             if current.revenue is not None and previous.revenue not in (None, 0):
                 change = (current.revenue - previous.revenue) / abs(previous.revenue)
                 if change <= -0.30:

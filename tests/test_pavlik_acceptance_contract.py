@@ -96,6 +96,7 @@ def test_pavlik_reasoning_preserves_provenance_attribution_and_review_gate():
     assert evidence_gap["metadata"]["evidence_gap"] is True
 
     assert court_outcome["metadata"]["source_type"] == "court_conclusion"
+    assert court_outcome["requires_human_review"] is True
 
     assert risk["basis"] == ["p4-allegation"]
     assert risk["requires_human_review"] is True

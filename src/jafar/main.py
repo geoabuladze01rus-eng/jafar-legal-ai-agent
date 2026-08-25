@@ -12,6 +12,7 @@ from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
+from .lawyer_context import LawyerContext
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
@@ -71,9 +72,10 @@ class ResilientLegalAnalyzer:
 
 analyzer = ResilientLegalAnalyzer()
 matter_store = MatterStore()
+lawyer_context = LawyerContext()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, analyzer)
-command_runtime = JafarCommandRuntime(matter_store)
+command_runtime = JafarCommandRuntime(matter_store, lawyer_context)
 
 
 class HealthResponse(BaseModel):
@@ -110,22 +112,41 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
+def _resolve_command(text: str) -> tuple[str | None, dict]:
+    normalized = " ".join(text.lower().split())
+    if "здоров" in normalized or "проверка связи" in normalized:
+        return "health", {}
+    if any(
+        phrase in normalized
+        for phrase in ("что требует моего внимания", "что требует внимания")
+    ):
+        return "attention_summary", {}
+    if "что нового по делу" in normalized:
+        query = normalized.split("что нового по делу", 1)[1].strip(" ?!.,:;«»\"")
+        return "matter_update", {"query": query}
+    if any(
+        phrase in normalized
+        for phrase in ("разбери последнее юридическое письмо", "последнее юридическое письмо")
+    ):
+        return "latest_legal_email", {}
+    if any(phrase in normalized for phrase in ("подготовь ответ", "подготовить ответ")):
+        return "prepare_reply", {}
+    if any(
+        phrase in normalized
+        for phrase in ("покажи мои дела", "список дел", "мои дела")
+    ):
+        return "list_matters", {}
+    return None, {}
+
+
 @app.post(
     "/v1/command",
     response_model=CommandResponse,
     dependencies=[Depends(require_api_key)],
 )
 def command(request: CommandRequest) -> CommandResponse:
-    normalized = " ".join(request.text.lower().split())
-
-    if "здоров" in normalized or "проверка связи" in normalized:
-        intent = "health"
-    elif any(
-        phrase in normalized
-        for phrase in ("покажи мои дела", "список дел", "мои дела")
-    ):
-        intent = "list_matters"
-    else:
+    intent, args = _resolve_command(request.text)
+    if intent is None:
         return CommandResponse(
             message=(
                 "Команда получена. Для выполнения действия требуется "
@@ -137,6 +158,7 @@ def command(request: CommandRequest) -> CommandResponse:
 
     result = command_runtime.execute(
         intent,
+        args=args,
         approved=request.approved,
     )
     return CommandResponse(

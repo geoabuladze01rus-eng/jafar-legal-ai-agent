@@ -102,3 +102,73 @@ def test_pavlik_reasoning_preserves_provenance_attribution_and_review_gate():
     assert risk["requires_human_review"] is True
     assert risk["metadata"]["severity"] == "high"
     assert risk["metadata"]["source_type"] == "review_rule"
+
+
+def test_malformed_confidence_fails_closed_without_crashing_legal_analysis():
+    result = LegalReasoningEngine().analyze(
+        facts=[
+            {
+                "statement": "Поврежденный ответ модели",
+                "evidence_ids": ["p3"],
+                "confidence": "unknown",
+                "source_type": "document_fact",
+            },
+            {
+                "statement": "NaN не должен стать высоким confidence",
+                "evidence_ids": ["p3"],
+                "confidence": float("nan"),
+                "source_type": "document_fact",
+            },
+        ],
+        evidence=[{"evidence_id": "p3", "page": 3}],
+        risks=[
+            {
+                "statement": "Поврежденный confidence риска",
+                "severity": "high",
+                "evidence_ids": ["missing"],
+                "confidence": None,
+                "source_type": "review_rule",
+            }
+        ],
+    )
+
+    first, second, risk = result["findings"]
+
+    assert first["confidence"] == 0.0
+    assert first["requires_human_review"] is True
+    assert first["metadata"]["confidence_invalid"] is True
+
+    assert second["confidence"] == 0.0
+    assert second["requires_human_review"] is True
+    assert second["metadata"]["confidence_invalid"] is True
+
+    assert risk["confidence"] == 0.0
+    assert risk["requires_human_review"] is True
+    assert risk["basis"] == []
+    assert risk["metadata"]["confidence_invalid"] is True
+    assert risk["metadata"]["evidence_gap"] is True
+
+
+def test_confidence_is_clamped_to_legal_contract_bounds():
+    result = LegalReasoningEngine().analyze(
+        facts=[
+            {
+                "statement": "Сверх единицы",
+                "evidence_ids": ["e1"],
+                "confidence": 9.0,
+                "source_type": "document_fact",
+            },
+            {
+                "statement": "Ниже нуля",
+                "evidence_ids": ["e1"],
+                "confidence": -4.0,
+                "source_type": "document_fact",
+            },
+        ],
+        evidence=[{"evidence_id": "e1"}],
+    )
+
+    high, low = result["findings"]
+    assert high["confidence"] == 1.0
+    assert low["confidence"] == 0.0
+    assert low["requires_human_review"] is True

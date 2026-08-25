@@ -42,7 +42,9 @@ app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
-    OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.openai_api_key else None
+    OpenAILegalAnalyzer(config=AIProviderConfig())
+    if settings.external_ai_enabled and settings.openai_api_key
+    else None
 )
 
 

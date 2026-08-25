@@ -45,11 +45,18 @@ final class VoiceSessionViewModel: ObservableObject {
         recognizer.stop()
         isListening = false
         transcript = recognizer.transcript
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        await send(text: transcript)
+    }
+
+    func send(text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        errorMessage = nil
+        transcript = trimmed
         do {
             let result = try await commandClient.send(
                 request: CommandRequest(
-                    text: transcript,
+                    text: trimmed,
                     userId: userId,
                     sourceDevice: "apple"
                 )

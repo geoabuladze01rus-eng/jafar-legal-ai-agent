@@ -21,15 +21,18 @@ def main() -> int:
     from jafar.lawyer_context import LawyerContext
     from jafar.legal_analysis import LegalAnalyzer
     from jafar.matters import MatterStore
+    from jafar.microsoft_device_auth import MicrosoftDeviceCodeAuth
     from jafar.outlook_graph import MicrosoftGraphOutlookClient
     from jafar.outlook_provider import OutlookEmailProvider
     from jafar.outlook_readonly import OutlookReadOnlyService
 
     parser = argparse.ArgumentParser(
         description=(
-            "Run a local, read-only Outlook -> Jafar pipeline smoke using a short-lived "
-            "Microsoft Graph access token. Message contents and attachment bytes are not "
-            "printed or persisted by this helper."
+            "Run a local, read-only Outlook -> Jafar pipeline smoke. A short-lived Graph "
+            "access token may be supplied via OUTLOOK_GRAPH_ACCESS_TOKEN, or the helper "
+            "can acquire one with Microsoft device-code authentication when "
+            "OUTLOOK_GRAPH_CLIENT_ID is configured. Message contents and attachment bytes "
+            "are not printed or persisted by this helper."
         )
     )
     parser.add_argument("--limit", type=int, default=5)
@@ -37,10 +40,25 @@ def main() -> int:
 
     access_token = os.environ.get("OUTLOOK_GRAPH_ACCESS_TOKEN", "").strip()
     if not access_token:
-        raise SystemExit(
-            "OUTLOOK_GRAPH_ACCESS_TOKEN is required. Use a short-lived delegated token "
-            "with Mail.Read; do not put the token in source files or shell history."
-        )
+        client_id = os.environ.get("OUTLOOK_GRAPH_CLIENT_ID", "").strip()
+        if not client_id:
+            raise SystemExit(
+                "Set OUTLOOK_GRAPH_CLIENT_ID to a Microsoft public-client application ID "
+                "with delegated Mail.Read permission, or provide a short-lived "
+                "OUTLOOK_GRAPH_ACCESS_TOKEN. Do not put tokens in source files or Git."
+            )
+
+        tenant = os.environ.get("OUTLOOK_GRAPH_TENANT", "consumers").strip() or "consumers"
+        auth = MicrosoftDeviceCodeAuth(client_id, tenant=tenant)
+        try:
+            challenge = auth.request_device_code()
+            print("MICROSOFT DEVICE AUTH REQUIRED")
+            print(f"OPEN={challenge.verification_uri}")
+            print(f"CODE={challenge.user_code}")
+            print("Waiting for sign-in; the access token will not be printed or persisted.")
+            access_token = auth.poll_access_token(challenge)
+        finally:
+            auth.close()
 
     store = MatterStore()
     context = LawyerContext()
@@ -77,6 +95,7 @@ def main() -> int:
     print("SEND_OPERATIONS=0")
     print("MESSAGE_CONTENT_PRINTED=false")
     print("ATTACHMENT_BYTES_PERSISTED=false")
+    print("ACCESS_TOKEN_PERSISTED=false")
     return 0
 
 

@@ -26,7 +26,7 @@ def _request_json(url: str, *, api_key: str | None = None, payload: dict | None 
     if api_key:
         headers["X-Jafar-API-Key"] = api_key
     request = Request(url, data=data, headers=headers, method="POST" if payload else "GET")
-    with urlopen(request, timeout=2) as response:  # noqa: S310 - loopback smoke only.
+    with urlopen(request, timeout=2) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

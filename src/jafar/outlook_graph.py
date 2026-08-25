@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Self
 from urllib.parse import quote
 
 import httpx
@@ -34,7 +35,7 @@ class MicrosoftGraphOutlookClient:
         if self._owns_client:
             self._client.close()
 
-    def __enter__(self) -> MicrosoftGraphOutlookClient:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

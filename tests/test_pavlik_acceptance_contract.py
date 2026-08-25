@@ -59,6 +59,7 @@ def test_pavlik_reasoning_preserves_provenance_attribution_and_review_gate():
                 "severity": "high",
                 "evidence_ids": ["p4-allegation"],
                 "confidence": 0.99,
+                "source_type": "review_rule",
             }
         ],
         timeline=timeline,
@@ -77,19 +78,27 @@ def test_pavlik_reasoning_preserves_provenance_attribution_and_review_gate():
     main_case = next(item for item in findings if MAIN_CASE in item["statement"])
     allegation = next(item for item in findings if "Следствие утверждает" in item["statement"])
     evidence_gap = next(item for item in findings if "Хафизов" in item["statement"])
+    court_outcome = next(item for item in findings if "домашний арест" in item["statement"])
     risk = next(item for item in findings if item["kind"] == "risk_signal")
 
     assert main_case["basis"] == ["p1-case"]
     assert main_case["requires_human_review"] is False
+    assert main_case["metadata"]["source_type"] == "document_fact"
 
     assert allegation["basis"] == ["p4-allegation"]
     assert allegation["requires_human_review"] is True
     assert allegation["confidence"] == 0.80
+    assert allegation["metadata"]["source_type"] == "investigation_allegation"
 
     assert evidence_gap["basis"] == []
     assert evidence_gap["requires_human_review"] is True
     assert evidence_gap["confidence"] == 0.45
+    assert evidence_gap["metadata"]["source_type"] == "evidence_gap"
+    assert evidence_gap["metadata"]["evidence_gap"] is True
+
+    assert court_outcome["metadata"]["source_type"] == "court_conclusion"
 
     assert risk["basis"] == ["p4-allegation"]
     assert risk["requires_human_review"] is True
     assert risk["metadata"]["severity"] == "high"
+    assert risk["metadata"]["source_type"] == "review_rule"

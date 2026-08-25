@@ -46,9 +46,9 @@ class LegalReasoningEngine:
             confidence = self._confidence(raw_confidence)
             confidence_invalid = self._confidence_invalid(raw_confidence)
             metadata = self._finding_metadata(fact.get("metadata"), missing_ids)
-            source_type = fact.get("source_type")
+            source_type = str(fact.get("source_type")) if fact.get("source_type") else None
             if source_type:
-                metadata["source_type"] = str(source_type)
+                metadata["source_type"] = source_type
             if not basis:
                 metadata["evidence_gap"] = True
             if confidence_invalid:
@@ -59,7 +59,13 @@ class LegalReasoningEngine:
                     statement,
                     basis,
                     confidence,
-                    confidence_invalid or confidence < 0.95 or not basis or bool(missing_ids),
+                    (
+                        confidence_invalid
+                        or confidence < 0.95
+                        or not basis
+                        or bool(missing_ids)
+                        or self._source_requires_human_review(source_type)
+                    ),
                     metadata,
                 )
             )
@@ -222,6 +228,10 @@ class LegalReasoningEngine:
         except (TypeError, ValueError, OverflowError):
             return True
         return not isfinite(confidence)
+
+    @staticmethod
+    def _source_requires_human_review(source_type: str | None) -> bool:
+        return bool(source_type and source_type != "document_fact")
 
     @staticmethod
     def _finding_metadata(

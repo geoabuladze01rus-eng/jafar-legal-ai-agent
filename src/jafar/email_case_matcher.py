@@ -29,9 +29,21 @@ class EmailCaseMatcher:
                     score += 0.7
                     reasons.append(f"exact:{key}")
             for value in case.get("keywords", []):
-                if str(value).lower() in tokens:
+                keyword = str(value).lower().strip()
+                if self._keyword_matches(keyword, tokens):
                     score += 0.1
                     reasons.append(f"keyword:{value}")
             if score:
                 candidates.append(CaseCandidate(case_id, min(score, 1.0), tuple(reasons)))
         return sorted(candidates, key=lambda item: item.score, reverse=True)
+
+    @staticmethod
+    def _keyword_matches(keyword: str, tokens: set[str]) -> bool:
+        if keyword in tokens:
+            return True
+        # Lightweight inflection tolerance for Russian legal/business keywords
+        # (e.g. "поставка" in a case profile vs "поставки" in an email).
+        if len(keyword) >= 6:
+            stem = keyword[:-1]
+            return any(token.startswith(stem) for token in tokens)
+        return False

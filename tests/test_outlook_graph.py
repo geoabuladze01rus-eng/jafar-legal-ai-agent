@@ -11,7 +11,7 @@ from jafar.outlook_provider import OutlookEmailProvider
 def _response(request: httpx.Request) -> httpx.Response:
     assert request.headers["Authorization"] == "Bearer test-token"
 
-    if request.url.path == "/me/messages":
+    if request.url.path == "/v1.0/me/messages":
         assert request.headers["Prefer"] == 'outlook.body-content-type="text"'
         return httpx.Response(
             200,
@@ -32,7 +32,7 @@ def _response(request: httpx.Request) -> httpx.Response:
             },
         )
 
-    if request.url.path == "/me/messages/msg-1/attachments":
+    if request.url.path == "/v1.0/me/messages/msg-1/attachments":
         return httpx.Response(
             200,
             json={
@@ -55,7 +55,7 @@ def _response(request: httpx.Request) -> httpx.Response:
             },
         )
 
-    if request.url.path == "/me/messages/msg-1/attachments/doc-1/$value":
+    if request.url.path == "/v1.0/me/messages/msg-1/attachments/doc-1/$value":
         return httpx.Response(200, content=b"legal document text")
 
     raise AssertionError(f"Unexpected Graph request: {request.method} {request.url}")
@@ -98,7 +98,7 @@ def test_graph_client_and_outlook_provider_do_not_download_unsupported_zip():
     assert len(message.provider_issues) == 1
     assert message.provider_issues[0].filename == "materials.zip"
     assert message.provider_issues[0].error_type == "UnsupportedAttachment"
-    assert "/me/messages/msg-1/attachments/archive-1/$value" not in requests
+    assert "/v1.0/me/messages/msg-1/attachments/archive-1/$value" not in requests
 
 
 def test_graph_client_surfaces_http_failure_without_leaking_response_body():

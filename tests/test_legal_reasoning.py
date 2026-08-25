@@ -55,6 +55,7 @@ def test_fact_without_evidence_is_explicitly_ungrounded():
 
     assert result["findings"][0]["confidence"] == 0.0
     assert result["findings"][0]["metadata"]["missing_evidence_ids"] == []
+    assert result["findings"][0]["metadata"]["evidence_gap"] is True
     assert result["evidence_gaps"][0]["kind"] == "ungrounded_fact"
     assert result["evidence_coverage"] == {
         "grounded_findings": 0,
@@ -83,6 +84,8 @@ def test_risk_without_evidence_is_explicitly_ungrounded_and_safe():
     assert finding["metadata"] == {
         "severity": "high",
         "missing_evidence_ids": [],
+        "evidence_gap": True,
+        "confidence_invalid": True,
     }
     assert result["evidence_gaps"][0]["kind"] == "ungrounded_risk"
     assert result["evidence_coverage"]["ungrounded_findings"] == 1
@@ -98,6 +101,8 @@ def test_risk_with_missing_numeric_reference_is_reported():
     assert result["findings"][0]["basis"] == []
     assert result["findings"][0]["confidence"] == 0.0
     assert result["findings"][0]["metadata"]["missing_evidence_ids"] == ["2"]
+    assert result["findings"][0]["metadata"]["evidence_gap"] is True
+    assert result["findings"][0]["metadata"]["confidence_invalid"] is True
     gap = result["evidence_gaps"][0]
     assert gap["kind"] == "missing_referenced_evidence"
     assert gap["metadata"]["source_kind"] == "risk"
@@ -114,3 +119,6 @@ def test_defensive_helpers_reject_malformed_values_without_crashing():
     assert engine._confidence(None) == 0.0
     assert engine._confidence(float("nan")) == 0.0
     assert engine._confidence("0.75") == 0.75
+    assert engine._confidence_invalid(None) is True
+    assert engine._confidence_invalid(float("nan")) is True
+    assert engine._confidence_invalid("0.75") is False

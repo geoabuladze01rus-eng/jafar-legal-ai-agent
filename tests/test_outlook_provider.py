@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from jafar.attachment_materializer import InMemoryAttachmentMaterializer
 from jafar.outlook_provider import OutlookEmailProvider, OutlookProviderConfig
 
@@ -11,13 +9,39 @@ class FakeOutlook:
         self.fetched = []
 
     def list_messages(self, *, limit=25):
-        return [{"id":"msg-1","sender":{"emailAddress":{"address":"client@example.com"}},"subject":"Документы","receivedDateTime":"2026-08-23T07:00:00Z","bodyPreview":"Во вложении материалы."}]
+        return [
+            {
+                "id": "msg-1",
+                "sender": {"emailAddress": {"address": "client@example.com"}},
+                "subject": "Документы",
+                "receivedDateTime": "2026-08-23T07:00:00Z",
+                "bodyPreview": "Во вложении материалы.",
+            }
+        ]
 
     def list_attachments(self, message_id):
         return [
-            {"id":"pdf-1","name":"court.pdf","size_bytes":1000,"content_type":"application/pdf","is_inline":False},
-            {"id":"zip-1","name":"archive.zip","size_bytes":1000,"content_type":"application/zip","is_inline":False},
-            {"id":"inline-1","name":"logo.pdf","size_bytes":1000,"content_type":"application/pdf","is_inline":True},
+            {
+                "id": "pdf-1",
+                "name": "court.pdf",
+                "size_bytes": 1000,
+                "content_type": "application/pdf",
+                "is_inline": False,
+            },
+            {
+                "id": "zip-1",
+                "name": "archive.zip",
+                "size_bytes": 1000,
+                "content_type": "application/zip",
+                "is_inline": False,
+            },
+            {
+                "id": "inline-1",
+                "name": "logo.pdf",
+                "size_bytes": 1000,
+                "content_type": "application/pdf",
+                "is_inline": True,
+            },
         ]
 
     def fetch_attachment(self, message_id, attachment_id):
@@ -25,7 +49,7 @@ class FakeOutlook:
         return f"file://{attachment_id}"
 
 
-def test_provider_materializes_supported_attachment_bytes():
+def test_provider_materializes_supported_attachment_bytes_and_surfaces_unsupported_files():
     client = FakeOutlook()
     materializer = InMemoryAttachmentMaterializer({"file://pdf-1": b"real-pdf-bytes"})
     messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
@@ -34,22 +58,85 @@ def test_provider_materializes_supported_attachment_bytes():
     assert messages[0].attachments[0].filename == "court.pdf"
     assert messages[0].attachments[0].content == b"real-pdf-bytes"
     assert client.fetched == ["pdf-1"]
+    assert len(messages[0].provider_issues) == 1
+    assert messages[0].provider_issues[0].filename == "archive.zip"
+    assert messages[0].provider_issues[0].error_type == "UnsupportedAttachment"
 
 
-def test_provider_skips_oversized_attachment():
+def test_provider_prefers_full_plain_text_body_over_preview():
+    class FullBodyClient(FakeOutlook):
+        def list_messages(self, *, limit=25):
+            return [
+                {
+                    "id": "msg-1",
+                    "sender": {"emailAddress": {"address": "client@example.com"}},
+                    "subject": "Срок по делу",
+                    "receivedDateTime": "2026-08-23T07:00:00Z",
+                    "bodyPreview": "Короткий preview",
+                    "body": {
+                        "contentType": "text",
+                        "content": "Полный текст письма со сроком до 30.08.2026.",
+                    },
+                }
+            ]
+
+    client = FullBodyClient()
+    materializer = InMemoryAttachmentMaterializer({"file://pdf-1": b"real-pdf-bytes"})
+    messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    assert messages[0].body_text == "Полный текст письма со сроком до 30.08.2026."
+
+
+def test_provider_uses_preview_for_html_body_to_avoid_raw_markup():
+    class HtmlBodyClient(FakeOutlook):
+        def list_messages(self, *, limit=25):
+            return [
+                {
+                    "id": "msg-1",
+                    "sender": {"emailAddress": {"address": "client@example.com"}},
+                    "subject": "Документы",
+                    "receivedDateTime": "2026-08-23T07:00:00Z",
+                    "bodyPreview": "Безопасный текстовый preview",
+                    "body": {"contentType": "html", "content": "<p>Разметка</p>"},
+                }
+            ]
+
+    client = HtmlBodyClient()
+    materializer = InMemoryAttachmentMaterializer({"file://pdf-1": b"real-pdf-bytes"})
+    messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    assert messages[0].body_text == "Безопасный текстовый preview"
+
+
+def test_provider_surfaces_oversized_attachment_without_fetching():
     class LargeAttachmentClient(FakeOutlook):
         def list_attachments(self, message_id):
-            return [{"id":"large","name":"large.pdf","size_bytes":101,"content_type":"application/pdf","is_inline":False}]
+            return [
+                {
+                    "id": "large",
+                    "name": "large.pdf",
+                    "size_bytes": 101,
+                    "content_type": "application/pdf",
+                    "is_inline": False,
+                }
+            ]
 
     client = LargeAttachmentClient()
     materializer = InMemoryAttachmentMaterializer({})
-    messages = OutlookEmailProvider(client, materializer, OutlookProviderConfig(max_attachment_bytes=100)).fetch_messages()
+    messages = OutlookEmailProvider(
+        client,
+        materializer,
+        OutlookProviderConfig(max_attachment_bytes=100),
+    ).fetch_messages()
     assert messages[0].attachments == ()
     assert client.fetched == []
+    assert messages[0].provider_issues[0].error_type == "AttachmentTooLarge"
 
 
-def test_provider_surfaces_materialization_failure():
+def test_provider_surfaces_materialization_failure_without_aborting_mailbox():
     client = FakeOutlook()
     materializer = InMemoryAttachmentMaterializer({})
-    with pytest.raises(FileNotFoundError):
-        OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    messages = OutlookEmailProvider(client, materializer).fetch_messages(limit=1)
+    assert messages[0].attachments == ()
+    assert {issue.error_type for issue in messages[0].provider_issues} == {
+        "FileNotFoundError",
+        "UnsupportedAttachment",
+    }

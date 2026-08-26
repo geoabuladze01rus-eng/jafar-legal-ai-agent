@@ -2,45 +2,86 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var voice = VoiceSessionViewModel(
-        commandClient: LocalCommandClient(),
+        commandClient: JafarClientConfiguration.makeCommandClient(),
         userId: "local-user"
     )
+    @State private var endpoint = JafarClientConfiguration.endpointString
+    @State private var apiKey = ""
+    @State private var commandText = "проверка связи"
+    @State private var configurationMessage: String?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Text("Джафар")
-                    .font(.largeTitle.bold())
+            Form {
+                Section("Джафар") {
+                    TextField("Команда", text: $commandText)
 
-                if !voice.transcript.isEmpty {
-                    Text(voice.transcript)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if !voice.response.isEmpty {
-                    Text(voice.response)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Button(voice.isListening ? "Остановить" : "Голосовая команда") {
-                    Task {
-                        if voice.isListening {
-                            await voice.stopAndSend()
-                        } else {
-                            await voice.start()
+                    Button("Отправить команду") {
+                        Task {
+                            await voice.send(text: commandText)
                         }
                     }
-                }
-                .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                if let error = voice.errorMessage {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
+                    Button(voice.isListening ? "Остановить и отправить" : "Голосовая команда") {
+                        Task {
+                            if voice.isListening {
+                                await voice.stopAndSend()
+                            } else {
+                                await voice.start()
+                            }
+                        }
+                    }
+
+                    if !voice.transcript.isEmpty {
+                        Text("Команда: \(voice.transcript)")
+                            .font(.footnote)
+                    }
+
+                    if !voice.response.isEmpty {
+                        Text(voice.response)
+                    }
+
+                    if let error = voice.errorMessage {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Подключение к API") {
+                    TextField("http://127.0.0.1:8000/v1/command", text: $endpoint)
+#if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+#endif
+                    SecureField("API-ключ", text: $apiKey)
+
+                    Button("Сохранить подключение") {
+                        saveConfiguration()
+                    }
+
+                    if let configurationMessage {
+                        Text(configurationMessage)
+                            .font(.footnote)
+                    }
                 }
             }
-            .padding()
             .navigationTitle("Джафар")
+        }
+    }
+
+    private func saveConfiguration() {
+        do {
+            try JafarClientConfiguration.save(
+                endpoint: endpoint,
+                apiKey: apiKey.isEmpty ? nil : apiKey
+            )
+            voice.configure(commandClient: JafarClientConfiguration.makeCommandClient())
+            apiKey = ""
+            configurationMessage = "Подключение сохранено. API-ключ хранится в Keychain."
+        } catch {
+            configurationMessage = error.localizedDescription
         }
     }
 }

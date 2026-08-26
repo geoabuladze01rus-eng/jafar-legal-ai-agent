@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from .api_security import require_api_key
 from .legal_entity_intelligence import LegalEntityIntelligence, SourceFinding
 from .legal_entity_research import EntityQuery, LegalEntityResearchService
 
-router = APIRouter(prefix="/v1/legal-entities", tags=["legal-entities"])
+router = APIRouter(
+    prefix="/v1/legal-entities",
+    tags=["legal-entities"],
+    dependencies=[Depends(require_api_key)],
+)
 service = LegalEntityResearchService()
 intelligence = LegalEntityIntelligence()
 

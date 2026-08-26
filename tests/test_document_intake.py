@@ -9,6 +9,18 @@ def test_extracts_utf8_text():
     assert result.text == "Ходатайство суда"
 
 
+def test_non_pdf_page_contract_uses_single_source_page():
+    pages = DocumentExtractor().extract_pages(
+        "petition.txt",
+        "Первая строка\nВторая строка".encode(),
+        "text/plain",
+    )
+
+    assert len(pages) == 1
+    assert pages[0].page_number == 1
+    assert pages[0].text == "Первая строка\nВторая строка"
+
+
 def test_rejects_unsupported_format():
     with pytest.raises(DocumentExtractionError, match="Unsupported document format"):
         DocumentExtractor().extract("photo.png", b"data", "image/png")

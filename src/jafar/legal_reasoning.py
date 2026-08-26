@@ -42,15 +42,30 @@ class LegalReasoningEngine:
             requested_ids = self._normalize_ids(fact.get("evidence_ids"))
             basis = tuple(item for item in requested_ids if item in evidence_ids)
             missing_ids = tuple(item for item in requested_ids if item not in evidence_ids)
-            confidence = self._confidence(fact.get("confidence"))
+            raw_confidence = fact.get("confidence")
+            confidence = self._confidence(raw_confidence)
+            confidence_invalid = self._confidence_invalid(raw_confidence)
             metadata = self._finding_metadata(fact.get("metadata"), missing_ids)
+            source_type = str(fact.get("source_type")) if fact.get("source_type") else None
+            if source_type:
+                metadata["source_type"] = source_type
+            if not basis:
+                metadata["evidence_gap"] = True
+            if confidence_invalid:
+                metadata["confidence_invalid"] = True
             findings.append(
                 LegalFinding(
                     "fact_assessment",
                     statement,
                     basis,
                     confidence,
-                    confidence < 0.95 or not basis or bool(missing_ids),
+                    (
+                        confidence_invalid
+                        or confidence < 0.95
+                        or not basis
+                        or bool(missing_ids)
+                        or self._source_requires_human_review(source_type)
+                    ),
                     metadata,
                 )
             )
@@ -70,12 +85,21 @@ class LegalReasoningEngine:
             requested_ids = self._normalize_ids(risk.get("evidence_ids"))
             basis = tuple(item for item in requested_ids if item in evidence_ids)
             missing_ids = tuple(item for item in requested_ids if item not in evidence_ids)
-            confidence = self._confidence(risk.get("confidence"))
+            raw_confidence = risk.get("confidence")
+            confidence = self._confidence(raw_confidence)
+            confidence_invalid = self._confidence_invalid(raw_confidence)
             metadata = self._finding_metadata(
                 risk.get("metadata"),
                 missing_ids,
                 severity=risk.get("severity"),
             )
+            source_type = risk.get("source_type")
+            if source_type:
+                metadata["source_type"] = str(source_type)
+            if not basis:
+                metadata["evidence_gap"] = True
+            if confidence_invalid:
+                metadata["confidence_invalid"] = True
             findings.append(
                 LegalFinding(
                     "risk_signal",
@@ -191,11 +215,23 @@ class LegalReasoningEngine:
     def _confidence(value: Any) -> float:
         try:
             confidence = float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return 0.0
         if not isfinite(confidence):
             return 0.0
         return max(0.0, min(1.0, confidence))
+
+    @staticmethod
+    def _confidence_invalid(value: Any) -> bool:
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return True
+        return not isfinite(confidence)
+
+    @staticmethod
+    def _source_requires_human_review(source_type: str | None) -> bool:
+        return bool(source_type and source_type != "document_fact")
 
     @staticmethod
     def _finding_metadata(

@@ -6,5 +6,12 @@
     <string>Джафар использует микрофон для голосовых команд.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Джафар использует распознавание речи для выполнения голосовых команд.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Джафар подключается к локальному серверу на вашем Mac для приватной Beta-проверки.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

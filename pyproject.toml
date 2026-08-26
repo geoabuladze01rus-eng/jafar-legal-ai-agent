@@ -1,6 +1,6 @@
 [project]
 name = "jafar-legal-ai-agent"
-version = "0.3.1"
+version = "0.6.0"
 description = "Jafar AI legal agent: document analysis, email triage, voice workflows and legal work automation."
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

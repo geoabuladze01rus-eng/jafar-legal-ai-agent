@@ -23,17 +23,37 @@ class DocumentWorkflowResult:
 class DocumentWorkflow:
     """Orchestrates extraction, matter matching, analysis and event capture."""
 
-    def __init__(self, store: MatterRepository, analyzer: LegalAnalyzer,
-                 matcher: MatterMatcher | None = None) -> None:
+    def __init__(
+        self,
+        store: MatterRepository,
+        analyzer: LegalAnalyzer,
+        matcher: MatterMatcher | None = None,
+    ) -> None:
         self.store = store
         self.analyzer = analyzer
         self.matcher = matcher or MatterMatcher()
 
-    def process(self, document_name: str, extracted: ExtractedDocument,
-                task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
-                matter_type: MatterType = MatterType.GENERAL) -> DocumentWorkflowResult:
-        match = self.matcher.best_match(extracted.text, self.store.list_matters())
-        matter = self.store.get(match.matter_id) if match else None
+    def process(
+        self,
+        document_name: str,
+        extracted: ExtractedDocument,
+        task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
+        matter_type: MatterType = MatterType.GENERAL,
+        matter_id: str | None = None,
+    ) -> DocumentWorkflowResult:
+        if matter_id:
+            matter = self.store.get(matter_id)
+            if matter is None:
+                raise ValueError("Matter not found")
+            match = MatterMatch(
+                matter_id=matter.id,
+                score=1.0,
+                reasons=("explicit matter_id",),
+            )
+        else:
+            match = self.matcher.best_match(extracted.text, self.store.list_matters())
+            matter = self.store.get(match.matter_id) if match else None
+
         effective_type = matter.matter_type if matter else matter_type
         analysis = self.analyzer.analyze(extracted.text, task, effective_type)
         event = None
@@ -49,5 +69,10 @@ class DocumentWorkflow:
                 deadlines=analysis.deadlines,
             )
 
-        return DocumentWorkflowResult(document_name=document_name, extracted=extracted,
-                                      match=match, analysis=analysis, event=event)
+        return DocumentWorkflowResult(
+            document_name=document_name,
+            extracted=extracted,
+            match=match,
+            analysis=analysis,
+            event=event,
+        )

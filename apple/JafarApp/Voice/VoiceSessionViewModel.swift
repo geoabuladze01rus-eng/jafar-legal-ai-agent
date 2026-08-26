@@ -13,12 +13,18 @@ final class VoiceSessionViewModel: ObservableObject {
 
     private let recognizer = VoiceRecognizer()
     private let synthesizer = AVSpeechSynthesizer()
-    private let commandClient: any CommandClient
+    private var commandClient: any CommandClient
     private let userId: String
+    private var speechDelegate: SpeechDelegate?
 
     init(commandClient: any CommandClient, userId: String) {
         self.commandClient = commandClient
         self.userId = userId
+    }
+
+    func configure(commandClient: any CommandClient) {
+        self.commandClient = commandClient
+        errorMessage = nil
     }
 
     func start() async {
@@ -39,9 +45,22 @@ final class VoiceSessionViewModel: ObservableObject {
         recognizer.stop()
         isListening = false
         transcript = recognizer.transcript
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        await send(text: transcript)
+    }
+
+    func send(text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        errorMessage = nil
+        transcript = trimmed
         do {
-            let result = try await commandClient.send(request: CommandRequest(text: transcript, userId: userId, sourceDevice: "apple"))
+            let result = try await commandClient.send(
+                request: CommandRequest(
+                    text: trimmed,
+                    userId: userId,
+                    sourceDevice: "apple"
+                )
+            )
             response = result.message
             speak(response)
         } catch {
@@ -55,13 +74,26 @@ final class VoiceSessionViewModel: ObservableObject {
         utterance.voice = AVSpeechSynthesisVoice(language: "ru-RU")
         utterance.rate = 0.5
         isSpeaking = true
-        synthesizer.delegate = SpeechDelegate { [weak self] in self?.isSpeaking = false }
+        speechDelegate = SpeechDelegate { [weak self] in
+            self?.isSpeaking = false
+            self?.speechDelegate = nil
+        }
+        synthesizer.delegate = speechDelegate
         synthesizer.speak(utterance)
     }
 }
 
 private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     private let completion: () -> Void
-    init(completion: @escaping () -> Void) { self.completion = completion }
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { completion() }
+
+    init(completion: @escaping () -> Void) {
+        self.completion = completion
+    }
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        completion()
+    }
 }

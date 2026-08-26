@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 #if os(macOS)
 import AppKit
@@ -22,6 +23,8 @@ final class LocalBackendManager: ObservableObject {
     private var process: Process?
     private var outputPipe: Pipe?
     private var terminationObserver: NSObjectProtocol?
+    private var pendingEndpoint: String?
+    private var pendingAPIKey: String?
 #endif
 
     var configuredRepoRoot: String? {
@@ -92,6 +95,8 @@ final class LocalBackendManager: ObservableObject {
         }
 
         state = .starting
+        pendingEndpoint = nil
+        pendingAPIKey = nil
 
         let rootURL = URL(fileURLWithPath: repoRoot, isDirectory: true)
         let pythonURL = rootURL.appendingPathComponent(".venv/bin/python")
@@ -121,6 +126,8 @@ final class LocalBackendManager: ObservableObject {
                 self.outputPipe?.fileHandleForReading.readabilityHandler = nil
                 self.outputPipe = nil
                 self.process = nil
+                self.pendingEndpoint = nil
+                self.pendingAPIKey = nil
                 if case .running = self.state {
                     self.state = .stopped
                 } else if finished.terminationStatus != 0 {
@@ -145,6 +152,8 @@ final class LocalBackendManager: ObservableObject {
 #if os(macOS)
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
+        pendingEndpoint = nil
+        pendingAPIKey = nil
         if let process, process.isRunning {
             process.terminate()
         }
@@ -159,24 +168,22 @@ final class LocalBackendManager: ObservableObject {
 #if os(macOS)
     private func consumeBackendOutput(_ text: String) {
         let lines = text.split(whereSeparator: { $0.isNewline }).map(String.init)
-        var endpoint: String?
-        var apiKey: String?
 
         for line in lines {
             if line.hasPrefix("APPLE_ENDPOINT=") {
-                endpoint = String(line.dropFirst("APPLE_ENDPOINT=".count))
+                pendingEndpoint = String(line.dropFirst("APPLE_ENDPOINT=".count))
             } else if line.hasPrefix("EPHEMERAL_API_KEY=") {
-                apiKey = String(line.dropFirst("EPHEMERAL_API_KEY=".count))
+                pendingAPIKey = String(line.dropFirst("EPHEMERAL_API_KEY=".count))
             }
         }
 
-        if let endpoint, let apiKey {
-            do {
-                try JafarClientConfiguration.save(endpoint: endpoint, apiKey: apiKey)
-                state = .running(endpoint: endpoint)
-            } catch {
-                state = .failed("Backend запущен, но не удалось настроить подключение: \(error.localizedDescription)")
-            }
+        guard let endpoint = pendingEndpoint, let apiKey = pendingAPIKey else { return }
+
+        do {
+            try JafarClientConfiguration.save(endpoint: endpoint, apiKey: apiKey)
+            state = .running(endpoint: endpoint)
+        } catch {
+            state = .failed("Backend запущен, но не удалось настроить подключение: \(error.localizedDescription)")
         }
     }
 

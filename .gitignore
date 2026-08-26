@@ -150,6 +150,11 @@ activemq-data/
 # Environments
 .env
 .envrc
+.gmail-oauth/
+client_secret*.json
+credentials.json
+gmail_oauth*.json
+token.json
 .venv
 env/
 venv/

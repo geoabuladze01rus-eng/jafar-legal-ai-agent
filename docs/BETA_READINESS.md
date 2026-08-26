@@ -16,7 +16,7 @@ Locally on macOS:
 
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - installed-package `import jafar`: **PASS**;
-- Python: **199 passed, 1 warning**;
+- Python: **211 passed, 1 warning**;
 - Ruff: **All checks passed**;
 - private-Beta backend smoke: **PASS** (`PRIVATE BETA BACKEND SMOKE: PASS`);
 - iOS Simulator build: **PASS**;
@@ -27,6 +27,8 @@ Locally on macOS:
 - macOS Jafar rendered the response and spoke `Джафар на связи`;
 - real private 4-page Pavlik investigator-motion PDF E2E on the current beta branch: **PASS**;
 - connected Outlook mailbox read access through the installed Microsoft Outlook connector: **PASS**;
+- local Gmail read-only gateway and synthetic HTTP command E2E: **PASS**;
+- live Gmail OAuth: **gated**, pending owner-created Desktop app credentials and consent;
 - unsupported real ZIP attachment visibility path confirmed;
 - no private PDF, mailbox content, or secret committed;
 - production and `main` untouched.
@@ -40,7 +42,7 @@ The remaining Python warning is the existing non-blocking Starlette/httpx TestCl
 | Document intake + Pavlik acceptance | 98% | Real source passed current-branch local E2E; page-preserving extraction, provenance and evidence gaps are working. |
 | Legal reasoning + safety | 94% | Source types, confidence handling, human-review gates and chronology are active. Broader real-document coverage remains useful but is not a first-Beta blocker. |
 | FastAPI / command core | 98% | Core endpoints, API auth and first four lawyer commands exist; live Apple round trip passed. |
-| Email intelligence pipeline | 96% | Triage, attachments, idempotency, matter matching, review-only drafts and synthetic Outlook E2E exist; live mailbox read access is available through the installed connector. |
+| Email intelligence pipeline | 97% | Triage, attachments, idempotency, matter matching, review-only drafts and synthetic Outlook E2E exist; the local Gmail list/read/context slice passes offline E2E, with live OAuth safely gated on owner credentials. |
 | Apple voice/client | 98% | Remote client, Keychain-backed API key, App Intent, iOS/macOS builds and live spoken-response smoke passed. |
 | Telegram | 65% | Runtime, inbound/outbound, approval and safety layers exist; not required for first private Beta. |
 | Model routing | 65% | OpenAI/Gemini/DeepSeek abstractions exist; external AI remains explicit opt-in. |
@@ -71,6 +73,21 @@ The remaining Python warning is the existing non-blocking Starlette/httpx TestCl
 19. `pytest` src-layout import path is deterministic via project configuration.
 20. A normal wheel installation imports `jafar` without `PYTHONPATH`; this is the recommended Private Beta installation path.
 21. README and release checklist now document the verified Beta setup and the wheel-install recommendation.
+22. Local Gmail uses an installed-app loopback flow with exact `gmail.readonly`, Keychain-backed
+    credentials, list/get-only operations, bounded body parsing, and metadata-only attachment/link
+    handling.
+23. Synthetic Gmail HTTP E2E confirms newest-relevant selection, current-context persistence, and
+    zero mailbox mutation without a real account or credential.
+
+## Gmail strategy for first private Beta
+
+Gmail is a local, single-user, read-only connector. The command path is implemented and tested
+offline, but live authorization is intentionally stopped at a setup gate until the owner creates a
+Google OAuth Desktop app client. Tokens and the desktop client bundle are never committed; the
+authorized credential is held in local Keychain. Attachments and links are detected only.
+
+No billing, Supabase, production service, deployment, or automatic reply is part of this path.
+See [`GMAIL_READONLY_PRIVATE_BETA.md`](GMAIL_READONLY_PRIVATE_BETA.md).
 
 ## Outlook strategy for first private Beta
 
@@ -170,4 +187,4 @@ Private Beta can be tagged only when all of the following are true:
 
 ## Current stop point
 
-Core backend, normal wheel packaging/import, the 199-test Python suite, Ruff, first four commands, Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook E2E, Graph adapter tests, Apple compilation gates, repository cleanup, and release documentation are green. The next action is to stop the final ephemeral backend and then move PR #26 from Draft to ready-for-review. No merge to `main` and no production change is part of that action.
+Core backend, normal wheel packaging/import, the 211-test Python suite, Ruff, first four commands, Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook/Gmail E2E, Graph adapter tests, Apple compilation gates, repository cleanup, and release documentation are green. Live Gmail remains intentionally stopped at its owner-credential setup gate. The next release action is still separate from this branch. No merge to `main` and no production change is part of that action.

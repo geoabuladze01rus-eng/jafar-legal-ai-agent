@@ -12,13 +12,15 @@ Latest verified local control point on macOS:
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - `import jafar`: **PASS**;
 - Ruff: **All checks passed!**;
-- pytest: **199 passed, 1 warning**;
+- pytest: **211 passed, 1 warning**;
 - iOS Simulator build: **PASS**;
 - macOS build: **PASS**;
 - private-Beta loopback backend smoke: **PASS**;
 - live macOS Jafar -> authenticated `/v1/command`: **PASS**, including spoken response;
 - real private Pavlik investigator-motion E2E: **PASS**;
-- Outlook mailbox list/read through the installed Microsoft Outlook connector: **PASS**.
+- Outlook mailbox list/read through the installed Microsoft Outlook connector: **PASS**;
+- local Gmail read-only command path with synthetic HTTP E2E: **PASS**;
+- live Gmail OAuth: **safe setup gate**, pending owner-created Google Desktop app credentials.
 
 Target Private Beta date: **2026-09-15**.
 
@@ -78,6 +80,20 @@ The repository also contains a direct Microsoft Graph Outlook client and Device 
 helper for a future standalone deployment. Direct Azure/Entra registration is deliberately
 deferred and is not required for the first Private Beta.
 
+## Local Gmail read-only gateway
+
+The local backend now supports `Разбери последнее юридическое письмо` through a dedicated Gmail
+gateway. It requests only `gmail.readonly`, keeps the OAuth credential bundle in the user's local
+protected keychain, lists/reads Inbox messages, creates a short local summary, and records a safe
+snapshot as the current lawyer context. It never sends, changes, archives, trashes, or deletes
+mail. Attachments and external links are described but are not downloaded or opened.
+
+Live authorization requires an owner-created Google OAuth client of type **Desktop app**. Until
+that exists, the backend returns a safe `setup_required` response; it does not try an implicit
+browser login or ask for credentials in the app. The complete zero-billing setup and acceptance
+gate is documented in
+[`docs/GMAIL_READONLY_PRIVATE_BETA.md`](docs/GMAIL_READONLY_PRIVATE_BETA.md).
+
 ## Security rule
 
 No credentials, tokens, private documents, mailbox content or client secrets belong in Git.
@@ -86,6 +102,7 @@ Consequential external actions require explicit human approval.
 ## Project documentation
 
 - [Private Beta release checklist](docs/PRIVATE_BETA_RELEASE_CHECKLIST.md)
+- [Local Gmail read-only Private Beta](docs/GMAIL_READONLY_PRIVATE_BETA.md)
 - [Beta readiness](docs/BETA_READINESS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Production document pipeline](docs/DOCUMENT_PIPELINE.md)

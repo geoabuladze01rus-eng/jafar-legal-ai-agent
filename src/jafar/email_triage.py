@@ -26,6 +26,11 @@ class EmailTriage:
         "арбитраж",
         "претенз",
         "следователь",
+        "кассац",
+        "апелляц",
+        "жалоб",
+        "ходатай",
+        "постановлен",
     )
     LEGAL_DOCUMENT_EXTENSIONS: ClassVar[set[str]] = {".pdf", ".docx"}
 

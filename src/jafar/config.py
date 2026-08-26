@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     api_key: str | None = None
+    external_ai_enabled: bool = False
     openai_api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"

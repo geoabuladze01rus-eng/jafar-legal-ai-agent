@@ -14,6 +14,13 @@ class InboxAttachment:
 
 
 @dataclass(frozen=True)
+class AttachmentProcessingIssue:
+    filename: str
+    error_type: str
+    message: str
+
+
+@dataclass(frozen=True)
 class InboxMessage:
     message_id: str
     sender: str
@@ -21,13 +28,7 @@ class InboxMessage:
     received_at: datetime
     body_text: str
     attachments: tuple[InboxAttachment, ...] = ()
-
-
-@dataclass(frozen=True)
-class AttachmentProcessingIssue:
-    filename: str
-    error_type: str
-    message: str
+    provider_issues: tuple[AttachmentProcessingIssue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ class InboxDocumentIntake:
 
     def extract_documents(self, message: InboxMessage) -> InboxExtractionResult:
         documents: list[ExtractedInboxDocument] = []
-        issues: list[AttachmentProcessingIssue] = []
+        issues: list[AttachmentProcessingIssue] = list(message.provider_issues)
         for attachment in message.attachments:
             try:
                 document = self.extractor.extract(

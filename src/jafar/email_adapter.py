@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from .inbox import InboxAttachment, InboxMessage
+from .inbox import AttachmentProcessingIssue, InboxAttachment, InboxMessage
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,7 @@ class ExternalEmail:
     received_at: datetime
     body_text: str
     attachments: tuple[InboxAttachment, ...] = ()
+    provider_issues: tuple[AttachmentProcessingIssue, ...] = ()
 
 
 class EmailProvider(Protocol):
@@ -38,6 +39,7 @@ class EmailAdapter:
                 received_at=message.received_at,
                 body_text=message.body_text,
                 attachments=message.attachments,
+                provider_issues=message.provider_issues,
             )
             for message in self.provider.fetch_messages(limit=limit)
         ]

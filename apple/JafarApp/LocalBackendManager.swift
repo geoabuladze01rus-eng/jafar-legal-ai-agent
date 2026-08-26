@@ -158,7 +158,7 @@ final class LocalBackendManager: ObservableObject {
 
 #if os(macOS)
     private func consumeBackendOutput(_ text: String) {
-        let lines = text.split(whereSeparator: \ .isNewline).map(String.init)
+        let lines = text.split(whereSeparator: { $0.isNewline }).map(String.init)
         var endpoint: String?
         var apiKey: String?
 

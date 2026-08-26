@@ -106,6 +106,15 @@ enum JafarClientConfiguration {
         }
     }
 
+    static func clearAPIKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
     private static func validatedEndpoint(_ rawValue: String) -> URL? {
         guard
             let url = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),

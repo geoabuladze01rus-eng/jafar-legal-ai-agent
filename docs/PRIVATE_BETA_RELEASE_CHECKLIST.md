@@ -124,6 +124,8 @@ Known non-blocking packaging note: an editable install on macOS with Python 3.12
 - spoken response `Джафар на связи`: **CONFIRMED**;
 - real Pavlik private E2E: **PASS**;
 - Outlook connector read-only access: **PASS**;
+- PR #26: **OPEN / MERGEABLE / DRAFT** with no review submissions, no inline review threads and no PR discussion comments at final review;
+- current GitHub head has no commit status checks because of the known Actions startup/infrastructure issue;
 - `main` and production: **UNTOUCHED**.
 
 Remaining observations are non-blocking: the Starlette/httpx deprecation warning and the macOS/Python 3.12 editable-install `.pth` behavior described above.
@@ -140,7 +142,9 @@ These remain mandatory before any cloud/production Beta:
 
 ## 11. Release decision
 
-All substantive Private Beta gates are green. Before formally declaring/tagging the Private Beta, complete the one operational cleanup item still unchecked in section 4: stop the final ephemeral loopback backend so its temporary API key is no longer active.
+All substantive Private Beta gates are green. Before formally declaring/tagging the Private Beta or moving PR #26 out of Draft, complete the one operational cleanup item still unchecked in section 4: stop the final ephemeral loopback backend so its temporary API key is no longer active.
+
+After that cleanup, PR #26 can be marked **Ready for review** without merging it into `main`.
 
 Final release record should include:
 

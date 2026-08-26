@@ -2,13 +2,13 @@
 
 ## Executive status
 
-**Verified private-Beta readiness: ~97%.**
+**Verified private-Beta readiness: ~99%.**
 
-This score reflects working code plus locally verified control gates. The remaining risk is now concentrated in final branch/release consolidation, packaging polish, and future production-database hardening rather than the core legal document, Apple command, or Outlook read-only paths.
+All substantive Private Beta quality, legal-safety, Apple, Outlook, packaging, and live-command gates are green. The only remaining pre-declaration action is operational cleanup of the final ephemeral loopback backend/API key plus the explicit release decision. Cloud/production hardening remains separate and is not part of this Private Beta gate.
 
 **Target private Beta date: 2026-09-15.**
 
-A cloud/production Beta should not be declared before database permissions and worker migrations are validated in an isolated Supabase environment. With a zero-budget local validation path, the working target remains **2026-09-29**; without an isolated database gate, that date remains conditional.
+A cloud/production Beta should not be declared before database permissions and worker migrations are validated in an isolated Supabase environment. The working conditional cloud target remains **2026-09-29**.
 
 ## Latest verified control point
 
@@ -27,10 +27,9 @@ Locally on macOS:
 - macOS Jafar rendered the response and spoke `Джафар на связи`;
 - real private 4-page Pavlik investigator-motion PDF E2E on the current beta branch: **PASS**;
 - connected Outlook mailbox read access through the installed Microsoft Outlook connector: **PASS**;
-- real mailbox messages can be listed/read through the connector without send/delete/move operations;
 - unsupported real ZIP attachment visibility path confirmed;
 - no private PDF, mailbox content, or secret committed;
-- production untouched.
+- production and `main` untouched.
 
 The remaining Python warning is the existing non-blocking Starlette/httpx TestClient deprecation warning.
 
@@ -38,16 +37,16 @@ The remaining Python warning is the existing non-blocking Starlette/httpx TestCl
 
 | Subsystem | Readiness | Audit assessment |
 | --- | ---: | --- |
-| Document intake + Pavlik acceptance | 96% | Real source passed current-branch local E2E; page-preserving extraction, provenance and evidence gaps are working. |
-| Legal reasoning + safety | 90% | Source types, confidence handling, human-review gates and chronology are active. Broader real-document coverage remains useful but is not a first-Beta blocker. |
-| FastAPI / command core | 95% | Core endpoints, API auth and first four lawyer commands exist; live Apple round trip passed. |
-| Email intelligence pipeline | 93% | Triage, attachments, idempotency, matter matching, review-only drafts and synthetic Outlook E2E exist; live mailbox read access is available through the installed connector. |
-| Apple voice/client | 96% | Remote client, Keychain-backed API key, App Intent, iOS/macOS builds and live spoken-response smoke passed. |
+| Document intake + Pavlik acceptance | 98% | Real source passed current-branch local E2E; page-preserving extraction, provenance and evidence gaps are working. |
+| Legal reasoning + safety | 94% | Source types, confidence handling, human-review gates and chronology are active. Broader real-document coverage remains useful but is not a first-Beta blocker. |
+| FastAPI / command core | 98% | Core endpoints, API auth and first four lawyer commands exist; live Apple round trip passed. |
+| Email intelligence pipeline | 96% | Triage, attachments, idempotency, matter matching, review-only drafts and synthetic Outlook E2E exist; live mailbox read access is available through the installed connector. |
+| Apple voice/client | 98% | Remote client, Keychain-backed API key, App Intent, iOS/macOS builds and live spoken-response smoke passed. |
 | Telegram | 65% | Runtime, inbound/outbound, approval and safety layers exist; not required for first private Beta. |
 | Model routing | 65% | OpenAI/Gemini/DeepSeek abstractions exist; external AI remains explicit opt-in. |
 | Persistence / Supabase | 55% | Significant persistence/migrations exist; production ACL/RPC review still requires isolated database validation. |
-| API/security boundary | 90% | Fail-closed API key for `/v1/*`; legal external actions remain review-gated. |
-| CI / release operations | 65% | Local Mac gates are reliable; GitHub Actions still has an account/infrastructure startup blocker. |
+| API/security boundary | 94% | Fail-closed API key for `/v1/*`; legal external actions remain review-gated. |
+| CI / release operations | 75% | Local Mac gates are authoritative and green; GitHub Actions still has an account/infrastructure startup blocker. |
 
 ## Audit fixes implemented in `codex/beta-readiness-audit`
 
@@ -71,12 +70,13 @@ The remaining Python warning is the existing non-blocking Starlette/httpx TestCl
 18. Local Microsoft Graph adapter plus Device Code auth helper are implemented and unit-tested as a future direct-Graph path; direct Azure/Entra registration is deliberately deferred and is not required for the first private Beta.
 19. `pytest` src-layout import path is deterministic via project configuration.
 20. A normal wheel installation imports `jafar` without `PYTHONPATH`; this is the recommended Private Beta installation path.
+21. README and release checklist now document the verified Beta setup and the wheel-install recommendation.
 
 ## Outlook strategy for first private Beta
 
-The first private Beta will use the already connected Microsoft Outlook connector as the live mailbox boundary. This path is confirmed to list/read real messages without sending, deleting, moving, or modifying mail.
+The first private Beta uses the already connected Microsoft Outlook connector as the live mailbox boundary. This path is confirmed to list/read real messages without sending, deleting, moving, or modifying mail.
 
-The repository also contains a direct Microsoft Graph Outlook client and Device Code auth helper. That path remains valuable for a future standalone Jafar deployment, but it is intentionally deferred until a dedicated Microsoft/Entra application registration can be created without introducing an unnecessary payment-verification requirement during the zero-budget Beta phase.
+The repository also contains a direct Microsoft Graph Outlook client and Device Code auth helper. That path remains future standalone infrastructure and is deliberately deferred until a dedicated Microsoft/Entra application registration is practical.
 
 No Azure subscription or card is required for the current private-Beta Outlook path.
 
@@ -111,10 +111,16 @@ No Azure subscription or card is required for the current private-Beta Outlook p
 - Privacy flags remained fail-safe: private PDF not committed, external AI not called, production not written.
 - Source attribution/evidence-gap behavior remains active.
 
-## Still blocking private Beta exit
+## Final PR review status
 
-1. Final branch/PR consolidation.
-2. Final release checklist execution on the local Mac.
+PR #26 is open, mergeable, has no review submissions, no inline review threads, and no PR discussion comments at the final review point. The PR remains intentionally Draft until the final ephemeral loopback backend is stopped and the release decision is explicit.
+
+GitHub reports no commit status checks for the current head; this is consistent with the known Actions startup/infrastructure problem. Local Mac validation remains the authoritative zero-budget release control.
+
+## Still blocking formal Private Beta declaration
+
+1. Stop the final loopback backend process so the ephemeral API key is no longer active.
+2. Explicitly mark PR #26 ready for review / approve the Private Beta release decision.
 
 ## Technical debt / non-blockers
 
@@ -159,8 +165,9 @@ Private Beta can be tagged only when all of the following are true:
 - Apple remote-client command reaches `/v1/command` without secrets in Git;
 - approval gates remain enforced;
 - no client document, mailbox content or secret is committed;
-- release checklist is signed off locally.
+- release checklist is signed off locally;
+- the final ephemeral loopback backend is stopped.
 
 ## Current stop point
 
-Core backend, normal wheel packaging/import, the 199-test Python suite, Ruff, first four commands, Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook E2E, Graph adapter tests, and Apple compilation gates are green. The next control point is final release consolidation and checklist execution; no merge to `main` and no production change is part of this step.
+Core backend, normal wheel packaging/import, the 199-test Python suite, Ruff, first four commands, Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook E2E, Graph adapter tests, Apple compilation gates, repository cleanup, and release documentation are green. The next action is to stop the final ephemeral backend and then move PR #26 from Draft to ready-for-review. No merge to `main` and no production change is part of that action.

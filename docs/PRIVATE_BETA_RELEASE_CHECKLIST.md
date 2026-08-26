@@ -14,22 +14,22 @@ This checklist is for the first private Beta only. It does not authorize product
 
 ## 2. Python quality gate
 
-Run locally from repository root:
+Run locally from the repository root with the project virtual environment:
 
 ```bash
-python3 -m ruff check src tests scripts
-python3 -m pytest -q
+.venv/bin/python -m ruff check src tests scripts
+.venv/bin/python -m pytest -q
 ```
 
 Expected current control point:
 
 - Ruff: `All checks passed!`
-- pytest: `197 passed, 1 warning` or higher after intentional new tests
-- only known non-blocking warning: Starlette/TestClient deprecation
+- pytest: `199 passed, 1 warning`
+- only known non-blocking warning: Starlette/httpx deprecation in TestClient coverage
 
-- [ ] Ruff passes.
-- [ ] Full pytest suite passes.
-- [ ] No new warning affects legal correctness, security, privacy, or runtime stability.
+- [x] Ruff passes: `All checks passed!`.
+- [x] Full pytest suite passes: `199 passed, 1 warning`.
+- [x] No new warning affects legal correctness, security, privacy, or runtime stability.
 
 ## 3. Apple build gate
 
@@ -51,14 +51,17 @@ For iOS Simulator use the existing simulator target/configuration.
 
 Use the loopback private-Beta backend smoke helper and an ephemeral API key.
 
-- [ ] Backend binds only to loopback for local smoke.
-- [ ] `проверка связи` reaches `/v1/command`.
-- [ ] Response renders in Jafar.
-- [ ] Response is spoken aloud.
+- [x] Backend binds only to loopback for local smoke.
+- [x] `PRIVATE BETA BACKEND SMOKE: PASS`.
+- [x] Jafar macOS launches successfully.
+- [x] Configured endpoint and API key persist successfully.
+- [x] `проверка связи` reaches `/v1/command` end-to-end.
+- [x] Response renders in Jafar.
+- [x] Voice response `Джафар на связи` is confirmed.
 - [ ] Ephemeral API key is destroyed after the smoke.
 - [ ] No temporary secret is committed or saved in project files.
 
-Current verified baseline: **PASS**.
+Current verified baseline: **PASS**, including the live macOS end-to-end voice round trip.
 
 ## 5. Pavlik private legal-document gate
 
@@ -101,11 +104,29 @@ Direct standalone Microsoft Graph OAuth is **deferred**. The Graph client and De
 
 ## 8. Packaging / local runtime polish
 
-- [ ] Normal packaged/installed runtime imports `jafar` without a manual `PYTHONPATH=src` workaround.
-- [ ] macOS app launches from the built application bundle.
+- [x] Normal wheel installation works without a manual `PYTHONPATH` workaround.
+- [x] `import jafar` after the wheel installation: **PASS**.
+- [x] Jafar macOS app launches successfully.
 - [ ] README/release notes explain local Beta setup without exposing secrets.
 
-## 9. Deferred production gates — do not block Private Beta
+Known non-blocking packaging note: an editable install on macOS with Python 3.12 may use a hidden `.pth` file and can therefore be misleading during local import diagnosis. Use a normal wheel installation for the Private Beta runtime and acceptance gate.
+
+## 9. Final verified Private Beta gate — 2026-08-26
+
+- normal wheel installation without `PYTHONPATH`: **PASS**;
+- `import jafar`: **PASS**;
+- Ruff: `All checks passed!`;
+- pytest: `199 passed, 1 warning`;
+- backend: `PRIVATE BETA BACKEND SMOKE: PASS`;
+- Jafar macOS launch: **PASS**;
+- endpoint/API key persistence: **PASS**;
+- command `проверка связи` end-to-end: **PASS**;
+- spoken response `Джафар на связи`: **CONFIRMED**;
+- `main` and production: **UNTOUCHED**.
+
+Remaining observations are non-blocking: the Starlette/httpx deprecation warning and the macOS/Python 3.12 editable-install `.pth` behavior described above.
+
+## 10. Deferred production gates — do not block Private Beta
 
 These remain mandatory before any cloud/production Beta:
 
@@ -115,7 +136,7 @@ These remain mandatory before any cloud/production Beta:
 - [ ] worker/auth/retry migrations validated with rollback outside production;
 - [ ] GitHub Actions startup/infrastructure blocker resolved or a documented equivalent release control exists.
 
-## 10. Release decision
+## 11. Release decision
 
 Private Beta may be declared only when sections 1–8 are green and there is no unresolved blocker affecting legal correctness, confidentiality, or human-control guarantees.
 

@@ -14,12 +14,17 @@ A cloud/production Beta should not be declared before database permissions and w
 
 Locally on macOS:
 
-- Python: **197 passed, 1 warning**;
+- normal wheel installation without `PYTHONPATH`: **PASS**;
+- installed-package `import jafar`: **PASS**;
+- Python: **199 passed, 1 warning**;
 - Ruff: **All checks passed**;
+- private-Beta backend smoke: **PASS** (`PRIVATE BETA BACKEND SMOKE: PASS`);
 - iOS Simulator build: **PASS**;
 - macOS build: **PASS**;
-- live macOS Jafar -> authenticated `/v1/command`: **PASS**;
-- macOS Jafar rendered and spoke the backend response;
+- macOS Jafar launch: **PASS**;
+- endpoint and API key persistence: **PASS**;
+- live macOS Jafar command `проверка связи` -> authenticated `/v1/command`: **PASS** end-to-end;
+- macOS Jafar rendered the response and spoke `Джафар на связи`;
 - real private 4-page Pavlik investigator-motion PDF E2E on the current beta branch: **PASS**;
 - connected Outlook mailbox read access through the installed Microsoft Outlook connector: **PASS**;
 - real mailbox messages can be listed/read through the connector without send/delete/move operations;
@@ -27,7 +32,7 @@ Locally on macOS:
 - no private PDF, mailbox content, or secret committed;
 - production untouched.
 
-The remaining Python warning is the existing FastAPI/Starlette TestClient deprecation warning.
+The remaining Python warning is the existing non-blocking Starlette/httpx TestClient deprecation warning.
 
 ## Readiness by subsystem
 
@@ -65,6 +70,7 @@ The remaining Python warning is the existing FastAPI/Starlette TestClient deprec
 17. Unsupported/oversized/materialization-failed Outlook attachments are surfaced as `AttachmentProcessingIssue` records instead of being silently skipped.
 18. Local Microsoft Graph adapter plus Device Code auth helper are implemented and unit-tested as a future direct-Graph path; direct Azure/Entra registration is deliberately deferred and is not required for the first private Beta.
 19. `pytest` src-layout import path is deterministic via project configuration.
+20. A normal wheel installation imports `jafar` without `PYTHONPATH`; this is the recommended Private Beta installation path.
 
 ## Outlook strategy for first private Beta
 
@@ -78,9 +84,18 @@ No Azure subscription or card is required for the current private-Beta Outlook p
 
 - Local staging backend bound to `127.0.0.1` only.
 - Ephemeral API key used; no key written to Git or project files by the smoke helper.
-- Jafar macOS app connected through the configured endpoint and Keychain-backed API key.
-- Command `проверка связи` reached `/v1/command`, returned a successful response, rendered in the app, and was spoken aloud.
+- Backend acceptance helper returned `PRIVATE BETA BACKEND SMOKE: PASS`.
+- Jafar macOS app launched and connected through the configured endpoint and Keychain-backed API key.
+- Endpoint and API key persistence were confirmed.
+- Command `проверка связи` reached `/v1/command` end-to-end, returned a successful response, rendered in the app, and produced the confirmed spoken response `Джафар на связи`.
 - No production service or database was touched.
+
+## Packaging validation completed
+
+- The package was built and installed as a normal wheel.
+- The installed package works without setting `PYTHONPATH`.
+- `import jafar` after installation: **PASS**.
+- For Private Beta, use the normal wheel installation path. On macOS with Python 3.12, an editable install may rely on a hidden `.pth` file, which can make local import diagnosis misleading; this behavior is non-blocking and is not the recommended Beta installation method.
 
 ## Real Outlook validation completed
 
@@ -100,12 +115,11 @@ No Azure subscription or card is required for the current private-Beta Outlook p
 
 1. Final branch/PR consolidation.
 2. Final release checklist execution on the local Mac.
-3. Packaging polish so direct CLI/module execution does not rely on a manual `PYTHONPATH=src` workaround.
 
 ## Technical debt / non-blockers
 
-- direct `python3 -m jafar...` execution outside pytest currently requires an explicit `PYTHONPATH=src` in this local environment; pytest itself is deterministic via project configuration;
-- Starlette/TestClient deprecation warning;
+- Starlette/httpx TestClient deprecation warning;
+- editable installs on macOS/Python 3.12 may rely on a hidden `.pth`; use a normal wheel installation for the Private Beta;
 - direct standalone Microsoft Graph OAuth is deferred until a dedicated Entra registration is practical;
 - GitHub Actions startup failure remains an account/infrastructure blocker, so local Mac gates are authoritative for the zero-budget Beta.
 
@@ -149,4 +163,4 @@ Private Beta can be tagged only when all of the following are true:
 
 ## Current stop point
 
-Core backend, first four commands, Apple live round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook E2E, Graph adapter tests, and Apple compilation gates are green. The next control point is final release consolidation and checklist execution.
+Core backend, normal wheel packaging/import, the 199-test Python suite, Ruff, first four commands, Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access, synthetic Outlook E2E, Graph adapter tests, and Apple compilation gates are green. The next control point is final release consolidation and checklist execution; no merge to `main` and no production change is part of this step.

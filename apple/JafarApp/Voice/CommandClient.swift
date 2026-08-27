@@ -100,10 +100,19 @@ enum JafarClientConfiguration {
         guard let validated = validatedEndpoint(endpoint) else {
             throw JafarConfigurationError.invalidEndpoint
         }
-        UserDefaults.standard.set(validated.absoluteString, forKey: endpointDefaultsKey)
         if let apiKey, !apiKey.isEmpty {
             try saveAPIKey(apiKey)
         }
+        UserDefaults.standard.set(validated.absoluteString, forKey: endpointDefaultsKey)
+    }
+
+    static func clearAPIKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     private static func validatedEndpoint(_ rawValue: String) -> URL? {
@@ -125,7 +134,17 @@ enum JafarClientConfiguration {
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
         ]
-        SecItemDelete(query as CFDictionary)
+
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: encoded] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw JafarConfigurationError.keychain(updateStatus)
+        }
 
         var insert = query
         insert[kSecValueData as String] = encoded

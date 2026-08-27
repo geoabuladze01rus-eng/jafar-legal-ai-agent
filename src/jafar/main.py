@@ -12,6 +12,7 @@ from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
+from .gmail_gateway import make_local_gmail_gateway
 from .lawyer_context import LawyerContext
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
@@ -75,7 +76,11 @@ matter_store = MatterStore()
 lawyer_context = LawyerContext()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, analyzer)
-command_runtime = JafarCommandRuntime(matter_store, lawyer_context)
+command_runtime = JafarCommandRuntime(
+    matter_store,
+    lawyer_context,
+    mail_gateway=make_local_gmail_gateway(),
+)
 
 
 class HealthResponse(BaseModel):

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 from uuid import uuid4
 
 from .command_bus import JafarCommandBus
+from .gmail_auth import (
+    GmailCredentialStoreError,
+    GmailReauthorizationRequired,
+    GmailSetupRequired,
+)
+from .gmail_gateway import GmailReadError
 from .lawyer_context import LawyerContext
 from .matters import MatterStore
 from .tool_router import JafarToolRouter
@@ -18,6 +25,10 @@ class CommandRuntimeResult:
     data: dict | None = None
 
 
+class LegalMailGateway(Protocol):
+    def refresh_latest_legal_email(self, context: LawyerContext) -> object | None: ...
+
+
 class JafarCommandRuntime:
     """Single command facade shared by HTTP, voice and future chat clients."""
 
@@ -25,9 +36,11 @@ class JafarCommandRuntime:
         self,
         matter_store: MatterStore,
         context: LawyerContext | None = None,
+        mail_gateway: LegalMailGateway | None = None,
     ) -> None:
         self.matter_store = matter_store
         self.context = context or LawyerContext()
+        self.mail_gateway = mail_gateway
         self.bus = JafarCommandBus()
         self.router = JafarToolRouter(self.bus)
         self._register_commands()
@@ -222,6 +235,45 @@ class JafarCommandRuntime:
         }
 
     def _latest_legal_email(self, _: dict) -> dict:
+        if self.mail_gateway is not None:
+            try:
+                selection = self.mail_gateway.refresh_latest_legal_email(self.context)
+            except GmailSetupRequired:
+                return {
+                    "message": (
+                        "Gmail ещё не подключён. Создайте OAuth-клиент типа Desktop app "
+                        "в Google Cloud; затем выполните локальную настройку из README."
+                    ),
+                    "email": None,
+                    "setup_required": True,
+                    "scope": "gmail.readonly",
+                }
+            except GmailReauthorizationRequired:
+                return {
+                    "message": "Доступ Gmail истёк или имеет неверные права. Подключите Gmail заново.",
+                    "email": None,
+                    "reauthorization_required": True,
+                    "scope": "gmail.readonly",
+                }
+            except GmailCredentialStoreError:
+                return {
+                    "message": "Защищённое хранилище Gmail недоступно на этом Mac.",
+                    "email": None,
+                    "credential_store_unavailable": True,
+                }
+            except GmailReadError:
+                return {
+                    "message": "Не удалось прочитать Gmail. Письма и вложения не изменялись.",
+                    "email": None,
+                    "read_failed": True,
+                }
+            if selection is None:
+                return {
+                    "message": "Среди последних писем Gmail не найдено юридически релевантное.",
+                    "email": None,
+                    "scanned": True,
+                }
+
         snapshot = self.context.latest_legal_email
         if snapshot is None:
             return {
@@ -229,7 +281,7 @@ class JafarCommandRuntime:
                 "email": None,
             }
         return {
-            "message": f"Последнее юридическое письмо: «{snapshot.subject}» от {snapshot.sender}.",
+            "message": self._email_message(snapshot),
             "email": self._email_snapshot_data(snapshot),
         }
 
@@ -252,6 +304,17 @@ class JafarCommandRuntime:
         }
 
     @staticmethod
+    def _email_message(snapshot) -> str:
+        message = f"Последнее юридическое письмо: «{snapshot.subject}» от {snapshot.sender}."
+        if snapshot.summary:
+            message += f" Кратко: {snapshot.summary}"
+        if snapshot.attachments:
+            message += f" Обнаружено вложений: {len(snapshot.attachments)}; они не скачивались."
+        if snapshot.external_links:
+            message += f" Обнаружено внешних ссылок: {len(snapshot.external_links)}; они не открывались."
+        return message
+
+    @staticmethod
     def _email_snapshot_data(snapshot) -> dict | None:
         if snapshot is None:
             return None
@@ -264,4 +327,21 @@ class JafarCommandRuntime:
             "document_count": snapshot.document_count,
             "issue_count": snapshot.issue_count,
             "requires_review": snapshot.requires_review,
+            "provider": snapshot.provider,
+            "received_at": snapshot.received_at,
+            "summary": snapshot.summary,
+            "attachments": [
+                {
+                    "filename": item.filename,
+                    "mime_type": item.mime_type,
+                    "size_bytes": item.size_bytes,
+                    "downloaded": False,
+                }
+                for item in snapshot.attachments
+            ],
+            "external_links": [
+                {"url": url, "opened": False}
+                for url in snapshot.external_links
+            ],
+            "mailbox_mutation_performed": False,
         }

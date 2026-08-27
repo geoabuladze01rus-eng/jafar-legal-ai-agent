@@ -13,6 +13,15 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_readiness_contains_only_safe_component_status() -> None:
+    response = client.get("/readiness")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["backend"] == "ready"
+    assert "token" not in str(payload).lower()
+    assert "api_key" not in str(payload).lower()
+
+
 def test_service_and_package_versions_are_aligned() -> None:
     assert app.version == __version__ == "0.7.0"
 

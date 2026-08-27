@@ -12,7 +12,7 @@ Latest verified local control point on macOS:
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - `import jafar`: **PASS**;
 - Ruff: **All checks passed!**;
-- pytest: **211 passed, 1 warning**;
+- pytest: **216 passed, 1 warning**;
 - iOS Simulator build: **PASS**;
 - macOS build: **PASS**;
 - private-Beta loopback backend smoke: **PASS**;

@@ -36,7 +36,7 @@ Speech -> intent -> confirmation for consequential actions -> workflow -> spoken
 
 - Phase 1: API foundation, legal domain model, tests and local development.
 - Phase 2: model provider + document pipeline + persistent storage.
-- Phase 3: Gmail/Drive and calendar workflows.
-- Phase 4: Apple client/voice shell and notifications.
+- Phase 3: local Gmail read-only workflow is complete; Drive and calendar workflows remain.
+- Phase 4: Apple client/voice shell is in Private Beta; production notifications remain.
 - Phase 5: Telegram publishing/replies with approval gates.
 - Phase 6: production security, observability and deployment.

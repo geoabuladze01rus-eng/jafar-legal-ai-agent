@@ -16,7 +16,7 @@ Locally on macOS:
 
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - installed-package `import jafar`: **PASS**;
-- Python: **211 passed, 1 warning**;
+- Python: **216 passed, 1 warning**;
 - Ruff: **All checks passed**;
 - private-Beta backend smoke: **PASS** (`PRIVATE BETA BACKEND SMOKE: PASS`);
 - iOS Simulator build: **PASS**;
@@ -80,7 +80,10 @@ The remaining Python warning is the existing non-blocking Starlette/httpx TestCl
 23. Synthetic Gmail HTTP E2E confirms newest-relevant selection, current-context persistence, and
     zero mailbox mutation without a real account or credential.
 24. Apple API-key persistence updates the existing Keychain item in place before adding a new one,
-    avoiding duplicate-item failures during backend autostart.
+    avoids duplicate-item failures during backend autostart, and commits the endpoint only after
+    the Keychain write succeeds.
+25. Gmail OAuth validation fails closed for missing scope reports, non-Google token endpoints, and
+    non-loopback redirects; external links containing embedded credentials are discarded.
 
 ## Gmail strategy for first private Beta
 
@@ -194,7 +197,7 @@ Private Beta can be tagged only when all of the following are true:
 
 ## Current stop point
 
-Core backend, normal wheel packaging/import, the 211-test Python suite, Ruff, first four commands,
+Core backend, normal wheel packaging/import, the 216-test Python suite, Ruff, first four commands,
 Apple launch and live voice round trip, current-branch Pavlik E2E, Outlook connector read access,
 synthetic Outlook/Gmail E2E, live Gmail OAuth/runtime/macOS UI checks, Graph adapter tests, Apple
 compilation gates, repository cleanup, and release documentation are green. The next release action

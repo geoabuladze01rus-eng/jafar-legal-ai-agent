@@ -100,10 +100,10 @@ enum JafarClientConfiguration {
         guard let validated = validatedEndpoint(endpoint) else {
             throw JafarConfigurationError.invalidEndpoint
         }
-        UserDefaults.standard.set(validated.absoluteString, forKey: endpointDefaultsKey)
         if let apiKey, !apiKey.isEmpty {
             try saveAPIKey(apiKey)
         }
+        UserDefaults.standard.set(validated.absoluteString, forKey: endpointDefaultsKey)
     }
 
     static func clearAPIKey() {

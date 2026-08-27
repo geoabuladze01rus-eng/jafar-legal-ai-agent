@@ -181,8 +181,10 @@ class GmailMessageParser:
         headers = self._headers(part.get("headers"))
         disposition = headers.get("content-disposition", "").lower()
         attachment_id = bool(body.get("attachmentId"))
-        is_attachment = bool(filename) or "attachment" in disposition or (
-            attachment_id and not mime_type.startswith("text/")
+        is_attachment = (
+            bool(filename)
+            or "attachment" in disposition
+            or (attachment_id and not mime_type.startswith("text/"))
         )
 
         if is_attachment:
@@ -304,7 +306,12 @@ class GmailMessageParser:
             parsed = urlsplit(cleaned)
         except ValueError:
             return None
-        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             return None
         return urlunsplit((parsed.scheme.lower(), parsed.netloc, parsed.path, "", ""))
 

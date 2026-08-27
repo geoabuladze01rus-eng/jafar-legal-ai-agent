@@ -5,12 +5,15 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 class GmailSetupRequired(RuntimeError):
@@ -120,9 +123,11 @@ class GmailCredentialManager:
             raise GmailReauthorizationRequired(
                 "Сохранённая Gmail-авторизация повреждена; подключите Gmail заново."
             ) from None
-        if not isinstance(info, dict) or self._scopes(info.get("scopes")) != {
-            GMAIL_READONLY_SCOPE
-        }:
+        if (
+            not isinstance(info, dict)
+            or self._scopes(info.get("scopes")) != {GMAIL_READONLY_SCOPE}
+            or info.get("token_uri") != GOOGLE_TOKEN_URI
+        ):
             raise GmailReauthorizationRequired(
                 "Сохранённая Gmail-авторизация не ограничена gmail.readonly; подключите Gmail заново."
             )
@@ -154,6 +159,10 @@ class GmailCredentialManager:
             raise GmailReauthorizationRequired(
                 "Gmail-сессия не обновилась; подключите Gmail заново."
             )
+        if self._credential_scopes(credentials) != {GMAIL_READONLY_SCOPE}:
+            raise GmailReauthorizationRequired(
+                "Обновлённая Gmail-авторизация имеет неверные права; подключите Gmail заново."
+            )
         self.store.save(credentials.to_json())
         return credentials
 
@@ -164,6 +173,43 @@ class GmailCredentialManager:
         if isinstance(raw_scopes, list):
             return {str(item) for item in raw_scopes if item}
         return set()
+
+    @classmethod
+    def _credential_scopes(cls, credentials: Credentials) -> set[str]:
+        return cls._scopes(credentials.granted_scopes or credentials.scopes)
+
+
+def _validate_desktop_client_payload(payload: object) -> None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("installed"), dict):
+        raise GmailSetupRequired("Нужен OAuth client типа Desktop app, а не Web application.")
+    installed = payload["installed"]
+    if (
+        not isinstance(installed.get("client_id"), str)
+        or not installed["client_id"].strip()
+        or not isinstance(installed.get("client_secret"), str)
+        or not installed["client_secret"].strip()
+        or installed.get("auth_uri") != GOOGLE_AUTH_URI
+        or installed.get("token_uri") != GOOGLE_TOKEN_URI
+    ):
+        raise GmailSetupRequired(
+            "OAuth JSON Desktop app не содержит ожидаемые Google OAuth endpoints."
+        )
+    redirects = installed.get("redirect_uris")
+    if not isinstance(redirects, list) or not redirects:
+        raise GmailSetupRequired("OAuth JSON не разрешает безопасный loopback redirect.")
+    for redirect in redirects:
+        if not isinstance(redirect, str):
+            raise GmailSetupRequired("OAuth JSON содержит небезопасный redirect URI.")
+        parsed = urlsplit(redirect)
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise GmailSetupRequired("OAuth JSON содержит небезопасный redirect URI.")
 
 
 def authorize_gmail_desktop_app(
@@ -183,10 +229,7 @@ def authorize_gmail_desktop_app(
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         raise GmailSetupRequired("Не удалось прочитать OAuth JSON Desktop app.") from None
-    if not isinstance(payload, dict) or not isinstance(payload.get("installed"), dict):
-        raise GmailSetupRequired(
-            "Нужен OAuth client типа Desktop app, а не Web application."
-        )
+    _validate_desktop_client_payload(payload)
 
     try:
         flow = InstalledAppFlow.from_client_secrets_file(
@@ -203,8 +246,7 @@ def authorize_gmail_desktop_app(
                 "Откроется системный браузер для локального Gmail read-only доступа."
             ),
             success_message=(
-                "Gmail подключён к локальному Jafar в режиме только чтения. "
-                "Это окно можно закрыть."
+                "Gmail подключён к локальному Jafar в режиме только чтения. Это окно можно закрыть."
             ),
         )
     except Exception:  # noqa: BLE001 - never surface OAuth response details.
@@ -213,7 +255,7 @@ def authorize_gmail_desktop_app(
         ) from None
 
     granted = set(credentials.granted_scopes or credentials.scopes or ())
-    if granted and granted != {GMAIL_READONLY_SCOPE}:
+    if granted != {GMAIL_READONLY_SCOPE}:
         raise GmailReauthorizationRequired(
             "Google вернул неожиданный набор разрешений; авторизация не сохранена."
         )

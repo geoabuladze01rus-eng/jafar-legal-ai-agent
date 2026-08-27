@@ -10,7 +10,7 @@ a Google OAuth **Desktop app** client and completes local consent.
 Verified locally on macOS through 2026-08-27:
 
 - Ruff: **PASS**;
-- full Python suite: **211 passed, 1 known warning**;
+- full Python suite: **216 passed, 1 known warning**;
 - synthetic Gmail HTTP command E2E: **PASS**;
 - Keychain backend resolution: **macOS Keychain**;
 - macOS Xcode build: **PASS**;
@@ -24,6 +24,8 @@ This work does not use Supabase, production infrastructure, deployment, or a pai
 ## Safety boundary
 
 - OAuth requests exactly `https://www.googleapis.com/auth/gmail.readonly`.
+- Desktop-client and saved-token configuration must use Google's expected authorization/token
+  endpoints and a loopback-only redirect; missing or unexpected scope reports fail closed.
 - The application exposes only Gmail `messages.list` and `messages.get` operations.
 - There is no send, draft-create, modify, label, archive, trash, delete, or attachment-get method.
 - OAuth credentials are stored in the local protected keychain under

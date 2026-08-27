@@ -155,18 +155,19 @@ migration.
 
 ## Client and connector launch gates
 
-Apple/voice currently has platform-neutral contracts, device allow-listing,
-authentication flags, and approval gates. It does not yet have a reviewed native
-Mac/iPhone/iPad client, production identity/session handling, biometric
-confirmation, secure Keychain storage, push delivery, accessibility validation,
-or device-level E2E tests.
+Apple/voice has platform-neutral contracts, a native Private Beta client,
+Keychain-backed local API credentials, a live macOS command smoke, device
+allow-listing, authentication flags, and approval gates. Production launch still
+needs identity/session handling, biometric confirmation, push delivery,
+accessibility validation, and broader device-level E2E tests.
 
 Email has Gmail and Outlook ingestion boundaries, attachment normalization,
-deduplication, analysis, review-only drafts, and persistence contracts. Launch
-still needs production OAuth consent/configuration, token rotation/revocation,
-webhook or delta-sync reliability, provider-specific pagination/attachments,
-Drive integration, calendar write approval, tenant isolation, and sandbox E2E.
-No real account should be connected before those controls are reviewed.
+deduplication, analysis, review-only drafts, and persistence contracts. A local,
+single-user Gmail `gmail.readonly` owner-Mac gate has passed; that result does not
+authorize a server-side or multi-user connector. Production launch still needs
+OAuth consent/configuration review, token rotation/revocation, webhook or
+delta-sync reliability, provider-specific pagination/attachments, Drive
+integration, calendar write approval, tenant isolation, and sandbox E2E.
 
 Telegram has inbound normalization, classification, an audit record, editorial
 safety, approval-first legal-help handling, and a fail-closed production guard.

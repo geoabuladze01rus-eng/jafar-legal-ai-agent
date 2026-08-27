@@ -12,7 +12,7 @@ Latest verified local control point on macOS:
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - `import jafar`: **PASS**;
 - Ruff: **All checks passed!**;
-- pytest: **211 passed, 1 warning**;
+- pytest: **218 passed, 1 warning**;
 - iOS Simulator build: **PASS**;
 - macOS build: **PASS**;
 - private-Beta loopback backend smoke: **PASS**;
@@ -20,7 +20,8 @@ Latest verified local control point on macOS:
 - real private Pavlik investigator-motion E2E: **PASS**;
 - Outlook mailbox list/read through the installed Microsoft Outlook connector: **PASS**;
 - local Gmail read-only command path with synthetic HTTP E2E: **PASS**;
-- live Gmail OAuth: **safe setup gate**, pending owner-created Google Desktop app credentials.
+- live Gmail OAuth and Keychain-backed command-runtime read: **PASS**;
+- final live Gmail command through the macOS app UI: **PASS**.
 
 Target Private Beta date: **2026-09-15**.
 
@@ -60,7 +61,9 @@ uvicorn jafar.main:app --host 127.0.0.1 --port 8000
 Health check: `GET http://127.0.0.1:8000/health`
 
 Private `/v1/*` and legal-entity routes use the fail-closed `X-Jafar-API-Key` boundary on
-the Beta-hardening line. Never commit API keys, tokens, mailbox content, or client files.
+the Beta-hardening line. This remains closed when `ENVIRONMENT=development` unless a developer
+explicitly enables `ALLOW_UNAUTHENTICATED_DEVELOPMENT=true`; never use that opt-in outside a local
+loopback development session. Never commit API keys, tokens, mailbox content, or client files.
 
 For the controlled loopback acceptance path use the documented helper/runbook in
 [`docs/APPLE_PRIVATE_BETA_SMOKE.md`](docs/APPLE_PRIVATE_BETA_SMOKE.md).
@@ -88,10 +91,13 @@ protected keychain, lists/reads Inbox messages, creates a short local summary, a
 snapshot as the current lawyer context. It never sends, changes, archives, trashes, or deletes
 mail. Attachments and external links are described but are not downloaded or opened.
 
-Live authorization requires an owner-created Google OAuth client of type **Desktop app**. Until
-that exists, the backend returns a safe `setup_required` response; it does not try an implicit
-browser login or ask for credentials in the app. The complete zero-billing setup and acceptance
-gate is documented in
+Live authorization uses an owner-created Google OAuth client of type **Desktop app**. On the
+verified owner Mac, the resulting grant is held in Keychain and the live command-runtime path
+successfully selected a legal message and stored its safe snapshot without mailbox mutation,
+attachment download, or external-link opening. The same command also passed through the macOS
+app UI against its auto-started loopback backend. A Mac without that local grant still receives a
+safe `setup_required` response; the app never asks for credentials. The complete zero-billing
+setup and acceptance gate is documented in
 [`docs/GMAIL_READONLY_PRIVATE_BETA.md`](docs/GMAIL_READONLY_PRIVATE_BETA.md).
 
 ## Security rule
@@ -102,6 +108,7 @@ Consequential external actions require explicit human approval.
 ## Project documentation
 
 - [Private Beta release checklist](docs/PRIVATE_BETA_RELEASE_CHECKLIST.md)
+- [Private Beta 0.7 finalization record](docs/PRIVATE_BETA_0_7_RELEASE.md)
 - [Local Gmail read-only Private Beta](docs/GMAIL_READONLY_PRIVATE_BETA.md)
 - [Beta readiness](docs/BETA_READINESS.md)
 - [Architecture](docs/ARCHITECTURE.md)

@@ -9,6 +9,8 @@ from google.oauth2.credentials import Credentials
 
 from jafar.gmail_auth import (
     GMAIL_READONLY_SCOPE,
+    GOOGLE_AUTH_URI,
+    GOOGLE_TOKEN_URI,
     GmailCredentialManager,
     GmailReauthorizationRequired,
     GmailSetupRequired,
@@ -76,8 +78,8 @@ def test_installed_app_setup_requests_readonly_and_saves_to_store(monkeypatch, t
                 "installed": {
                     "client_id": "synthetic-desktop-client",
                     "client_secret": "synthetic-desktop-secret",
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_uri": GOOGLE_AUTH_URI,
+                    "token_uri": GOOGLE_TOKEN_URI,
                     "redirect_uris": ["http://localhost"],
                 }
             }
@@ -124,4 +126,91 @@ def test_setup_rejects_web_oauth_client_before_opening_browser(tmp_path) -> None
     secrets_file.write_text(json.dumps({"web": {"client_id": "synthetic"}}), encoding="utf-8")
 
     with pytest.raises(GmailSetupRequired, match="Desktop app"):
+        authorize_gmail_desktop_app(secrets_file, InMemoryCredentialStore())
+
+
+def test_credential_manager_rejects_untrusted_token_endpoint_before_use() -> None:
+    payload = json.loads(_valid_credentials_json())
+    payload["token_uri"] = "https://oauth.example.test/token"
+    manager = GmailCredentialManager(InMemoryCredentialStore(json.dumps(payload)))
+
+    with pytest.raises(GmailReauthorizationRequired):
+        manager.load_valid_credentials()
+
+
+def test_setup_rejects_untrusted_oauth_endpoint_before_opening_browser(tmp_path) -> None:
+    secrets_file = tmp_path / "desktop-client.json"
+    secrets_file.write_text(
+        json.dumps(
+            {
+                "installed": {
+                    "client_id": "synthetic-desktop-client",
+                    "client_secret": "synthetic-desktop-secret",
+                    "auth_uri": GOOGLE_AUTH_URI,
+                    "token_uri": "https://oauth.example.test/token",
+                    "redirect_uris": ["http://localhost"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GmailSetupRequired, match="Google OAuth endpoints"):
+        authorize_gmail_desktop_app(secrets_file, InMemoryCredentialStore())
+
+
+def test_setup_rejects_non_loopback_redirect_before_opening_browser(tmp_path) -> None:
+    secrets_file = tmp_path / "desktop-client.json"
+    secrets_file.write_text(
+        json.dumps(
+            {
+                "installed": {
+                    "client_id": "synthetic-desktop-client",
+                    "client_secret": "synthetic-desktop-secret",
+                    "auth_uri": GOOGLE_AUTH_URI,
+                    "token_uri": GOOGLE_TOKEN_URI,
+                    "redirect_uris": ["https://callback.example.test/oauth"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GmailSetupRequired, match="redirect URI"):
+        authorize_gmail_desktop_app(secrets_file, InMemoryCredentialStore())
+
+
+def test_setup_rejects_empty_reported_scope_set(monkeypatch, tmp_path) -> None:
+    secrets_file = tmp_path / "desktop-client.json"
+    secrets_file.write_text(
+        json.dumps(
+            {
+                "installed": {
+                    "client_id": "synthetic-desktop-client",
+                    "client_secret": "synthetic-desktop-secret",
+                    "auth_uri": GOOGLE_AUTH_URI,
+                    "token_uri": GOOGLE_TOKEN_URI,
+                    "redirect_uris": ["http://localhost"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class EmptyScopeCredentials:
+        granted_scopes = None
+        scopes = None
+        refresh_token = "synthetic-refresh-token"
+
+    class FakeFlow:
+        @staticmethod
+        def run_local_server(**kwargs):
+            return EmptyScopeCredentials()
+
+    monkeypatch.setattr(
+        "jafar.gmail_auth.InstalledAppFlow.from_client_secrets_file",
+        lambda path, *, scopes: FakeFlow(),
+    )
+
+    with pytest.raises(GmailReauthorizationRequired, match="разрешений"):
         authorize_gmail_desktop_app(secrets_file, InMemoryCredentialStore())

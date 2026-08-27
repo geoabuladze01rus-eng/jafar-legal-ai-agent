@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from jafar.config import settings
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.main import app
@@ -16,11 +17,14 @@ def test_analyzer_extracts_case_number_and_date() -> None:
     assert any(issue.title == "Обжалование" for issue in result.issues)
 
 
-def test_matter_lifecycle_and_analysis_endpoint() -> None:
+def test_matter_lifecycle_and_analysis_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "api_key", "test-secret")
+    headers = {"X-Jafar-API-Key": "test-secret"}
     client = TestClient(app)
     created = client.post(
         "/v1/matters",
         json={"title": "Тестовое дело", "matter_type": "civil", "case_number": "2-123/2026"},
+        headers=headers,
     )
     assert created.status_code == 201
     matter_id = created.json()["id"]
@@ -32,11 +36,12 @@ def test_matter_lifecycle_and_analysis_endpoint() -> None:
             "matter_type": "civil",
             "text": "Срок исполнения до 31.08.2026. Договор не исполнен.",
         },
+        headers=headers,
     )
     assert analyzed.status_code == 200
     assert analyzed.json()["matter_id"] == matter_id
     assert analyzed.json()["analysis"]["deadlines"]
 
-    fetched = client.get(f"/v1/matters/{matter_id}")
+    fetched = client.get(f"/v1/matters/{matter_id}", headers=headers)
     assert fetched.status_code == 200
     assert fetched.json()["deadlines"]

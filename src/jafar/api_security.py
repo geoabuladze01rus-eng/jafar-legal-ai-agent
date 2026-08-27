@@ -13,7 +13,10 @@ def require_api_key(api_key: str | None = Header(default=None, alias=API_KEY_HEA
     """Protect private application endpoints while keeping local development usable."""
     configured_key = settings.api_key
     if not configured_key:
-        if settings.environment.lower() == "development":
+        if (
+            settings.environment.lower() == "development"
+            and settings.allow_unauthenticated_development
+        ):
             return
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

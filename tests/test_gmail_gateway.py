@@ -76,9 +76,7 @@ class SyntheticReadOnlyGmailClient:
                     {
                         "mimeType": "application/pdf",
                         "filename": "court-materials.pdf",
-                        "headers": [
-                            {"name": "Content-Disposition", "value": "attachment"}
-                        ],
+                        "headers": [{"name": "Content-Disposition", "value": "attachment"}],
                         "body": {
                             "attachmentId": "remote-large-attachment",
                             "size": 50 * 1024 * 1024,
@@ -222,6 +220,22 @@ def test_metadata_only_message_detects_safe_link_from_bounded_snippet() -> None:
     assert parsed.external_links == ("https://files.example.test/case",)
 
 
+def test_parser_rejects_external_link_with_embedded_credentials() -> None:
+    parsed = GmailMessageParser().parse(
+        {
+            "id": "credential-link",
+            "snippet": "Материалы: https://user:secret@files.example.test/case",
+            "payload": {
+                "headers": [{"name": "Subject", "value": "Судебные материалы"}],
+                "mimeType": "multipart/mixed",
+                "body": {"size": 0},
+            },
+        }
+    )
+
+    assert parsed.external_links == ()
+
+
 def test_runtime_returns_actionable_setup_gate_without_provider_details() -> None:
     class SetupRequiredGateway:
         def refresh_latest_legal_email(self, context: LawyerContext):
@@ -247,6 +261,7 @@ def test_http_command_e2e_uses_synthetic_gmail_only(monkeypatch) -> None:
     monkeypatch.setattr(main, "command_runtime", runtime)
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
+    monkeypatch.setattr(main.settings, "allow_unauthenticated_development", True)
 
     with TestClient(app) as client:
         response = client.post(

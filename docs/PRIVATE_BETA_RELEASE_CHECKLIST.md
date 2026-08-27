@@ -6,8 +6,9 @@ This checklist is for the first private Beta only. It does not authorize product
 
 ## 1. Repository and branch control
 
-- [x] Working branch is `codex/beta-readiness-audit`; local cleanup of temporary Apple artifacts was completed.
-- [x] PR #26 is mergeable and contains the intended Beta hardening stack.
+- [x] PR #26 supplied the merged Beta-hardening baseline.
+- [x] Current Gmail branch is `codex/gmail-readonly-gateway`; temporary Apple/Gmail smoke artifacts were cleaned up.
+- [x] Draft PR #28 is mergeable and targets `codex/local-backend-autostart`.
 - [x] `main` remains untouched until explicit release decision.
 - [x] No client PDF, mailbox content, tokens, API keys, or credentials exist in tracked Beta files.
 - [x] Superseded experimental branches/PRs are not merged into the Beta line.
@@ -24,11 +25,11 @@ Run locally from the repository root with the project virtual environment:
 Expected current control point:
 
 - Ruff: `All checks passed!`
-- pytest: `199 passed, 1 warning`
+- pytest: `216 passed, 1 warning`
 - only known non-blocking warning: Starlette/httpx deprecation in TestClient coverage
 
 - [x] Ruff passes: `All checks passed!`.
-- [x] Full pytest suite passes: `199 passed, 1 warning`.
+- [x] Full pytest suite passes: `216 passed, 1 warning`.
 - [x] No new warning affects legal correctness, security, privacy, or runtime stability.
 
 ## 3. Apple build gate
@@ -58,7 +59,7 @@ Use the loopback private-Beta backend smoke helper and an ephemeral API key.
 - [x] `проверка связи` reaches `/v1/command` end-to-end.
 - [x] Response renders in Jafar.
 - [x] Voice response `Джафар на связи` is confirmed.
-- [ ] Ephemeral API key/backend process is stopped after the final smoke.
+- [x] Gmail UI-smoke ephemeral API key/backend process was stopped after the final smoke.
 - [x] No temporary secret is committed or saved in tracked project files.
 
 Current verified baseline: **PASS**, including the live macOS end-to-end voice round trip.
@@ -95,6 +96,14 @@ Private Beta live strategy: **installed Microsoft Outlook connector**.
 
 Direct standalone Microsoft Graph OAuth is **deferred**. The Graph client and Device Code helper remain tested future infrastructure, not a first-Beta release blocker.
 
+Gmail Private Beta strategy: **local single-user installed-app OAuth with exact `gmail.readonly`**.
+
+- [x] Synthetic Gmail HTTP E2E passes without a real account or credential.
+- [x] Live OAuth grant is stored only in macOS Keychain.
+- [x] The macOS app command reaches the live Gmail list/get-only gateway.
+- [x] Current legal-email context is retained for the following command.
+- [x] No send, modify, label, archive, trash, delete, attachment-download, or link-open operation exists in the gateway.
+
 ## 7. Human-approval safety gate
 
 - [x] `prepare_reply` reports `requires_review=true`.
@@ -111,12 +120,12 @@ Direct standalone Microsoft Graph OAuth is **deferred**. The Graph client and De
 
 Known non-blocking packaging note: an editable install on macOS with Python 3.12 may use a hidden `.pth` file and can therefore be misleading during local import diagnosis. Use a normal wheel installation for the Private Beta runtime and acceptance gate.
 
-## 9. Final verified Private Beta gate — 2026-08-26
+## 9. Final verified Private Beta gate — 2026-08-27
 
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - `import jafar`: **PASS**;
 - Ruff: `All checks passed!`;
-- pytest: `199 passed, 1 warning`;
+- pytest: `216 passed, 1 warning`;
 - backend: `PRIVATE BETA BACKEND SMOKE: PASS`;
 - Jafar macOS launch: **PASS**;
 - endpoint/API key persistence: **PASS**;
@@ -124,7 +133,9 @@ Known non-blocking packaging note: an editable install on macOS with Python 3.12
 - spoken response `Джафар на связи`: **CONFIRMED**;
 - real Pavlik private E2E: **PASS**;
 - Outlook connector read-only access: **PASS**;
-- PR #26: **OPEN / MERGEABLE / DRAFT** with no review submissions, no inline review threads and no PR discussion comments at final review;
+- Gmail OAuth/runtime/macOS UI read-only gate: **PASS**;
+- PR #26 baseline: **MERGED**;
+- PR #28 Gmail gateway: **OPEN / MERGEABLE / DRAFT**, targeting `codex/local-backend-autostart`;
 - current GitHub head has no commit status checks because of the known Actions startup/infrastructure issue;
 - `main` and production: **UNTOUCHED**.
 
@@ -142,9 +153,9 @@ These remain mandatory before any cloud/production Beta:
 
 ## 11. Release decision
 
-All substantive Private Beta gates are green. Before formally declaring/tagging the Private Beta or moving PR #26 out of Draft, complete the one operational cleanup item still unchecked in section 4: stop the final ephemeral loopback backend so its temporary API key is no longer active.
-
-After that cleanup, PR #26 can be marked **Ready for review** without merging it into `main`.
+All substantive Private Beta gates are green and the Gmail UI-smoke backend has been stopped.
+Moving PR #28 out of Draft still requires the owner's explicit review/release decision. This
+checklist does not authorize merging into `main`.
 
 Final release record should include:
 
@@ -154,5 +165,6 @@ Final release record should include:
 - Apple build results;
 - Pavlik gate result;
 - Outlook connector validation result;
+- Gmail read-only OAuth/runtime/macOS UI result;
 - known non-blocking warnings;
 - confirmation that `main`/production changes were deliberate and separately approved.

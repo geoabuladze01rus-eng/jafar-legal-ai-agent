@@ -7,6 +7,13 @@ from .inbox import InboxMessage
 
 
 @dataclass(frozen=True, slots=True)
+class LegalEmailAttachmentSnapshot:
+    filename: str
+    mime_type: str
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
 class LegalEmailSnapshot:
     message_id: str
     sender: str
@@ -20,6 +27,11 @@ class LegalEmailSnapshot:
     draft_subject: str | None
     draft_body: str | None
     requires_review: bool
+    provider: str = "unknown"
+    received_at: str | None = None
+    summary: str | None = None
+    attachments: tuple[LegalEmailAttachmentSnapshot, ...] = ()
+    external_links: tuple[str, ...] = ()
 
 
 class LawyerContext:
@@ -57,4 +69,37 @@ class LawyerContext:
             draft_subject=draft.subject if draft else None,
             draft_body=draft.body if draft else None,
             requires_review=draft.requires_review if draft else True,
+            provider="pipeline",
+        )
+
+    def record_gmail_email(
+        self,
+        *,
+        message_id: str,
+        sender: str,
+        subject: str,
+        received_at: str,
+        legal_relevance: float,
+        summary: str,
+        attachments: tuple[LegalEmailAttachmentSnapshot, ...],
+        external_links: tuple[str, ...],
+    ) -> None:
+        self._latest_legal_email = LegalEmailSnapshot(
+            message_id=message_id,
+            sender=sender,
+            subject=subject,
+            triage_action="prepare_legal_analysis",
+            legal_relevance=legal_relevance,
+            matter_ids=(),
+            document_count=0,
+            issue_count=0,
+            draft_to=None,
+            draft_subject=None,
+            draft_body=None,
+            requires_review=True,
+            provider="gmail",
+            received_at=received_at,
+            summary=summary,
+            attachments=attachments,
+            external_links=external_links,
         )

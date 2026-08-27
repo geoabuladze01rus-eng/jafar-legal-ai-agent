@@ -55,3 +55,21 @@ The API key is stored by the app in device-only Keychain. The smoke helper key i
 ## iOS follow-up
 
 `127.0.0.1` on an iPhone points to the iPhone itself, not the Mac. An iPhone-to-Mac smoke test must use the Mac's LAN address and requires local-network permission. The app plist declares local-network usage for this Beta path. Keep that test on a trusted private network only.
+
+## Gmail command follow-up
+
+The ordinary health smoke remains credential-free. Gmail has an additional safe gate:
+
+- offline/synthetic command E2E must pass before any live authorization;
+- live testing starts only after the owner creates a Google OAuth **Desktop app** client;
+- the OAuth bundle lives in local Keychain and must never be pasted into app fields or logs;
+- the macOS command is `Разбери последнее юридическое письмо`;
+- PASS requires a summary plus detected attachment/link metadata with no download, open, send,
+  label change, archive, trash, or delete action.
+
+The Keychain-backed live command-runtime path and the same command from the macOS app UI against
+the auto-started loopback backend both passed on 2026-08-27. The isolated smoke backend was stopped
+after the check.
+
+See [`GMAIL_READONLY_PRIVATE_BETA.md`](GMAIL_READONLY_PRIVATE_BETA.md). If the command returns
+`setup_required=true`, that is the expected safe stop, not a backend or voice failure.

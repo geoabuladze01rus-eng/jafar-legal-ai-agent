@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .api_security import require_api_key
 from .command_runtime import JafarCommandRuntime
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -88,6 +89,17 @@ class HealthResponse(BaseModel):
     service: str = Field(default=settings.app_name)
 
 
+class ReadinessResponse(BaseModel):
+    status: str
+    version: str
+    backend: str
+    gmail_configured: bool
+    outlook_configured: bool = False
+    local_db_configured: bool = False
+    external_ai_enabled: bool
+    voice_client: str = "local-client"
+
+
 class CreateMatterRequest(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     matter_type: MatterType = MatterType.GENERAL
@@ -115,6 +127,23 @@ class CommandResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.get("/readiness", response_model=ReadinessResponse)
+def readiness() -> ReadinessResponse:
+    """Expose safe component status only; never return credentials or client data."""
+    gmail_configured = (
+        bool(settings.gmail_client_secrets_path)
+        if hasattr(settings, "gmail_client_secrets_path")
+        else False
+    )
+    return ReadinessResponse(
+        status="ready",
+        version=__version__,
+        backend="ready",
+        gmail_configured=gmail_configured,
+        external_ai_enabled=settings.external_ai_enabled,
+    )
 
 
 def _resolve_command(text: str) -> tuple[str | None, dict]:

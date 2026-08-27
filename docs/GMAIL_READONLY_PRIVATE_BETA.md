@@ -7,7 +7,7 @@ Synthetic end-to-end coverage exercises the real command runtime and HTTP endpoi
 using a Gmail account or Google credentials. Live OAuth is enabled only after the owner creates
 a Google OAuth **Desktop app** client and completes local consent.
 
-Verified locally on macOS on 2026-08-26:
+Verified locally on macOS through 2026-08-27:
 
 - Ruff: **PASS**;
 - full Python suite: **211 passed, 1 known warning**;
@@ -17,7 +17,7 @@ Verified locally on macOS on 2026-08-26:
 - live OAuth setup with exact `gmail.readonly`: **PASS** on 2026-08-27;
 - live Keychain -> Gmail list/get -> legal triage -> current-context path: **PASS**;
 - mailbox mutation, attachment download, and external-link opening during the live check: **none**;
-- final command from the macOS app UI: **pending**.
+- final command from the macOS app UI through the auto-started loopback backend: **PASS**.
 
 This work does not use Supabase, production infrastructure, deployment, or a paid service.
 
@@ -109,14 +109,17 @@ unopened, the PDF remains undownloaded, and `mailbox_mutation_performed` remains
 
 ## Live acceptance gate (after credentials exist)
 
-The credential and command-runtime portion passed on 2026-08-27. The remaining item is the
-user-visible macOS app round trip.
+The complete live acceptance gate passed on 2026-08-27, including the user-visible macOS app
+round trip. The response was verified without copying private message content into logs or Git.
 
 1. Start the loopback-only backend from the configured branch/worktree.
 2. Send `Разбери последнее юридическое письмо` from the macOS app.
 3. Confirm the response describes the intended legal message and detected material.
 4. Confirm Gmail shows no sent message, changed label, archive, trash, or deletion.
 5. Stop the loopback backend after the check.
+
+Observed result: steps 1–5 **PASS**. No send, mailbox mutation, attachment download, or
+external-link opening occurred.
 
 Do not paste the OAuth JSON, client ID, client secret, access token, refresh token, message body,
 message ID, or attachment bytes into a terminal transcript, issue, commit, or pull request.

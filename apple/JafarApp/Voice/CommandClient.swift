@@ -134,7 +134,17 @@ enum JafarClientConfiguration {
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
         ]
-        SecItemDelete(query as CFDictionary)
+
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: encoded] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw JafarConfigurationError.keychain(updateStatus)
+        }
 
         var insert = query
         insert[kSecValueData as String] = encoded

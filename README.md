@@ -21,7 +21,7 @@ Latest verified local control point on macOS:
 - Outlook mailbox list/read through the installed Microsoft Outlook connector: **PASS**;
 - local Gmail read-only command path with synthetic HTTP E2E: **PASS**;
 - live Gmail OAuth and Keychain-backed command-runtime read: **PASS**;
-- final live Gmail command through the macOS app UI: **pending**.
+- final live Gmail command through the macOS app UI: **PASS**.
 
 Target Private Beta date: **2026-09-15**.
 
@@ -92,7 +92,8 @@ mail. Attachments and external links are described but are not downloaded or ope
 Live authorization uses an owner-created Google OAuth client of type **Desktop app**. On the
 verified owner Mac, the resulting grant is held in Keychain and the live command-runtime path
 successfully selected a legal message and stored its safe snapshot without mailbox mutation,
-attachment download, or external-link opening. A Mac without that local grant still receives a
+attachment download, or external-link opening. The same command also passed through the macOS
+app UI against its auto-started loopback backend. A Mac without that local grant still receives a
 safe `setup_required` response; the app never asks for credentials. The complete zero-billing
 setup and acceptance gate is documented in
 [`docs/GMAIL_READONLY_PRIVATE_BETA.md`](docs/GMAIL_READONLY_PRIVATE_BETA.md).

@@ -67,5 +67,8 @@ The ordinary health smoke remains credential-free. Gmail has an additional safe 
 - PASS requires a summary plus detected attachment/link metadata with no download, open, send,
   label change, archive, trash, or delete action.
 
+The Keychain-backed live command-runtime path passed on 2026-08-27. The remaining acceptance item
+is the same command from the macOS app UI against the loopback backend.
+
 See [`GMAIL_READONLY_PRIVATE_BETA.md`](GMAIL_READONLY_PRIVATE_BETA.md). If the command returns
 `setup_required=true`, that is the expected safe stop, not a backend or voice failure.

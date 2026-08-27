@@ -20,7 +20,8 @@ Latest verified local control point on macOS:
 - real private Pavlik investigator-motion E2E: **PASS**;
 - Outlook mailbox list/read through the installed Microsoft Outlook connector: **PASS**;
 - local Gmail read-only command path with synthetic HTTP E2E: **PASS**;
-- live Gmail OAuth: **safe setup gate**, pending owner-created Google Desktop app credentials.
+- live Gmail OAuth and Keychain-backed command-runtime read: **PASS**;
+- final live Gmail command through the macOS app UI: **pending**.
 
 Target Private Beta date: **2026-09-15**.
 
@@ -88,10 +89,12 @@ protected keychain, lists/reads Inbox messages, creates a short local summary, a
 snapshot as the current lawyer context. It never sends, changes, archives, trashes, or deletes
 mail. Attachments and external links are described but are not downloaded or opened.
 
-Live authorization requires an owner-created Google OAuth client of type **Desktop app**. Until
-that exists, the backend returns a safe `setup_required` response; it does not try an implicit
-browser login or ask for credentials in the app. The complete zero-billing setup and acceptance
-gate is documented in
+Live authorization uses an owner-created Google OAuth client of type **Desktop app**. On the
+verified owner Mac, the resulting grant is held in Keychain and the live command-runtime path
+successfully selected a legal message and stored its safe snapshot without mailbox mutation,
+attachment download, or external-link opening. A Mac without that local grant still receives a
+safe `setup_required` response; the app never asks for credentials. The complete zero-billing
+setup and acceptance gate is documented in
 [`docs/GMAIL_READONLY_PRIVATE_BETA.md`](docs/GMAIL_READONLY_PRIVATE_BETA.md).
 
 ## Security rule

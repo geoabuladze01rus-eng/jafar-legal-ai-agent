@@ -2,10 +2,10 @@
 
 ## Status
 
-The first local Gmail vertical slice is implemented behind a safe OAuth setup gate.
+The first local Gmail vertical slice is implemented with a safe OAuth setup gate.
 Synthetic end-to-end coverage exercises the real command runtime and HTTP endpoint without
-using a Gmail account or Google credentials. Live OAuth is intentionally not attempted until
-the owner creates a Google OAuth **Desktop app** client.
+using a Gmail account or Google credentials. Live OAuth is enabled only after the owner creates
+a Google OAuth **Desktop app** client and completes local consent.
 
 Verified locally on macOS on 2026-08-26:
 
@@ -14,7 +14,10 @@ Verified locally on macOS on 2026-08-26:
 - synthetic Gmail HTTP command E2E: **PASS**;
 - Keychain backend resolution: **macOS Keychain**;
 - macOS Xcode build: **PASS**;
-- live OAuth/API call: **not run — expected setup gate**.
+- live OAuth setup with exact `gmail.readonly`: **PASS** on 2026-08-27;
+- live Keychain -> Gmail list/get -> legal triage -> current-context path: **PASS**;
+- mailbox mutation, attachment download, and external-link opening during the live check: **none**;
+- final command from the macOS app UI: **pending**.
 
 This work does not use Supabase, production infrastructure, deployment, or a paid service.
 
@@ -105,6 +108,9 @@ link, and a 50 MiB remote PDF. PASS requires the legal email to be selected whil
 unopened, the PDF remains undownloaded, and `mailbox_mutation_performed` remains `false`.
 
 ## Live acceptance gate (after credentials exist)
+
+The credential and command-runtime portion passed on 2026-08-27. The remaining item is the
+user-visible macOS app round trip.
 
 1. Start the loopback-only backend from the configured branch/worktree.
 2. Send `Разбери последнее юридическое письмо` from the macOS app.

@@ -261,6 +261,7 @@ def test_http_command_e2e_uses_synthetic_gmail_only(monkeypatch) -> None:
     monkeypatch.setattr(main, "command_runtime", runtime)
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
+    monkeypatch.setattr(main.settings, "allow_unauthenticated_development", True)
 
     with TestClient(app) as client:
         response = client.post(

@@ -16,15 +16,27 @@ def test_health_is_public() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_development_allows_local_api_without_key(monkeypatch) -> None:
+def test_development_requires_explicit_unauthenticated_opt_in(monkeypatch) -> None:
     monkeypatch.setattr(settings, "environment", "development")
     monkeypatch.setattr(settings, "api_key", None)
+    monkeypatch.setattr(settings, "allow_unauthenticated_development", True)
 
     with TestClient(app) as client:
         response = client.post("/v1/command", json=_command_payload())
 
     assert response.status_code == 200
     assert response.json()["intent"] == "health"
+
+
+def test_development_without_explicit_opt_in_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "api_key", None)
+    monkeypatch.setattr(settings, "allow_unauthenticated_development", False)
+
+    with TestClient(app) as client:
+        response = client.post("/v1/command", json=_command_payload())
+
+    assert response.status_code == 503
 
 
 def test_non_development_requires_configured_key(monkeypatch) -> None:

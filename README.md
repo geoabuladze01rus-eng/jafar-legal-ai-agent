@@ -12,7 +12,7 @@ Latest verified local control point on macOS:
 - normal wheel installation without `PYTHONPATH`: **PASS**;
 - `import jafar`: **PASS**;
 - Ruff: **All checks passed!**;
-- pytest: **216 passed, 1 warning**;
+- pytest: **218 passed, 1 warning**;
 - iOS Simulator build: **PASS**;
 - macOS build: **PASS**;
 - private-Beta loopback backend smoke: **PASS**;
@@ -61,7 +61,9 @@ uvicorn jafar.main:app --host 127.0.0.1 --port 8000
 Health check: `GET http://127.0.0.1:8000/health`
 
 Private `/v1/*` and legal-entity routes use the fail-closed `X-Jafar-API-Key` boundary on
-the Beta-hardening line. Never commit API keys, tokens, mailbox content, or client files.
+the Beta-hardening line. This remains closed when `ENVIRONMENT=development` unless a developer
+explicitly enables `ALLOW_UNAUTHENTICATED_DEVELOPMENT=true`; never use that opt-in outside a local
+loopback development session. Never commit API keys, tokens, mailbox content, or client files.
 
 For the controlled loopback acceptance path use the documented helper/runbook in
 [`docs/APPLE_PRIVATE_BETA_SMOKE.md`](docs/APPLE_PRIVATE_BETA_SMOKE.md).
@@ -106,6 +108,7 @@ Consequential external actions require explicit human approval.
 ## Project documentation
 
 - [Private Beta release checklist](docs/PRIVATE_BETA_RELEASE_CHECKLIST.md)
+- [Private Beta 0.7 finalization record](docs/PRIVATE_BETA_0_7_RELEASE.md)
 - [Local Gmail read-only Private Beta](docs/GMAIL_READONLY_PRIVATE_BETA.md)
 - [Beta readiness](docs/BETA_READINESS.md)
 - [Architecture](docs/ARCHITECTURE.md)

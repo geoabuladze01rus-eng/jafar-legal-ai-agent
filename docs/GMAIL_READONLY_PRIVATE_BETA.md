@@ -10,7 +10,7 @@ a Google OAuth **Desktop app** client and completes local consent.
 Verified locally on macOS through 2026-08-27:
 
 - Ruff: **PASS**;
-- full Python suite: **216 passed, 1 known warning**;
+- full Python suite: **218 passed, 1 known warning**;
 - synthetic Gmail HTTP command E2E: **PASS**;
 - Keychain backend resolution: **macOS Keychain**;
 - macOS Xcode build: **PASS**;
@@ -122,6 +122,9 @@ round trip. The response was verified without copying private message content in
 
 Observed result: steps 1–5 **PASS**. No send, mailbox mutation, attachment download, or
 external-link opening occurred.
+
+The Private Beta 0.7 finalization repeated the synthetic gate only. It did not access the live
+mailbox, OAuth JSON, token values, or Keychain credential contents.
 
 Do not paste the OAuth JSON, client ID, client secret, access token, refresh token, message body,
 message ID, or attachment bytes into a terminal transcript, issue, commit, or pull request.

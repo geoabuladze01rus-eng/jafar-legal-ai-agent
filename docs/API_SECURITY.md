@@ -6,7 +6,8 @@
 
 ## Protected endpoints
 
-Application endpoints under `/v1/*` require the `X-Jafar-API-Key` header outside development.
+Application endpoints under `/v1/*` require the `X-Jafar-API-Key` header by default in every
+environment.
 
 ```http
 X-Jafar-API-Key: <secret>
@@ -16,7 +17,9 @@ The key is supplied through the `API_KEY` environment variable and must never be
 
 ### Failure modes
 
-- Development + no key configured: local requests are allowed.
+- Development + no key configured: `503` by default.
+- Development + `ALLOW_UNAUTHENTICATED_DEVELOPMENT=true` + no key: requests are allowed only as an
+  explicit local developer opt-in; never use this setting for Private Beta or a network listener.
 - Non-development + no key configured: `503` because the service is misconfigured and fails closed.
 - Configured key + missing/wrong header: `401`.
 - Correct header: request proceeds to existing workflow and human-approval boundaries.

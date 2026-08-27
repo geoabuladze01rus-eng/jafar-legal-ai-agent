@@ -25,6 +25,7 @@ final class LocalBackendManager: ObservableObject {
     private var terminationObserver: NSObjectProtocol?
     private var pendingEndpoint: String?
     private var pendingAPIKey: String?
+    private var outputBuffer = ""
 #endif
 
     var configuredRepoRoot: String? {
@@ -38,7 +39,7 @@ final class LocalBackendManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.stop()
             }
         }
@@ -97,6 +98,7 @@ final class LocalBackendManager: ObservableObject {
         state = .starting
         pendingEndpoint = nil
         pendingAPIKey = nil
+        outputBuffer = ""
 
         let rootURL = URL(fileURLWithPath: repoRoot, isDirectory: true)
         let pythonURL = rootURL.appendingPathComponent(".venv/bin/python")
@@ -128,6 +130,7 @@ final class LocalBackendManager: ObservableObject {
                 self.process = nil
                 self.pendingEndpoint = nil
                 self.pendingAPIKey = nil
+                self.outputBuffer = ""
                 if case .running = self.state {
                     self.state = .stopped
                 } else if finished.terminationStatus != 0 {
@@ -154,8 +157,9 @@ final class LocalBackendManager: ObservableObject {
         outputPipe = nil
         pendingEndpoint = nil
         pendingAPIKey = nil
+        outputBuffer = ""
         if let process, process.isRunning {
-            process.terminate()
+            process.interrupt()
         }
         process = nil
 #endif
@@ -167,9 +171,12 @@ final class LocalBackendManager: ObservableObject {
 
 #if os(macOS)
     private func consumeBackendOutput(_ text: String) {
-        let lines = text.split(whereSeparator: { $0.isNewline }).map(String.init)
+        outputBuffer.append(text)
 
-        for line in lines {
+        while let newline = outputBuffer.firstIndex(where: { $0.isNewline }) {
+            let line = String(outputBuffer[..<newline])
+            let nextIndex = outputBuffer.index(after: newline)
+            outputBuffer.removeSubrange(outputBuffer.startIndex..<nextIndex)
             if line.hasPrefix("APPLE_ENDPOINT=") {
                 pendingEndpoint = String(line.dropFirst("APPLE_ENDPOINT=".count))
             } else if line.hasPrefix("EPHEMERAL_API_KEY=") {
@@ -181,9 +188,13 @@ final class LocalBackendManager: ObservableObject {
 
         do {
             try JafarClientConfiguration.save(endpoint: endpoint, apiKey: apiKey)
+            pendingEndpoint = nil
+            pendingAPIKey = nil
             state = .running(endpoint: endpoint)
         } catch {
-            state = .failed("Backend запущен, но не удалось настроить подключение: \(error.localizedDescription)")
+            let message = "Backend запущен, но не удалось настроить подключение: \(error.localizedDescription)"
+            stop()
+            state = .failed(message)
         }
     }
 

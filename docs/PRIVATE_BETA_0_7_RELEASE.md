@@ -1,67 +1,77 @@
-# Jafar Private Beta 0.7 — Release Freeze
+# Jafar Private Beta 0.7 — finalization record
 
 Date: 2026-08-27
-Branch: `release/jafar-private-beta-0.7`
 
-## Scope
+Finalization branch: `codex/private-beta-0.7-finalize`
 
-This branch freezes the current Private Beta line after the verified Apple local-backend autostart work and the Gmail read-only gateway implementation.
+PR base: `release/jafar-private-beta-0.7`
 
-## Verified baseline inherited from the Beta line
+## Consolidated baseline
 
-- legal analysis core and matter lifecycle
-- PDF/DOCX/TXT/Markdown ingestion with provenance
-- Pavlik acceptance/evidence-gap contracts
-- fail-closed API-key boundary for `/v1/*`
-- Apple macOS/iOS client build path
-- macOS local backend autostart
-- ephemeral API key handling via Keychain
-- typed and voice command paths through the same backend client
-- spoken `Джафар на связи` smoke path
-- Outlook read-only orchestration already present in the canonical Beta line
-- Gmail read-only gateway with local OAuth Desktop flow and exact `gmail.readonly` scope
+The branch starts from `codex/local-backend-autostart` at `15d8d7b`, which already contains the
+canonical Pavlik/legal core, Apple local-backend autostart, and merged Gmail read-only gateway. It
+also merges the release-record commit from `release/jafar-private-beta-0.7` so the divergence is
+explicit and auditable. Neither `main` nor production is part of this finalization.
 
-## Current verification snapshot
+Included Private Beta scope:
 
-From the Gmail gateway branch used as this release base:
+- legal analysis, matter lifecycle, provenance-aware PDF/DOCX/TXT/Markdown intake;
+- Pavlik acceptance, extension-motion, evidence-gap, and private harness contracts;
+- authenticated FastAPI command surface and review-only consequential actions;
+- Apple macOS/iOS command client, voice path, Keychain API key, and local backend autostart;
+- Outlook list/read pipeline and tested Microsoft Graph read-only adapter;
+- Gmail installed-app OAuth with exact `gmail.readonly`, Keychain credentials, list/get-only API,
+  bounded snippets, and metadata-only link/attachment handling;
+- Supabase ACL hardening migration staged for isolated validation only, never applied here.
 
-- Ruff: PASS
-- pytest: 211 passed, 1 known non-blocking warning
-- synthetic Gmail HTTP command E2E: PASS
-- installed wheel import: PASS
-- macOS Keychain backend: PASS
-- macOS `JafarApp_macOS` Debug build with signing disabled: PASS
+## Final verification snapshot
 
-## Safety boundaries
+- Ruff: **PASS**;
+- full pytest: **218 passed, 1 known non-blocking warning**;
+- focused API/command/Gmail/Outlook/Pavlik/legal-document suite: **45 passed, 1 warning**;
+- normal wheel install and package/API version `0.7.0`: **PASS**;
+- synthetic Gmail HTTP command E2E without credentials: **PASS**;
+- macOS Debug build with signing disabled: **PASS**;
+- iOS Simulator Debug build with signing disabled: **PASS**;
+- local backend interrupt/child-process cleanup: **PASS**;
+- tracked-file secret scan and diff whitespace check: **PASS**.
 
-Private Beta 0.7 is intentionally review-first.
+The warning is the existing Starlette/httpx TestClient deprecation and is not a legal, privacy, or
+runtime correctness failure.
 
-- no Gmail send/draft-create/modify/archive/trash/delete
-- no automatic download of external large files
-- external links and attachment metadata may be detected, but are not opened or fetched automatically
-- no automatic filing, legal submission, Telegram legal reply, or consequential outbound action
-- no production deployment
-- no production Supabase changes
-- no secrets, OAuth tokens, API keys, client PDFs, mailbox bodies, or private legal materials committed
-- external AI remains explicit opt-in where applicable
+## Security changes in finalization
 
-## Remaining release gate
+- Missing API configuration now fails closed in every environment. Unauthenticated development
+  requires the explicit local-only `ALLOW_UNAUTHENTICATED_DEVELOPMENT=true` opt-in.
+- Apple backend output is parsed as buffered complete lines, avoiding split secret/endpoint records.
+- Failure to persist the ephemeral API key stops the spawned backend instead of orphaning it.
+- App termination synchronously interrupts the helper; its cleanup path terminates the child server.
+- Package, module, and FastAPI versions are aligned at `0.7.0`.
+- The reviewed Supabase `TRUNCATE` revocation is present as an unapplied migration and requires an
+  isolated staging gate before any separately approved production action.
 
-The principal unresolved acceptance gate is a **live Gmail OAuth test on the owner Mac** using a Google OAuth Desktop client created by the owner.
+## Immutable safety boundary
 
-Required live scenario:
+- no Gmail or Outlook send, modify, label, move, archive, trash, or delete operation;
+- no Gmail attachment-body fetch and no automatic external-link opening;
+- no autonomous legal filing, publication, Telegram legal reply, or other consequential action;
+- external AI remains disabled by default;
+- no credentials, tokens, API keys, mailbox content, or private client material in Git;
+- no deployment, production Supabase mutation, merge to `main`, or release-PR promotion is
+  authorized by this record.
 
-1. authorize Jafar with Google using `gmail.readonly` only;
-2. launch Jafar normally;
-3. issue `Разбери последнее юридическое письмо` by voice;
-4. confirm Jafar reads the mailbox, identifies the latest relevant legal email, returns a bounded summary and places it in current lawyer context;
-5. confirm no mutation of Gmail state and no attachment bytes are fetched automatically;
-6. quit Jafar and confirm local backend/token cleanup behaves as designed.
+## Owner-controlled Gmail gate
 
-Until this live Gmail gate passes, this branch is a release candidate for Private Beta, not a general-production release.
+The owner-Mac live OAuth and macOS command round trip passed previously on 2026-08-27. Finalization
+did not read Gmail or reuse, print, or inspect those credentials; the release gate was repeated with
+synthetic data only. New installations still require the owner to create a Google OAuth **Desktop
+app** client, authorize exactly `gmail.readonly`, and keep the downloaded JSON outside the repository.
+No billing account or card is required for this local testing flow.
 
-## Release readiness estimate
+## Deferred/non-blocking items
 
-- owner-local Private Beta: high confidence, pending live Gmail OAuth acceptance
-- small trusted lawyer cohort: near-ready after Gmail live gate and packaging/onboarding cleanup
-- commercial/public production: not yet ready; installer/notarization/update channel, production observability, privacy onboarding, persistent operational storage and broader integration hardening remain
+- Two legacy, currently unreferenced mail/inbox abstractions remain for a later focused cleanup;
+  removing them during release consolidation would add unnecessary regression risk.
+- GitHub Actions infrastructure status is separate from the verified local gates.
+- Supabase ACL/RPC/worker validation remains mandatory in an isolated environment before production.
+- Draft PR review and merge decisions remain owner-controlled.

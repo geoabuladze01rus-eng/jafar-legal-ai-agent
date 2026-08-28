@@ -1,5 +1,28 @@
-from jafar.action_approval import ActionApprovalStore, ActionState, LegalActionApprovalEngine
+from jafar.action_approval import (
+    ActionApprovalStore,
+    ActionRequest,
+    ActionState,
+    LegalActionApprovalEngine,
+)
 from jafar.approval_execution import ApprovalExecutionService, ApprovalRequest
+
+
+class LegacyUnboundApprovalStore:
+    def __init__(self) -> None:
+        self.request = ActionRequest(
+            action_id="mail-unbound",
+            action_type="send_email",
+            description="Старый запрос без payload binding",
+            state=ActionState.APPROVED,
+            decided_at="2026-08-28T12:00:00+00:00",
+            decided_by="lawyer",
+        )
+
+    def get(self, action_id: str) -> ActionRequest | None:
+        return self.request if action_id == self.request.action_id else None
+
+    def mark_executed(self, action_id: str) -> ActionRequest:
+        raise AssertionError("Unbound legacy action must never reach mark_executed")
 
 
 def test_legacy_side_effect_requires_explicit_approval():
@@ -73,23 +96,15 @@ def test_payload_cannot_change_after_lawyer_approval():
 
 
 def test_unbound_legacy_approval_fails_closed_in_store_backed_execution():
-    store = ActionApprovalStore()
-    engine = LegalActionApprovalEngine(store)
+    store = LegacyUnboundApprovalStore()
     service = ApprovalExecutionService(store)
     calls: list[dict] = []
     service.register("send_email", lambda payload: calls.append(payload) or payload)
-    action = engine.propose(
-        action_id="mail-unbound",
-        action_type="send_email",
-        description="Старый запрос без payload binding",
-    )
-    engine.approve(action, "lawyer")
 
     result = service.execute_approved("mail-unbound", {"to": "client@example.com"})
 
     assert result.status == "payload_binding_required"
     assert calls == []
-    assert store.get("mail-unbound").state is ActionState.APPROVED
 
 
 def test_rejected_action_can_never_execute():

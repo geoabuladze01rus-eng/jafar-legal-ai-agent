@@ -71,9 +71,13 @@ class CaseTheoryEngine:
             contradictions = cross_by_claim.get(claim.claim_id, [])
             if contradictions:
                 status = TheoryStatus.CONTRADICTED
-                reasons.append("Есть поддержанное источниками противоречащее утверждение по той же теме.")
+                reasons.append(
+                    "Есть поддержанное источниками противоречащее утверждение по той же теме."
+                )
 
-            if claim.evidence_ids and any(item in timeline_evidence_ids for item in claim.evidence_ids):
+            if claim.evidence_ids and any(
+                item in timeline_evidence_ids for item in claim.evidence_ids
+            ):
                 status = TheoryStatus.REVIEW_REQUIRED
                 reasons.append("Источник связан с обнаруженным временным противоречием.")
 
@@ -95,9 +99,12 @@ class CaseTheoryEngine:
         supported_count = sum(item.status == TheoryStatus.SUPPORTED for item in issues)
         contradicted_count = sum(item.status == TheoryStatus.CONTRADICTED for item in issues)
         unsupported_count = sum(item.status == TheoryStatus.UNSUPPORTED for item in issues)
-        review_required_count = sum(item.status == TheoryStatus.REVIEW_REQUIRED for item in issues)
+        review_required_count = sum(
+            item.status == TheoryStatus.REVIEW_REQUIRED for item in issues
+        )
         requires_human_review = any(
-            item.status in {
+            item.status
+            in {
                 TheoryStatus.CONTRADICTED,
                 TheoryStatus.UNSUPPORTED,
                 TheoryStatus.REVIEW_REQUIRED,
@@ -140,7 +147,10 @@ class CaseTheoryEngine:
         }
 
     @staticmethod
-    def _source_refs(graph: CaseEvidenceGraph, claim: EvidenceClaim) -> tuple[dict[str, Any], ...]:
+    def _source_refs(
+        graph: CaseEvidenceGraph,
+        claim: EvidenceClaim,
+    ) -> tuple[dict[str, Any], ...]:
         refs: list[dict[str, Any]] = []
         for evidence_id in claim.evidence_ids:
             source = graph.source(evidence_id)
@@ -154,6 +164,7 @@ class CaseTheoryEngine:
         return {
             "evidence_id": source.evidence_id,
             "document_name": source.document_name,
+            "document_fingerprint": source.document_fingerprint,
             "page": source.page,
             "chunk_index": source.metadata.get("chunk_index"),
             "actor": source.actor,

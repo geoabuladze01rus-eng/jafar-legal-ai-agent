@@ -30,6 +30,13 @@ class LegalPositionReadService:
             gaps = result.get("missing_information", [])
             if not isinstance(gaps, list) or not all(isinstance(g, str) for g in gaps): raise ValueError("invalid missing_information")
             items.extend(LegalPositionItem(kind="evidence_gap", text=g) for g in gaps)
+            issues = result.get("issues", [])
+            if not isinstance(issues, list): raise TypeError("invalid issues")
+            for issue in issues:
+                if not isinstance(issue, dict): raise TypeError("invalid issue")
+                text = issue.get("description") or issue.get("title")
+                if not isinstance(text, str) or not text: raise ValueError("invalid issue text")
+                items.append(LegalPositionItem(kind="analysis_finding", text=text, review_state="needs_review", sources=[]))
         return LegalPositionRead(matter_id=matter_id, items=items)
 
 class SupabaseAnalysisRepository:

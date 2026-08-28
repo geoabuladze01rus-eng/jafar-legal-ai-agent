@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from .council_review import CouncilEvidenceInput, CouncilReview, CouncilReviewService
 from .document_intake import ExtractedDocument
@@ -23,7 +22,13 @@ class DocumentWorkflowResult:
 
 
 class DocumentWorkflow:
-    """Orchestrates extraction, matter matching, deterministic analysis and optional AI review."""
+    """Read-only document analysis and optional AI Council review.
+
+    Analysis may identify a matching matter, deadlines and other candidate facts, but this
+    workflow deliberately does not mutate matter state. Persisting an event, deadline or
+    other legal record must happen later through the explicit lawyer-approval execution
+    boundary.
+    """
 
     def __init__(
         self,
@@ -79,23 +84,11 @@ class DocumentWorkflow:
                 minimum_responses=council_minimum_responses,
             )
 
-        event = None
-        if matter:
-            event = self.store.record_document_event(
-                matter_id=matter.id,
-                title=f"Анализ документа: {document_name}",
-                event_date=datetime.now(timezone.utc),
-                description=analysis.summary,
-                source_document=document_name,
-                document_fingerprint=extracted.fingerprint,
-                deadlines=analysis.deadlines,
-            )
-
         return DocumentWorkflowResult(
             document_name=document_name,
             extracted=extracted,
             match=match,
             analysis=analysis,
-            event=event,
+            event=None,
             council_review=council_review,
         )

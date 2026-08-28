@@ -71,8 +71,9 @@ struct LiveDashboardView: View {
             Button("Отмена", role: .cancel) {}
         } message: { item in
             Text(
-                "Одобрение зафиксирует решение адвоката, но само по себе не отправит "
-                    + "письмо, документ или процессуальное обращение.\n\n\(item.description)"
+                "Одобрение будет записано сервером на настроенного адвоката, но само "
+                    + "по себе не отправит письмо, документ или процессуальное обращение."
+                    + "\n\n\(item.description)"
             )
         }
         .sheet(item: $rejectionTarget) { item in
@@ -126,16 +127,14 @@ struct LiveDashboardView: View {
                     subtitle: "Ни одно из этих действий ещё не разрешено к исполнению"
                 )
 
-                if JafarApprovalIdentity.value.isEmpty {
-                    Label(
-                        "Укажите имя или ID адвоката в настройках подключения, чтобы "
-                            + "решения фиксировались в audit trail.",
-                        systemImage: "person.crop.circle.badge.exclamationmark"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(JafarPalette.warning)
-                    .jafarCard()
-                }
+                Label(
+                    "Личность адвоката для audit trail задаётся на backend и не может "
+                        + "быть подменена приложением.",
+                    systemImage: "person.badge.shield.checkmark.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(JafarPalette.secondaryText)
+                .jafarCard()
 
                 ForEach(approvals.pending) { item in
                     approvalCard(item)
@@ -145,8 +144,7 @@ struct LiveDashboardView: View {
     }
 
     private func approvalCard(_ item: ApprovalItem) -> some View {
-        let decisionDisabled = JafarApprovalIdentity.value.isEmpty
-            || approvals.processingIDs.contains(item.id)
+        let decisionDisabled = approvals.processingIDs.contains(item.id)
 
         return VStack(alignment: .leading, spacing: 11) {
             HStack(alignment: .firstTextBaseline) {
@@ -350,9 +348,7 @@ struct LiveDashboardView: View {
 
     @MainActor
     private func approve(_ item: ApprovalItem) async {
-        let approver = JafarApprovalIdentity.value
-        guard !approver.isEmpty else { return }
-        if await approvals.approve(item, approver: approver) {
+        if await approvals.approve(item) {
             approvalToConfirm = nil
             await refreshDashboard()
         }
@@ -360,9 +356,7 @@ struct LiveDashboardView: View {
 
     @MainActor
     private func reject(_ item: ApprovalItem, reason: String) async {
-        let approver = JafarApprovalIdentity.value
-        guard !approver.isEmpty else { return }
-        if await approvals.reject(item, approver: approver, reason: reason) {
+        if await approvals.reject(item, reason: reason) {
             rejectionTarget = nil
             await refreshDashboard()
         }

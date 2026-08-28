@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
+from .action_approval import ActionApprovalRepository, ActionApprovalStore
 from .config import Settings
 from .matter_repository import MatterRepository
 from .matters import MatterStore
+from .supabase_action_approval import SupabaseActionApprovalRepository
 from .supabase_config import SupabaseSettings, build_supabase_client
 from .supabase_matter_repository import SupabaseMatterRepository
 
@@ -12,6 +16,12 @@ from .supabase_matter_repository import SupabaseMatterRepository
 class StorageBackend(StrEnum):
     MEMORY = "memory"
     SUPABASE = "supabase"
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeRepositories:
+    matters: MatterRepository
+    approvals: ActionApprovalRepository
 
 
 def storage_backend(settings: Settings) -> StorageBackend:
@@ -25,22 +35,44 @@ def storage_backend(settings: Settings) -> StorageBackend:
 
 def validate_storage_security(settings: Settings) -> None:
     backend = storage_backend(settings)
-    if settings.environment.strip().casefold() == "production" and backend is StorageBackend.MEMORY:
+    if (
+        settings.environment.strip().casefold() == "production"
+        and backend is StorageBackend.MEMORY
+    ):
         raise RuntimeError(
             "Production requires persistent STORAGE_BACKEND=supabase; memory storage is ephemeral"
         )
 
 
-def build_matter_repository(settings: Settings) -> MatterRepository:
+def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
     backend = storage_backend(settings)
     if backend is StorageBackend.MEMORY:
-        return MatterStore()
+        return RuntimeRepositories(
+            matters=MatterStore(),
+            approvals=ActionApprovalStore(),
+        )
 
+    client, owner_user_id = _supabase_context()
+    return RuntimeRepositories(
+        matters=SupabaseMatterRepository(
+            client,
+            owner_user_id,
+            server_mode=True,
+        ),
+        approvals=SupabaseActionApprovalRepository(client, owner_user_id),
+    )
+
+
+def build_matter_repository(settings: Settings) -> MatterRepository:
+    return build_runtime_repositories(settings).matters
+
+
+def build_action_approval_repository(settings: Settings) -> ActionApprovalRepository:
+    return build_runtime_repositories(settings).approvals
+
+
+def _supabase_context() -> tuple[Any, str]:
     supabase_settings = SupabaseSettings()
     owner_user_id = supabase_settings.require_owner_user_id()
     client = build_supabase_client(supabase_settings, server=True)
-    return SupabaseMatterRepository(
-        client,
-        owner_user_id,
-        server_mode=True,
-    )
+    return client, owner_user_id

@@ -24,7 +24,7 @@ class SourceFindingRequest(BaseModel):
     source_key: str = Field(min_length=1, max_length=100)
     status: str = Field(pattern="^(found|negative|no_data|error)$")
     title: str = Field(min_length=1, max_length=500)
-    details: dict = Field(default_factory=dict)
+    details: dict = Field(default_factory=dict, max_length=100)
     source_url: str | None = Field(default=None, max_length=2048)
 
 
@@ -49,6 +49,6 @@ def entity_profile(request: EntityProfileRequest):
         query_type = "inn" if len(digits) == 10 else "ogrn" if len(digits) == 13 else "name"
 
     findings = [SourceFinding(**finding.model_dump()) for finding in request.findings]
-    profile = intelligence.build_profile(findings)
+    profile = intelligence.build_profile(findings, trusted=False)
     profile.update({"query": request.query, "query_type": query_type})
     return profile

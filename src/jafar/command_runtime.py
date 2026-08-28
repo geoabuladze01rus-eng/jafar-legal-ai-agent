@@ -20,9 +20,9 @@ class CommandRuntimeResult:
 class JafarCommandRuntime:
     """Read-only command facade shared by HTTP, voice and future chat clients.
 
-    Mutating actions must not be registered here. They are proposed into the dedicated human
-    approval queue and executed only through ``ApprovalExecutionService`` after a persisted
-    lawyer decision.
+    JAFAR remains the internal engine name. Public responses use the ЮСТИЦИЯ AI product
+    identity. Mutating actions must not be registered here: they enter the dedicated human
+    approval queue and execute only after a persisted lawyer decision.
     """
 
     def __init__(self, matter_store: MatterRepository) -> None:
@@ -32,13 +32,13 @@ class JafarCommandRuntime:
         self._register_commands()
 
     def _register_commands(self) -> None:
-        self.bus.register("health", lambda _: {"message": "Джафар на связи."})
+        self.bus.register("health", lambda _: {"message": "Юстиция на связи."})
         self.bus.register("list_matters", self._list_matters)
 
         self.router.register(
             "health",
             "health",
-            "Проверка связи с Джафаром",
+            "Проверка связи с Юстицией",
             requires_approval=False,
         )
         self.router.register(

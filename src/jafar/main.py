@@ -8,6 +8,12 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .action_approval import (
+    ActionApprovalStore,
+    ActionRequest,
+    ActionState,
+    LegalActionApprovalEngine,
+)
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
@@ -53,7 +59,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.8.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -64,6 +70,8 @@ document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
+action_approval_store = ActionApprovalStore()
+action_approval_engine = LegalActionApprovalEngine(action_approval_store)
 
 
 @app.middleware("http")
@@ -111,6 +119,65 @@ class CommandResponse(BaseModel):
     data: dict | None = None
 
 
+class ApprovalItemResponse(BaseModel):
+    action_id: str
+    action_type: str
+    description: str
+    requested_by: str
+    state: ActionState
+    evidence_ids: list[str] = Field(default_factory=list)
+    created_at: str
+    decided_at: str | None = None
+    decided_by: str | None = None
+    decision_reason: str | None = None
+    executed_at: str | None = None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    approver: str = Field(min_length=1, max_length=200)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalDecisionResponse(BaseModel):
+    action_id: str
+    state: ActionState
+    decided_by: str
+    decided_at: str
+    reason: str | None = None
+
+
+def _approval_item(request: ActionRequest) -> ApprovalItemResponse:
+    return ApprovalItemResponse(
+        action_id=request.action_id,
+        action_type=request.action_type,
+        description=request.description,
+        requested_by=request.requested_by,
+        state=request.state,
+        evidence_ids=list(request.evidence_ids),
+        created_at=request.created_at,
+        decided_at=request.decided_at,
+        decided_by=request.decided_by,
+        decision_reason=request.decision_reason,
+        executed_at=request.executed_at,
+    )
+
+
+def _dashboard_snapshot() -> DashboardSnapshot:
+    pending = action_approval_store.pending()
+    approval_signals = tuple(
+        dashboard_service.approval_signal(
+            action_id=item.action_id,
+            action_type=item.action_type,
+            description=item.description,
+        )
+        for item in pending
+    )
+    return dashboard_service.snapshot(
+        pending_approvals=len(pending),
+        extra_signals=approval_signals,
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
@@ -118,7 +185,65 @@ def health() -> HealthResponse:
 
 @app.get("/v1/dashboard", response_model=DashboardSnapshot)
 def dashboard() -> DashboardSnapshot:
-    return dashboard_service.snapshot()
+    return _dashboard_snapshot()
+
+
+@app.get("/v1/approvals", response_model=list[ApprovalItemResponse])
+def approvals(state: ActionState | None = None) -> list[ApprovalItemResponse]:
+    actions = action_approval_store.all()
+    if state is not None:
+        actions = tuple(item for item in actions if item.state is state)
+    return [_approval_item(item) for item in actions]
+
+
+@app.post(
+    "/v1/approvals/{action_id}/approve",
+    response_model=ApprovalDecisionResponse,
+)
+def approve_action(
+    action_id: str,
+    request: ApprovalDecisionRequest,
+) -> ApprovalDecisionResponse:
+    action = action_approval_store.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Approval action not found")
+    try:
+        result = action_approval_engine.approve(action, request.approver)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ApprovalDecisionResponse(
+        action_id=result["action_id"],
+        state=ActionState(result["state"]),
+        decided_by=str(result["approved_by"]),
+        decided_at=str(result["decided_at"]),
+    )
+
+
+@app.post(
+    "/v1/approvals/{action_id}/reject",
+    response_model=ApprovalDecisionResponse,
+)
+def reject_action(
+    action_id: str,
+    request: ApprovalDecisionRequest,
+) -> ApprovalDecisionResponse:
+    action = action_approval_store.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Approval action not found")
+    reason = (request.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="Rejection reason is required")
+    try:
+        result = action_approval_engine.reject(action, request.approver, reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ApprovalDecisionResponse(
+        action_id=result["action_id"],
+        state=ActionState(result["state"]),
+        decided_by=str(result["rejected_by"]),
+        decided_at=str(result["decided_at"]),
+        reason=str(result["reason"]),
+    )
 
 
 @app.post("/v1/command", response_model=CommandResponse)

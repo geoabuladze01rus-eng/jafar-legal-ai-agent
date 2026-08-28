@@ -18,10 +18,8 @@ class SupabaseClient(Protocol):
 class SupabaseActionApprovalRepository(ActionApprovalRepository):
     """Durable, owner-scoped approval ledger backed by Supabase.
 
-    State transitions use conditional updates (``proposed`` -> decision and ``approved`` ->
-    ``executed``) so two concurrent clients cannot both advance the same action from an old
-    state. Records are never deleted by this repository. Execution payload fingerprints are
-    stored as immutable action fields so approval cannot be reused for altered side effects.
+    State transitions use conditional updates so only one executor can atomically claim an
+    approved action. Records are never deleted. Execution payload fingerprints are immutable.
     """
 
     TABLE = "action_approvals"
@@ -67,6 +65,9 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
 
     def rejected(self) -> tuple[ActionRequest, ...]:
         return self._by_state(ActionState.REJECTED)
+
+    def executing(self) -> tuple[ActionRequest, ...]:
+        return self._by_state(ActionState.EXECUTING)
 
     def executed(self) -> tuple[ActionRequest, ...]:
         return self._by_state(ActionState.EXECUTED)
@@ -134,24 +135,26 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             return current
         raise ValueError("action_not_pending")
 
-    def mark_executed(self, action_id: str) -> ActionRequest:
+    def claim_for_execution(self, action_id: str, *, executor_id: str) -> ActionRequest:
+        executor = executor_id.strip()
+        if not executor:
+            raise ValueError("executor_id_required")
         current = self.get(action_id)
         if current is None:
             raise KeyError(action_id)
         if current.state is not ActionState.APPROVED:
-            if current.state is ActionState.EXECUTED and current.executed_at:
-                return current
-            raise ValueError("only_approved_action_can_be_executed")
+            raise ValueError("action_not_available_for_execution")
         if not current.payload_hash:
             raise ValueError("payload_binding_required")
 
-        executed_at = datetime.now(timezone.utc).isoformat()
         response = (
             self.client.table(self.TABLE)
             .update(
                 {
-                    "state": ActionState.EXECUTED.value,
-                    "executed_at": executed_at,
+                    "state": ActionState.EXECUTING.value,
+                    "execution_claimed_at": datetime.now(timezone.utc).isoformat(),
+                    "execution_claimed_by": executor,
+                    "execution_error": None,
                 }
             )
             .eq("owner_user_id", self.owner_user_id)
@@ -162,13 +165,73 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
         row = self._first(response.data)
         if row is not None:
             return self._request(row)
+        raise ValueError("action_not_available_for_execution")
 
+    def release_execution_claim(self, action_id: str, *, executor_id: str, error: str) -> ActionRequest:
+        executor = executor_id.strip()
+        reason = error.strip()
+        if not executor:
+            raise ValueError("executor_id_required")
+        if not reason:
+            raise ValueError("execution_error_required")
+        response = (
+            self.client.table(self.TABLE)
+            .update(
+                {
+                    "state": ActionState.APPROVED.value,
+                    "execution_claimed_at": None,
+                    "execution_claimed_by": None,
+                    "execution_error": reason,
+                }
+            )
+            .eq("owner_user_id", self.owner_user_id)
+            .eq("action_id", action_id)
+            .eq("state", ActionState.EXECUTING.value)
+            .eq("execution_claimed_by", executor)
+            .execute()
+        )
+        row = self._first(response.data)
+        if row is not None:
+            return self._request(row)
+        raise ValueError("execution_claim_owner_mismatch")
+
+    def mark_executed(self, action_id: str, *, executor_id: str | None = None) -> ActionRequest:
         current = self.get(action_id)
         if current is None:
             raise KeyError(action_id)
         if current.state is ActionState.EXECUTED and current.executed_at:
             return current
-        raise ValueError("only_approved_action_can_be_executed")
+        if current.state is not ActionState.EXECUTING:
+            raise ValueError("only_executing_action_can_be_executed")
+        if executor_id is not None and current.execution_claimed_by != executor_id.strip():
+            raise ValueError("execution_claim_owner_mismatch")
+        if not current.payload_hash:
+            raise ValueError("payload_binding_required")
+
+        query = (
+            self.client.table(self.TABLE)
+            .update(
+                {
+                    "state": ActionState.EXECUTED.value,
+                    "executed_at": datetime.now(timezone.utc).isoformat(),
+                    "execution_error": None,
+                }
+            )
+            .eq("owner_user_id", self.owner_user_id)
+            .eq("action_id", action_id)
+            .eq("state", ActionState.EXECUTING.value)
+        )
+        if executor_id is not None:
+            query = query.eq("execution_claimed_by", executor_id.strip())
+        response = query.execute()
+        row = self._first(response.data)
+        if row is not None:
+            return self._request(row)
+
+        current = self.get(action_id)
+        if current is not None and current.state is ActionState.EXECUTED and current.executed_at:
+            return current
+        raise ValueError("only_executing_action_can_be_executed")
 
     def _by_state(self, state: ActionState) -> tuple[ActionRequest, ...]:
         response = (
@@ -203,6 +266,9 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             "decided_at": request.decided_at,
             "decided_by": request.decided_by,
             "decision_reason": request.decision_reason,
+            "execution_claimed_at": request.execution_claimed_at,
+            "execution_claimed_by": request.execution_claimed_by,
+            "execution_error": request.execution_error,
             "executed_at": request.executed_at,
         }
 
@@ -221,8 +287,13 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             created_at=str(row.get("created_at") or ""),
             decided_at=(str(row["decided_at"]) if row.get("decided_at") else None),
             decided_by=(str(row["decided_by"]) if row.get("decided_by") else None),
-            decision_reason=(
-                str(row["decision_reason"]) if row.get("decision_reason") else None
+            decision_reason=(str(row["decision_reason"]) if row.get("decision_reason") else None),
+            execution_claimed_at=(
+                str(row["execution_claimed_at"]) if row.get("execution_claimed_at") else None
             ),
+            execution_claimed_by=(
+                str(row["execution_claimed_by"]) if row.get("execution_claimed_by") else None
+            ),
+            execution_error=(str(row["execution_error"]) if row.get("execution_error") else None),
             executed_at=(str(row["executed_at"]) if row.get("executed_at") else None),
         )

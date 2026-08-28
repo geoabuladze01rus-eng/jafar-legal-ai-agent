@@ -39,7 +39,7 @@ def _patch_approval_services(monkeypatch) -> LegalActionApprovalEngine:
 def _development_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
-    monkeypatch.setattr(main.settings, "lawyer_approver_id", None)
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:test")
 
 
 def test_dashboard_endpoint_exposes_matter_backed_counts(monkeypatch) -> None:
@@ -84,7 +84,7 @@ def test_pending_approval_is_visible_in_dashboard_and_queue(monkeypatch) -> None
     assert approvals.json()[0]["evidence_ids"] == ["evidence-1"]
 
 
-def test_approval_decision_removes_pending_signal_but_retains_audit_state(
+def test_approval_decision_uses_server_identity_and_retains_audit_state(
     monkeypatch,
 ) -> None:
     _development_without_api_key(monkeypatch)
@@ -97,20 +97,35 @@ def test_approval_decision_removes_pending_signal_but_retains_audit_state(
     )
     client = TestClient(app)
 
-    decision = client.post(
-        "/v1/approvals/mail-approve/approve",
-        json={"approver": "lawyer:chernov"},
-    )
+    decision = client.post("/v1/approvals/mail-approve/approve", json={})
     dashboard = client.get("/v1/dashboard")
     approved = client.get("/v1/approvals?state=approved")
 
     assert decision.status_code == 200
     assert decision.json()["state"] == "approved"
-    assert decision.json()["decided_by"] == "lawyer:chernov"
+    assert decision.json()["decided_by"] == "lawyer:test"
     assert dashboard.json()["pending_approvals"] == 0
     assert dashboard.json()["signals"] == []
     assert approved.json()[0]["action_id"] == "mail-approve"
     assert approved.json()[0]["decided_at"]
+
+
+def test_client_cannot_spoof_approval_identity(monkeypatch) -> None:
+    _development_without_api_key(monkeypatch)
+    engine = _patch_approval_services(monkeypatch)
+    engine.propose(
+        action_id="mail-spoof",
+        action_type="send_email",
+        description="Отправить письмо",
+    )
+
+    response = TestClient(app).post(
+        "/v1/approvals/mail-spoof/approve",
+        json={"approver": "spoofed-client-name"},
+    )
+
+    assert response.status_code == 422
+    assert engine.store.get("mail-spoof").state.value == "proposed"
 
 
 def test_rejection_requires_reason_and_is_auditable(monkeypatch) -> None:
@@ -123,19 +138,17 @@ def test_rejection_requires_reason_and_is_auditable(monkeypatch) -> None:
     )
     client = TestClient(app)
 
-    missing_reason = client.post(
-        "/v1/approvals/motion-reject/reject",
-        json={"approver": "lawyer"},
-    )
+    missing_reason = client.post("/v1/approvals/motion-reject/reject", json={})
     rejected = client.post(
         "/v1/approvals/motion-reject/reject",
-        json={"approver": "lawyer", "reason": "Требует доработки"},
+        json={"reason": "Требует доработки"},
     )
     history = client.get("/v1/approvals?state=rejected")
 
     assert missing_reason.status_code == 422
     assert rejected.status_code == 200
     assert rejected.json()["reason"] == "Требует доработки"
+    assert rejected.json()["decided_by"] == "lawyer:test"
     assert history.json()[0]["decision_reason"] == "Требует доработки"
 
 
@@ -168,6 +181,22 @@ def test_production_v1_api_fails_closed_without_authentication(monkeypatch) -> N
     assert "authentication" in response.json()["detail"].casefold()
 
 
+def test_approval_endpoint_fails_closed_without_server_identity(monkeypatch) -> None:
+    _development_without_api_key(monkeypatch)
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", None)
+    engine = _patch_approval_services(monkeypatch)
+    engine.propose(
+        action_id="missing-identity",
+        action_type="send_email",
+        description="Отправить письмо",
+    )
+
+    response = TestClient(app).post("/v1/approvals/missing-identity/approve", json={})
+
+    assert response.status_code == 503
+    assert engine.store.get("missing-identity").state.value == "proposed"
+
+
 def test_production_runtime_requires_server_bound_lawyer_identity(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "production")
     monkeypatch.setattr(main.settings, "api_key", "this-is-a-long-random-production-key")
@@ -179,7 +208,7 @@ def test_production_runtime_requires_server_bound_lawyer_identity(monkeypatch) -
 
     monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:server-bound")
     main.validate_runtime_security()
-    assert main._approval_identity("spoofed-client-name") == "lawyer:server-bound"
+    assert main._approval_identity() == "lawyer:server-bound"
 
 
 def test_production_runtime_rejects_placeholder_or_short_keys(monkeypatch) -> None:

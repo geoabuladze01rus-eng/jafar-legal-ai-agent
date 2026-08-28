@@ -5,14 +5,14 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "supabase" / "migrations" / "20260828165000_bind_action_approval_payload.sql"
 
 
-def test_database_approval_payload_hash_is_immutable_and_required_for_execution() -> None:
+def test_database_approval_payload_hash_is_immutable_and_required_for_lifecycle() -> None:
     sql = MIGRATION.read_text(encoding="utf-8")
 
     assert "add column if not exists payload_hash text null" in sql
     assert "new.payload_hash is distinct from old.payload_hash" in sql
-    assert "old.payload_hash is null" in sql
-    assert "payload_binding_required" in sql
+    assert "old.state = 'proposed' and new.state = 'approved'" in sql
     assert "old.state = 'approved' and new.state = 'executed'" in sql
+    assert sql.count("payload_binding_required") >= 2
 
 
 def test_execution_service_checks_payload_before_handler() -> None:

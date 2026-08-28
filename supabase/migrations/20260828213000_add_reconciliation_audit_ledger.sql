@@ -17,6 +17,7 @@ alter table public.action_reconciliation_audit enable row level security;
 
 revoke all on table public.action_reconciliation_audit from public, anon, authenticated;
 grant select, insert on table public.action_reconciliation_audit to service_role;
+grant usage, select on sequence public.action_reconciliation_audit_id_seq to service_role;
 
 create or replace function public.prevent_action_reconciliation_audit_mutation()
 returns trigger

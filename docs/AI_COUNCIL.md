@@ -42,6 +42,14 @@ When two supported claims take opposing positions, the graph preserves both sour
 
 Every cross-document contradiction requires human review. The graph reports the conflict; it does not decide which source is true.
 
+## Timeline contradiction analysis
+
+`TimelineContradictionAnalyzer` compares only assertions that are backed by valid evidence sources. It can surface conflicting exact dates for the same event, disjoint time windows and assertions that fall outside their own stated temporal bounds.
+
+Every timeline signal preserves the concrete source trail, including document, page, chunk, actor and event ID. The analyzer reports temporal incompatibility only; it never decides which chronology is true or whether the contradiction is legally material.
+
+Unreferenced timeline assertions are ignored and cannot create a contradiction signal.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -56,5 +64,7 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - PDF page boundaries and fragment-level source IDs must survive extraction into Council review.
 - Cross-document contradictions must include both concrete source trails.
 - Unsupported claims must not produce cross-document contradiction signals.
+- Timeline contradictions must include concrete evidence references.
+- Unreferenced timeline assertions must not produce contradiction signals.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

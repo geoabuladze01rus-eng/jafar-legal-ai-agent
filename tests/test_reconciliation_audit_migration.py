@@ -8,6 +8,7 @@ def test_reconciliation_audit_migration_is_server_only_and_append_only() -> None
     normalized = " ".join(sql.lower().split())
 
     assert "create table if not exists public.action_reconciliation_audit" in normalized
+    assert "owner_user_id text not null" in normalized
     assert "revoke all on table public.action_reconciliation_audit from public, anon, authenticated" in normalized
     assert "grant select, insert on table public.action_reconciliation_audit to service_role" in normalized
     assert "grant usage, select on sequence public.action_reconciliation_audit_id_seq to service_role" in normalized
@@ -24,11 +25,23 @@ def test_reconciliation_rpc_updates_action_and_audit_in_one_transaction() -> Non
     ).read_text(encoding="utf-8")
     normalized = " ".join(sql.lower().split())
 
-    assert "create or replace function public.reconcile_action_for_owner" in normalized
+    assert "create or replace function public.reconcile_action_for_owner( p_owner_user_id text" in normalized
     assert "security definer" in normalized
     assert "for update" in normalized
     assert "state = 'approved'" in normalized
     assert "state = 'executed'" in normalized
     assert "insert into public.action_reconciliation_audit" in normalized
-    assert "revoke all on function public.reconcile_action_for_owner(uuid, text, text, text, text) from public, anon, authenticated" in normalized
-    assert "grant execute on function public.reconcile_action_for_owner(uuid, text, text, text, text) to service_role" in normalized
+    assert "revoke all on function public.reconcile_action_for_owner(text, text, text, text, text) from public, anon, authenticated" in normalized
+    assert "grant execute on function public.reconcile_action_for_owner(text, text, text, text, text) to service_role" in normalized
+
+
+def test_reconciliation_owner_type_matches_action_approval_owner_type() -> None:
+    approvals = Path(
+        "supabase/migrations/20260828163000_add_action_approval_ledger.sql"
+    ).read_text(encoding="utf-8").lower()
+    audit = Path(
+        "supabase/migrations/20260828213000_add_reconciliation_audit_ledger.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "owner_user_id text not null" in approvals
+    assert "owner_user_id text not null" in audit

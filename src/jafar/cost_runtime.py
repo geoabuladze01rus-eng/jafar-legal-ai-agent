@@ -53,6 +53,10 @@ def validate_production_ai_scale(settings: Settings) -> None:
 
     if settings.ai_queue_worker_claim_limit <= 0 or settings.ai_queue_worker_claim_limit > 50:
         raise RuntimeError("Production AI queue worker claim limit must be between 1 and 50")
+    if settings.ai_rate_limit_requests <= 0 or settings.ai_rate_limit_requests > 1_000_000:
+        raise RuntimeError("Production AI rate-limit requests must be between 1 and 1000000")
+    if settings.ai_rate_limit_window_seconds <= 0 or settings.ai_rate_limit_window_seconds > 86_400:
+        raise RuntimeError("Production AI rate-limit window must be between 1 and 86400 seconds")
 
     parse_pricing_catalog(settings.ai_pricing_json)
 

@@ -24,7 +24,7 @@ from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
-from .matters import MatterStore
+from .storage import build_matter_repository, validate_storage_security
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
@@ -39,6 +39,7 @@ def validate_runtime_security() -> None:
         raise RuntimeError(
             "Production requires a non-placeholder API_KEY of at least 24 characters"
         )
+    validate_storage_security(settings)
 
 
 @asynccontextmanager
@@ -59,13 +60,13 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.8.1", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
     OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 )
-matter_store = MatterStore()
+matter_store = build_matter_repository(settings)
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
@@ -279,7 +280,6 @@ def command(request: CommandRequest) -> CommandResponse:
             request_id=str(uuid4()),
         )
 
-    # Public clients can invoke read-only routes only. No request field can grant approval.
     result = command_runtime.execute(intent)
     return CommandResponse(
         message=result.message,

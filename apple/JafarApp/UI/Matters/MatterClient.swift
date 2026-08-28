@@ -1,0 +1,42 @@
+import Foundation
+
+struct MatterSummary: Codable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let matterType: String
+    let clientName: String?
+    let caseNumber: String?
+    let status: String
+    let updatedAt: Date
+    enum CodingKeys: String, CodingKey { case id, title, matterType = "matter_type", clientName = "client_name", caseNumber = "case_number", status, updatedAt = "updated_at" }
+}
+
+enum MatterClientError: LocalizedError { case unavailable, invalidResponse, http(Int)
+    var errorDescription: String? { switch self { case .unavailable: return "Backend недоступен"; case .invalidResponse: return "API вернул некорректный ответ"; case let .http(code): return "API вернул HTTP \(code)" } }
+}
+
+struct MatterClient: Sendable {
+    let endpoint: URL
+    let apiKey: String?
+    func list() async throws -> [MatterSummary] {
+        var request = URLRequest(url: endpoint.appendingPathComponent("v1/matters")); request.httpMethod = "GET"
+        if let apiKey { request.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw MatterClientError.invalidResponse }
+        guard (200...299).contains(http.statusCode) else { throw MatterClientError.http(http.statusCode) }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([MatterSummary].self, from: data)
+    }
+}
+
+@MainActor final class JafarMattersViewModel: ObservableObject {
+    enum State { case idle, loading, loaded([MatterSummary]), empty, failed(String) }
+    @Published private(set) var state: State = .idle
+    func load() { state = .loading; Task { await fetch() } }
+    func retry() { load() }
+    private func fetch() async {
+        guard let client = JafarClientConfiguration.configuredRemoteClient() else { state = .failed("Backend недоступен"); return }
+        do { let matters = try await MatterClient(endpoint: client.endpoint, apiKey: client.apiKey).list(); state = matters.isEmpty ? .empty : .loaded(matters) }
+        catch { state = .failed(error.localizedDescription) }
+    }
+}

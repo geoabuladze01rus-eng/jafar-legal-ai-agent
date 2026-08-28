@@ -129,19 +129,20 @@ def test_payload_hash_is_persisted_and_hydrated() -> None:
     assert client.data["action_approvals"][0]["payload_hash"] == request.payload_hash
 
 
-def test_unbound_approval_cannot_transition_to_executed() -> None:
+def test_unbound_action_cannot_transition_to_approved() -> None:
     client = FakeSupabase()
     store = SupabaseActionApprovalRepository(client, "owner-1")
     request = make_request("unbound", bound=False)
     store.add(request)
-    store.decide(
-        "unbound",
-        state=ActionState.APPROVED,
-        decided_by="lawyer",
-    )
 
     with pytest.raises(ValueError, match="payload_binding_required"):
-        store.mark_executed("unbound")
+        store.decide(
+            "unbound",
+            state=ActionState.APPROVED,
+            decided_by="lawyer",
+        )
+
+    assert store.get("unbound").state is ActionState.PROPOSED
 
 
 def test_second_decision_cannot_overwrite_first_lawyer_decision() -> None:

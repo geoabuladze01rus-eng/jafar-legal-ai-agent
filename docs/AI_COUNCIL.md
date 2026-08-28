@@ -77,6 +77,14 @@ Signals include a supported contradiction, unresolved timeline review, missing p
 
 High scores identify places where a defense lawyer should spend attention first. They do not authorize Jafar to draft or file a procedural attack without lawyer review.
 
+## Defense action planner
+
+`DefenseActionPlanner` converts ranked weak points into explicit preparation tasks for the lawyer. It can suggest source verification, contradiction comparison, timeline reconstruction, witness-question preparation, identification of missing documents, expert-question preparation and a draft-only procedural-motion task.
+
+Every generated action preserves the relevant source references and has `requires_lawyer_approval=true`. The planner never chooses a legal remedy as final, never sends a request, never files a motion, never contacts a witness and never schedules an external action by itself. A motion action means only “prepare a draft for lawyer review”; the lawyer must separately choose the procedural instrument, legal basis, wording and whether it should be filed.
+
+The plan is sorted by the weakness score inherited from the attack-surface layer so that the most vulnerable prosecution propositions are investigated first. This is a workflow priority, not a conclusion that a challenge will succeed.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -96,5 +104,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Case-theory statuses must preserve source references and must never be presented as truth findings.
 - Prosecution/defense views must use the same evidence graph, preserve both source trails and never declare an automatic winner.
 - Attack-surface ranking must be explainable from explicit vulnerability signals and must not be presented as a legal conclusion or outcome probability.
+- Defense actions must remain preparation tasks, preserve source references and require explicit lawyer approval before any external action.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

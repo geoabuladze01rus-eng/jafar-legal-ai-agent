@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import hmac
-import os
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -66,11 +65,11 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.2", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.3", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
-    OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
+    OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.openai_api_key else None
 )
 runtime_repositories = build_runtime_repositories(settings)
 matter_store = runtime_repositories.matters

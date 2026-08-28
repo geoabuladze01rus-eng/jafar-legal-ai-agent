@@ -165,14 +165,17 @@ class ModelRouter:
             raise RuntimeError(f"Provider {provider_key!r} is disabled by scale control")
 
         context = self._meter_context(request, role=meter_role, provider=provider_key)
-        if self.cost_control is not None and context is not None:
+        if self.cost_control is not None:
+            if context is None:
+                raise RuntimeError("usage_context_required")
             estimate = request.estimated_cost_usd
             if estimate is None:
                 raise RuntimeError("cost_estimate_required")
             self.cost_control.preflight(context, estimated_cost_usd=estimate)
 
         response = self.providers[provider_key].complete(request)
-        if self.cost_control is not None and context is not None:
+        if self.cost_control is not None:
+            assert context is not None
             self.cost_control.meter_response(
                 context=context,
                 provider=response.provider,

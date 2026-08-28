@@ -38,13 +38,11 @@ def validate_runtime_security() -> None:
     validate_storage_security(settings)
 
 
-def _approval_identity(client_value: str) -> str:
+def _approval_identity() -> str:
     configured = (settings.lawyer_approver_id or "").strip()
-    if configured:
-        return configured
-    if settings.environment.strip().casefold() == "production":
-        raise RuntimeError("Production lawyer approval identity is not configured")
-    return client_value.strip()
+    if not configured:
+        raise RuntimeError("LAWYER_APPROVER_ID is required to record approval decisions")
+    return configured
 
 
 @asynccontextmanager
@@ -65,7 +63,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.3", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.4", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -153,7 +151,6 @@ class ApprovalItemResponse(BaseModel):
 class ApprovalDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    approver: str = Field(min_length=1, max_length=200)
     reason: str | None = Field(default=None, max_length=2000)
 
 
@@ -227,10 +224,9 @@ def approve_action(
     if action is None:
         raise HTTPException(status_code=404, detail="Approval action not found")
     try:
-        result = action_approval_engine.approve(
-            action,
-            _approval_identity(request.approver),
-        )
+        result = action_approval_engine.approve(action, _approval_identity())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:
@@ -258,11 +254,9 @@ def reject_action(
     if not reason:
         raise HTTPException(status_code=422, detail="Rejection reason is required")
     try:
-        result = action_approval_engine.reject(
-            action,
-            _approval_identity(request.approver),
-            reason,
-        )
+        result = action_approval_engine.reject(action, _approval_identity(), reason)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:

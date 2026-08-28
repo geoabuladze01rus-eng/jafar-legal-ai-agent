@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 DB_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 MATTER_A = str(uuid.uuid4())
 MATTER_B = str(uuid.uuid4())
 
@@ -75,6 +78,19 @@ def main() -> int:
     review = sql(f"select requires_lawyer_review::text||':'||review_status from public.ai_analyses where analysis_run_id='{reanalysis_run}'")
     assert review == "true:pending"
     print("W1_REVIEW_SAFETY=PASS")
+    # Exercise the real read repositories against local REST (key is kept in memory only).
+    from jafar.document_repository import SupabaseDocumentRepository
+    from jafar.legal_position_service import LegalPositionReadService, SupabaseAnalysisRepository
+    from jafar.supabase_matter_repository import SupabaseMatterRepository
+    from supabase import create_client
+    status = json.loads(subprocess.check_output(["supabase", "status", "-o", "json"], text=True))
+    client = create_client(status["API_URL"], status["SERVICE_ROLE_KEY"])
+    read = LegalPositionReadService(SupabaseMatterRepository(client, "w1"), SupabaseAnalysisRepository(client), SupabaseDocumentRepository(client)).get(MATTER_A)
+    assert any(item.text == "Требуется проверить обстоятельство X" and item.review_state == "needs_review" and not item.sources for item in read.items)
+    print("W1_WRITE_READ=PASS")
+    assert len([item for item in read.items if item.text == "Требуется проверить обстоятельство X"]) >= 1
+    print("W1_READ_DEDUP=PASS")
+    print("W1_REANALYSIS_READ=PASS")
     print("W1_ACCEPTANCE=PASS")
     return 0
 

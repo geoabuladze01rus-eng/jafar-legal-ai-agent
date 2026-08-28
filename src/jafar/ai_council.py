@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .cost_scale_control import CostScaleControl, UsageContext
-from .model_router import ModelProvider, ModelRequest, ModelResponse
+from .model_router import (
+    ModelProvider,
+    ModelRequest,
+    ModelResponse,
+    ProviderDispatchUncertainError,
+)
 from .privacy_policy import ProviderPrivacyPolicy
 from .supabase_cost_reservations import CostReservationRepository
 
@@ -13,6 +18,7 @@ class CouncilResult:
     responses: tuple[ModelResponse, ...]
     failed_providers: tuple[str, ...]
     disagreements: tuple[str, ...]
+    uncertain_providers: tuple[str, ...] = ()
 
     @property
     def providers(self) -> tuple[str, ...]:
@@ -69,20 +75,30 @@ class AICouncil:
 
         responses: list[ModelResponse] = []
         failed: list[str] = []
+        uncertain: list[str] = []
         for key in candidates:
             try:
                 responses.append(self._complete_metered(request, key))
+            except ProviderDispatchUncertainError:
+                failed.append(key)
+                uncertain.append(key)
             except Exception:
                 failed.append(key)
 
         if len(responses) < minimum_responses:
+            suffix = f"; uncertain dispatch={','.join(uncertain)}" if uncertain else ""
             raise RuntimeError(
                 f"AI Council requires at least {minimum_responses} successful independent responses; "
-                f"received {len(responses)}"
+                f"received {len(responses)}{suffix}"
             )
 
         disagreements = self._detect_disagreements(tuple(responses))
-        return CouncilResult(tuple(responses), tuple(failed), disagreements)
+        return CouncilResult(
+            tuple(responses),
+            tuple(failed),
+            disagreements,
+            tuple(uncertain),
+        )
 
     def _complete_metered(self, request: ModelRequest, provider_key: str) -> ModelResponse:
         context = self._meter_context(request, provider=provider_key)
@@ -104,10 +120,12 @@ class AICouncil:
 
         try:
             response = self.providers[provider_key].complete(request)
-        except Exception:
-            if reservation_id is not None:
-                self.cost_reservations.release(reservation_id)
-            raise
+        except Exception as exc:
+            # An external call may already have reached the provider. Keeping the reservation
+            # active until TTL is safer than making that budget immediately reusable.
+            raise ProviderDispatchUncertainError(
+                f"Council provider {provider_key!r} dispatch outcome is uncertain"
+            ) from exc
 
         if self.cost_control is not None:
             assert context is not None
@@ -118,10 +136,10 @@ class AICouncil:
                     model=response.model,
                     metadata=response.metadata,
                 )
-            except Exception:
-                # The provider may already have consumed billable tokens. Keep the reservation
-                # active until expiry rather than incorrectly returning that budget to the pool.
-                raise
+            except Exception as exc:
+                raise ProviderDispatchUncertainError(
+                    f"Council provider {provider_key!r} accounting outcome is uncertain"
+                ) from exc
             if reservation_id is not None:
                 self.cost_reservations.settle(reservation_id)
         return response

@@ -85,6 +85,14 @@ Every generated action preserves the relevant source references and has `require
 
 The plan is sorted by the weakness score inherited from the attack-surface layer so that the most vulnerable prosecution propositions are investigated first. This is a workflow priority, not a conclusion that a challenge will succeed.
 
+## Hearing and interrogation preparation
+
+`HearingPreparationEngine` turns defense preparation tasks into an ordered script for a hearing or interrogation. Each step preserves the issue ID, topic, source references, proposed primary questions, fallback questions and a document-presentation sequence.
+
+For contradiction work the default sequence is deliberately conservative: first obtain the person's independent account, then clarify source of knowledge, time and details, and only after the answer is fixed should the lawyer consider presenting the contradicting source. The engine also suggests neutral fallback questions designed to distinguish personal observation from hearsay and exact memory from approximation.
+
+The generated script is preparation material only. It does not contact a witness, compel an answer, submit a document, file a motion or decide whether a question is procedurally permissible. Every step remains marked `requires_lawyer_approval=true`, and the final wording, order and admissibility of questions remain the lawyer's responsibility.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -105,5 +113,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Prosecution/defense views must use the same evidence graph, preserve both source trails and never declare an automatic winner.
 - Attack-surface ranking must be explainable from explicit vulnerability signals and must not be presented as a legal conclusion or outcome probability.
 - Defense actions must remain preparation tasks, preserve source references and require explicit lawyer approval before any external action.
+- Hearing/interrogation scripts must preserve source trails, avoid automatic execution and keep document confrontation behind lawyer judgment.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

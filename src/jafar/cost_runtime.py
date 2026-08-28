@@ -8,6 +8,10 @@ from .config import Settings
 from .cost_scale_control import BudgetLimits, CostLedger, CostScaleControl, ProviderPricing
 from .supabase_config import SupabaseSettings, build_supabase_client
 from .supabase_cost_ledger import SupabaseCostLedger
+from .supabase_cost_reservations import (
+    CostReservationRepository,
+    SupabaseCostReservationRepository,
+)
 
 
 def validate_production_ai_scale(settings: Settings) -> None:
@@ -53,6 +57,13 @@ def validate_production_ai_scale(settings: Settings) -> None:
     parse_pricing_catalog(settings.ai_pricing_json)
 
 
+def _server_supabase() -> tuple[object, str]:
+    supabase_settings = SupabaseSettings()
+    owner_user_id = supabase_settings.require_owner_user_id()
+    client = build_supabase_client(supabase_settings, server=True)
+    return client, owner_user_id
+
+
 def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
     if settings.environment.strip().casefold() == "production":
         validate_production_ai_scale(settings)
@@ -68,9 +79,7 @@ def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
     )
 
     if settings.environment.strip().casefold() == "production":
-        supabase_settings = SupabaseSettings()
-        owner_user_id = supabase_settings.require_owner_user_id()
-        client = build_supabase_client(supabase_settings, server=True)
+        client, owner_user_id = _server_supabase()
         ledger = SupabaseCostLedger(client, owner_user_id)
     else:
         ledger = CostLedger()
@@ -82,6 +91,18 @@ def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
         fail_closed_on_missing_pricing=True,
         pricing_version=(settings.ai_pricing_version or "local-unversioned").strip(),
     )
+
+
+def build_cost_reservations(settings: Settings) -> CostReservationRepository | None:
+    """Use cross-process atomic reservations in production; local development stays lightweight."""
+
+    if not settings.ai_cost_control_enabled:
+        return None
+    if settings.environment.strip().casefold() != "production":
+        return None
+    validate_production_ai_scale(settings)
+    client, owner_user_id = _server_supabase()
+    return SupabaseCostReservationRepository(client, owner_user_id)
 
 
 def parse_pricing_catalog(raw: str | None) -> dict[tuple[str, str], ProviderPricing]:

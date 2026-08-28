@@ -70,6 +70,27 @@ def test_schedule_persists_cancel_and_idempotency(tmp_path) -> None:
     assert reloaded.cancel(first.id).status == "cancelled"
 
 
+def test_idempotency_key_cannot_alias_different_delivery(tmp_path) -> None:
+    store = TelegramScheduleStore(tmp_path / "telegram.sqlite3")
+    when = utc_now() + timedelta(minutes=1)
+    store.schedule(
+        kind="post",
+        chat_id="1",
+        payload={"text": "original"},
+        scheduled_for=when,
+        idempotency_key="same",
+    )
+
+    with pytest.raises(ValueError, match="idempotency_key_conflict"):
+        store.schedule(
+            kind="post",
+            chat_id="1",
+            payload={"text": "different"},
+            scheduled_for=when,
+            idempotency_key="same",
+        )
+
+
 def test_scheduler_delivers_once_and_stores_result(tmp_path) -> None:
     store = TelegramScheduleStore(tmp_path / "telegram.sqlite3")
     item = store.schedule(
@@ -93,9 +114,8 @@ def test_scheduler_delivers_once_and_stores_result(tmp_path) -> None:
     assert store.get(item.id).message_id == 42
 
 
-def test_scheduler_marks_delivery_error_and_restart_sending_job(tmp_path) -> None:
-    path = tmp_path / "telegram.sqlite3"
-    store = TelegramScheduleStore(path)
+def test_scheduler_persists_error_code_not_exception_text(tmp_path) -> None:
+    store = TelegramScheduleStore(tmp_path / "telegram.sqlite3")
     item = store.schedule(
         kind="post",
         chat_id="1",
@@ -105,10 +125,18 @@ def test_scheduler_marks_delivery_error_and_restart_sending_job(tmp_path) -> Non
     )
 
     async def broken(_):
-        raise RuntimeError("Telegram rejected request")
+        raise RuntimeError("secret-token-and-client-caption-must-not-be-persisted")
 
     asyncio.run(TelegramScheduler(store, broken).run_due(utc_now() + timedelta(seconds=2)))
-    assert store.get(item.id).status == "failed"
+    failed = store.get(item.id)
+    assert failed.status == "failed"
+    assert failed.error == "delivery_runtimeerror"
+    assert "secret-token" not in (failed.error or "")
+
+
+def test_restart_fails_closed_for_uncertain_sending_job(tmp_path) -> None:
+    path = tmp_path / "telegram.sqlite3"
+    store = TelegramScheduleStore(path)
     interrupted = store.schedule(
         kind="post",
         chat_id="1",
@@ -118,8 +146,9 @@ def test_scheduler_marks_delivery_error_and_restart_sending_job(tmp_path) -> Non
     )
     store.claim_due(utc_now() + timedelta(seconds=2))
     reloaded = TelegramScheduleStore(path)
-    assert reloaded.get(interrupted.id).status == "failed"
-    assert "not retried" in (reloaded.get(interrupted.id).error or "")
+    recovered = reloaded.get(interrupted.id)
+    assert recovered.status == "failed"
+    assert recovered.error == "interrupted_before_delivery_confirmation"
 
 
 def test_poll_validation_regular_quiz_and_bad_options() -> None:

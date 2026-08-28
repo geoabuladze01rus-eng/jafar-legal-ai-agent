@@ -35,6 +35,7 @@ class SupabaseCostLedger(CostLedgerRepository):
             "operation": record.context.operation,
             "provider": record.provider,
             "model": record.model,
+            "pricing_version": record.pricing_version,
             "input_tokens": record.usage.input_tokens,
             "cached_input_tokens": record.usage.cached_input_tokens,
             "output_tokens": record.usage.output_tokens,

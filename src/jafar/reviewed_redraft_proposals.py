@@ -10,7 +10,7 @@ from .safe_fragment_redrafting import FragmentRedraftPacket
 class ProposalStyle(StrEnum):
     CONSERVATIVE = "conservative"
     BALANCED = "balanced"
-    assertive = "assertive"
+    ASSERTIVE = "assertive"
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,10 +158,9 @@ class ReviewedRedraftProposalEngine:
 
     @staticmethod
     def release_ready(report: ReviewedRedraftReport) -> bool:
-        """A proposal is review-ready, never replacement-ready.
+        """Return whether proposals may be shown to a lawyer for review.
 
-        Returning True means at least one proposal passed machine gates and may be shown to
-        the lawyer. It does not authorize mutation of the source document.
+        True never authorizes mutation of the source document.
         """
         return bool(report.proposals) and all(
             item.passed_authority_gate and item.passed_source_ref_gate

@@ -36,6 +36,18 @@ The app exposes connection settings from the top status strip.
 
 A connection-test button calls `/v1/dashboard` with the entered URL and token before the user saves the configuration.
 
+## Approval identity integrity
+
+The Apple client cannot submit or edit the lawyer identity written into the approval audit trail.
+
+- `LAWYER_APPROVER_ID` is configured on the backend;
+- production startup fails if that identity is missing;
+- approve/reject request bodies contain only decision data, such as the rejection reason;
+- unknown fields are rejected by the backend request model;
+- `decided_by` is derived from server configuration, never from a client text field.
+
+This is intentionally a single-lawyer/server identity boundary for the current MVP. A future multi-lawyer deployment must replace the shared API-key identity model with authenticated per-user principals before team use.
+
 ## Live interface
 
 `ConnectedRootView` displays:

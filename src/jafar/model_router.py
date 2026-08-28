@@ -184,9 +184,7 @@ class ModelRouter:
                 )
                 reservation_id = reservation.reservation_id
 
-        dispatched = False
         try:
-            dispatched = True
             response = self.providers[provider_key].complete(request)
         except Exception:
             if reservation_id is not None:

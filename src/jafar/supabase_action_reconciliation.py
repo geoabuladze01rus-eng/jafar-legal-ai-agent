@@ -7,6 +7,7 @@ from .action_reconciliation import (
     ActionReconciliationService,
     ReconciliationAuditRepository,
     ReconciliationDecision,
+    validate_reconciliation_inputs,
 )
 
 
@@ -40,15 +41,11 @@ class SupabaseActionReconciliationService(ActionReconciliationService):
         operator_id: str,
         evidence_note: str,
     ) -> ActionRequest:
-        action = action_id.strip()
-        operator = operator_id.strip()
-        note = evidence_note.strip()
-        if not action:
-            raise ValueError("action_id_required")
-        if not operator:
-            raise ValueError("operator_id_required")
-        if not note:
-            raise ValueError("reconciliation_evidence_note_required")
+        action, operator, note = validate_reconciliation_inputs(
+            action_id=action_id,
+            operator_id=operator_id,
+            evidence_note=evidence_note,
+        )
 
         self.client.rpc(
             "reconcile_action_for_owner",

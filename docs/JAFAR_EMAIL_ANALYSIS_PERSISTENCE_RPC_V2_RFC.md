@@ -1,6 +1,6 @@
 # Email analysis persistence RPC v2 RFC
 
-Status: READY_FOR_LOCAL_IMPLEMENTATION. Design only; no migration or production change is included.
+Status: READY_FOR_LOCAL_IMPLEMENTATION. Local W1 acceptance is BLOCKED until the Docker/OrbStack daemon is available; no production or remote apply occurred.
 
 ## Problem and verified V1 behavior
 

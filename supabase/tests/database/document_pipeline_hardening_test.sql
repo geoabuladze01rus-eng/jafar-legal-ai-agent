@@ -148,15 +148,6 @@ select is_empty(
   $$ select * from public.claim_document_pipeline_job('competing-pipeline-worker', 60) $$,
   'a second pipeline worker cannot claim the in-flight or blocked stages'
 );
-select lives_ok(
-  $$
-    select public.finish_document_pipeline_job(
-      (select id from public.document_pipeline_jobs where document_id = '00000000-0000-0000-0000-000000000101' and stage = 'chunk'),
-      '00000000-0000-0000-0000-000000000101', 'chunk-worker', 'completed', null
-    )
-  $$,
-  'chunk completion is lease-fenced'
-);
 
 insert into public.document_chunks (
   document_id, chunk_index, content, source_page, embedding
@@ -166,6 +157,16 @@ insert into public.document_chunks (
     '00000000-0000-0000-0000-000000000101', 1, 'Already embedded source', 1,
     array_fill(0::real, array[1536])::extensions.vector
   );
+
+select lives_ok(
+  $$
+    select public.finish_document_pipeline_job(
+      (select id from public.document_pipeline_jobs where document_id = '00000000-0000-0000-0000-000000000101' and stage = 'chunk'),
+      '00000000-0000-0000-0000-000000000101', 'chunk-worker', 'completed', null
+    )
+  $$,
+  'chunk completion is lease-fenced'
+);
 
 select is(
   (select stage from public.claim_document_pipeline_job('embed-worker', 60)),

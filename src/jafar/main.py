@@ -11,9 +11,12 @@ from .api_security import require_api_key
 from .command_runtime import JafarCommandRuntime
 from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
+from .document_repository import (
+    EmptyDocumentRepository,
+    MatterDocumentSummary,
+    SupabaseDocumentRepository,
+)
 from .document_workflow import DocumentWorkflow
-from .document_repository import EmptyDocumentRepository, MatterDocumentSummary, SupabaseDocumentRepository
-from .supabase_config import SupabaseSettings, build_supabase_client
 from .domains import DocumentTask, MatterType
 from .gmail_gateway import make_local_gmail_gateway
 from .lawyer_context import LawyerContext
@@ -21,6 +24,7 @@ from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
+from .supabase_config import SupabaseSettings, build_supabase_client
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
@@ -81,7 +85,7 @@ document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, analyzer)
 try:
     document_repository = SupabaseDocumentRepository(build_supabase_client(SupabaseSettings()))
-except Exception:
+except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
     document_repository = EmptyDocumentRepository()
 command_runtime = JafarCommandRuntime(
     matter_store,

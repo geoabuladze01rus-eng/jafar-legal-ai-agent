@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     ai_cost_user_daily_usd: Decimal | None = None
     ai_cost_user_monthly_usd: Decimal | None = None
     ai_cost_global_daily_usd: Decimal | None = None
+    ai_queue_backend: str = "memory"
+    ai_queue_max_size: int = 1000
+    ai_queue_max_per_user: int = 20
+    ai_queue_worker_claim_limit: int = 5
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False

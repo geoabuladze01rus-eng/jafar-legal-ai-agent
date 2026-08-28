@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import sqlite3
 from collections.abc import Awaitable, Callable
@@ -62,15 +63,31 @@ class TelegramScheduleStore:
     """SQLite state machine. `sending` jobs are never automatically retried after a crash."""
 
     def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        db_path = Path(path).expanduser()
+        if db_path.exists() and db_path.is_symlink():
+            raise RuntimeError("telegram_scheduler_db_must_not_be_symlink")
+        self.path = str(db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._harden_permissions()
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=5.0)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA busy_timeout=5000")
         return con
+
+    def _harden_permissions(self) -> None:
+        """Keep scheduled legal content private from other local OS users on POSIX hosts."""
+
+        if os.name != "posix":
+            return
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(f"{self.path}{suffix}")
+            if candidate.exists():
+                if candidate.is_symlink():
+                    raise RuntimeError("telegram_scheduler_sidecar_must_not_be_symlink")
+                candidate.chmod(0o600)
 
     def _init_db(self) -> None:
         with self._connect() as con:
@@ -84,11 +101,11 @@ class TelegramScheduleStore:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS telegram_scheduled_due ON telegram_scheduled_items(status, scheduled_for)"
             )
-            # Sending can mean Telegram received it before a restart. Failing closed avoids duplicates.
             con.execute(
                 "UPDATE telegram_scheduled_items SET status='failed', error='interrupted_before_delivery_confirmation', updated_at=? WHERE status='sending'",
                 (utc_now().isoformat(),),
             )
+        self._harden_permissions()
 
     def schedule(
         self,
@@ -133,6 +150,8 @@ class TelegramScheduleStore:
             ):
                 raise ValueError("idempotency_key_conflict") from None
             return existing
+        finally:
+            self._harden_permissions()
         return self.get(item_id)
 
     def by_idempotency_key(self, key: str) -> ScheduledItem:
@@ -172,6 +191,7 @@ class TelegramScheduleStore:
                 "UPDATE telegram_scheduled_items SET status='cancelled', updated_at=? WHERE id=? AND status='pending'",
                 (utc_now().isoformat(), item_id),
             ).rowcount
+        self._harden_permissions()
         if not changed:
             item = self.get(item_id)
             if item.status == "pending":
@@ -183,7 +203,6 @@ class TelegramScheduleStore:
         current = (now or utc_now()).astimezone(UTC).isoformat()
         claimed: list[str] = []
         with self._connect() as con:
-            # Serialize claim selection across multiple scheduler processes sharing this SQLite DB.
             con.execute("BEGIN IMMEDIATE")
             rows = con.execute(
                 "SELECT id FROM telegram_scheduled_items WHERE status='pending' AND scheduled_for<=? ORDER BY scheduled_for, id",
@@ -195,6 +214,7 @@ class TelegramScheduleStore:
                     (current, row["id"]),
                 ).rowcount:
                     claimed.append(row["id"])
+        self._harden_permissions()
         return [self.get(item_id) for item_id in claimed]
 
     def finish(
@@ -206,6 +226,7 @@ class TelegramScheduleStore:
                 "UPDATE telegram_scheduled_items SET status=?, message_id=?, error=?, updated_at=? WHERE id=? AND status='sending'",
                 (status, message_id, error, utc_now().isoformat(), item.id),
             ).rowcount
+        self._harden_permissions()
         if not changed:
             raise RuntimeError("scheduled_item_finish_state_mismatch")
         if not error and item.recurrence_seconds:
@@ -261,6 +282,8 @@ class TelegramScheduler:
         return len(items)
 
     async def serve(self, stop: asyncio.Event, interval_seconds: float = 5.0) -> None:
+        if interval_seconds < 0.25 or interval_seconds > 300:
+            raise ValueError("scheduler interval_seconds must be between 0.25 and 300")
         while not stop.is_set():
             await self.run_due()
             try:

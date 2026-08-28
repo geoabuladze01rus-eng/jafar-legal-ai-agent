@@ -6,13 +6,23 @@ from .scale_runtime import RateLimitPolicy
 
 
 class SupabaseRateLimiter:
-    """Distributed server-side rate limiter for horizontally scaled deployments.
+    """Owner-scoped distributed rate limiter for horizontally scaled deployments.
 
-    The database receives only SHA-256 keys. Raw user IDs, matter IDs, prompts and legal content
-    must never be used as durable rate-limit dimensions.
+    The database receives only SHA-256 keys plus the server-controlled owner identity. Raw user
+    IDs, matter IDs, prompts and legal content must never be durable rate-limit dimensions.
     """
 
-    def __init__(self, client: object, policy: RateLimitPolicy, *, namespace: str = "ai") -> None:
+    def __init__(
+        self,
+        client: object,
+        policy: RateLimitPolicy,
+        *,
+        owner_user_id: str,
+        namespace: str = "ai",
+    ) -> None:
+        owner = owner_user_id.strip()
+        if not owner:
+            raise ValueError("rate_limit_owner_required")
         if not namespace.strip():
             raise ValueError("rate_limit_namespace_required")
         if policy.window_seconds < 1 or not float(policy.window_seconds).is_integer():
@@ -23,6 +33,7 @@ class SupabaseRateLimiter:
             raise ValueError("distributed_rate_limit_max_requests_too_large")
         self.client = client
         self.policy = policy
+        self.owner_user_id = owner
         self.namespace = namespace.strip()
 
     def allow(self, key: str) -> bool:
@@ -34,6 +45,7 @@ class SupabaseRateLimiter:
         response = self.client.rpc(
             "consume_ai_rate_limit",
             {
+                "p_owner_user_id": self.owner_user_id,
                 "p_key_hash": key_hash,
                 "p_max_requests": self.policy.max_requests,
                 "p_window_seconds": int(self.policy.window_seconds),
@@ -50,7 +62,10 @@ class SupabaseRateLimiter:
         retention = max(86400, min(int(retention_seconds), 2592000))
         response = self.client.rpc(
             "cleanup_ai_rate_limit_buckets",
-            {"p_retention_seconds": retention},
+            {
+                "p_owner_user_id": self.owner_user_id,
+                "p_retention_seconds": retention,
+            },
         ).execute()
         value = response.data
         if isinstance(value, list):

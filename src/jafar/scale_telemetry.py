@@ -72,10 +72,19 @@ class ScaleTelemetry:
         if min(queue_depth, executing_actions, reconciliation_candidates) < 0:
             raise ValueError("telemetry_gauges_must_be_non_negative")
         safe_providers = tuple(
-            sorted({provider.strip().casefold() for provider in disabled_providers if provider.strip()})
+            sorted(
+                {
+                    provider.strip().casefold()
+                    for provider in disabled_providers
+                    if provider.strip()
+                }
+            )
         )
         with self._lock:
-            counters = {key: int(self._counters.get(key, 0)) for key in sorted(_ALLOWED_EVENT_KEYS)}
+            counters = {
+                key: int(self._counters.get(key, 0))
+                for key in sorted(_ALLOWED_EVENT_KEYS)
+            }
         return ScaleTelemetrySnapshot(
             queue_depth=queue_depth,
             executing_actions=executing_actions,

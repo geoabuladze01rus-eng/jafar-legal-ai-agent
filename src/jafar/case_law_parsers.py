@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from html.parser import HTMLParser
+import re
 from typing import Protocol
 
 from .case_law_sources import CaseLawSourceItem, SourceTrust
@@ -64,6 +65,21 @@ class LinkBasedCaseLawParser:
     a later deterministic extractor or lawyer-reviewed model stage before ingestion.
     """
 
+    _RUSSIAN_MONTHS = {
+        "января": 1,
+        "февраля": 2,
+        "марта": 3,
+        "апреля": 4,
+        "мая": 5,
+        "июня": 6,
+        "июля": 7,
+        "августа": 8,
+        "сентября": 9,
+        "октября": 10,
+        "ноября": 11,
+        "декабря": 12,
+    }
+
     def __init__(self, *, source_name: str, trust: SourceTrust, court: str) -> None:
         self.source_name = source_name
         self.trust = trust
@@ -96,7 +112,7 @@ class LinkBasedCaseLawParser:
         return ParsedCaseLawPage(
             items=tuple(items),
             provenance=RawSourceProvenance(
-                requested_url=fetched.url,
+                requested_url=fetched.requested_url or fetched.url,
                 resolved_url=fetched.url,
                 body_fingerprint=fetched.fingerprint,
                 content_type=fetched.content_type,
@@ -108,16 +124,30 @@ class LinkBasedCaseLawParser:
     @staticmethod
     def _looks_like_case_law(label: str) -> bool:
         value = label.casefold()
-        return any(token in value for token in ("определение", "постановление", "решение", "обзор судебной практики"))
+        tokens = ("определение", "постановление", "решение", "обзор судебной практики")
+        return any(token in value for token in tokens)
+
+    @classmethod
+    def _extract_date(cls, label: str) -> date | None:
+        numeric = re.search(r"\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\b", label)
+        if numeric:
+            day, month, year = map(int, numeric.groups())
+            return cls._safe_date(year, month, day)
+
+        months = "|".join(cls._RUSSIAN_MONTHS)
+        words = re.search(
+            rf"\b(\d{{1,2}})\s+({months})\s+(\d{{4}})(?:\s*г(?:ода|\.)?)?\b",
+            label.casefold(),
+        )
+        if not words:
+            return None
+        day = int(words.group(1))
+        month = cls._RUSSIAN_MONTHS[words.group(2)]
+        year = int(words.group(3))
+        return cls._safe_date(year, month, day)
 
     @staticmethod
-    def _extract_date(label: str) -> date | None:
-        import re
-
-        match = re.search(r"\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\b", label)
-        if not match:
-            return None
-        day, month, year = map(int, match.groups())
+    def _safe_date(year: int, month: int, day: int) -> date | None:
         try:
             return date(year, month, day)
         except ValueError:

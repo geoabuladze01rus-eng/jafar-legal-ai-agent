@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from time import monotonic, sleep
 from typing import Protocol
@@ -17,6 +18,8 @@ class HttpFetchResult:
     etag: str | None
     last_modified: str | None
     retrieved_at_monotonic: float
+    requested_url: str | None = None
+    retrieved_at: datetime | None = None
 
     @property
     def fingerprint(self) -> str:
@@ -63,7 +66,13 @@ class ResilientHttpTransport:
         last_error: Exception | None = None
         for attempt in range(1, self.retry.attempts + 1):
             try:
-                request = Request(url, headers={"User-Agent": self.user_agent, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"})
+                request = Request(
+                    url,
+                    headers={
+                        "User-Agent": self.user_agent,
+                        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+                    },
+                )
                 with urlopen(request, timeout=self.timeout_seconds) as response:
                     body = response.read()
                     self._last_request_at = monotonic()
@@ -75,6 +84,8 @@ class ResilientHttpTransport:
                         etag=response.headers.get("ETag"),
                         last_modified=response.headers.get("Last-Modified"),
                         retrieved_at_monotonic=self._last_request_at,
+                        requested_url=url,
+                        retrieved_at=datetime.now(timezone.utc),
                     )
             except HTTPError as exc:
                 last_error = exc
@@ -97,4 +108,7 @@ class ResilientHttpTransport:
             self.sleeper(remaining)
 
     def _delay(self, attempt: int) -> float:
-        return min(self.retry.max_delay_seconds, self.retry.base_delay_seconds * (2 ** (attempt - 1)))
+        return min(
+            self.retry.max_delay_seconds,
+            self.retry.base_delay_seconds * (2 ** (attempt - 1)),
+        )

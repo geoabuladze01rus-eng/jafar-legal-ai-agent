@@ -14,6 +14,14 @@ class TheorySide(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class TheorySideAssignment:
+    issue_id: str
+    side: TheorySide
+    assigned_by: str = "lawyer"
+    rationale: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class TheoryViewItem:
     issue_id: str
     topic: str
@@ -46,38 +54,24 @@ class DualTheoryReport:
 
 
 class ProsecutionDefenseTheoryView:
-    """Project one source-backed theory map into prosecution and defense views.
+    """Project a source-backed theory map into explicit prosecution/defense views.
 
-    The view classifies arguments; it does not decide which side is legally correct.
+    Side assignment is never inferred from generic claim positions such as `present`,
+    `occurred`, `yes`, `absent` or `no`. Missing assignments remain neutral.
     """
 
-    PROSECUTION_POSITIONS = {
-        "prosecution",
-        "accusation",
-        "guilt",
-        "supports_guilt",
-        "supports_prosecution",
-        "occurred",
-        "present",
-        "yes",
-    }
-    DEFENSE_POSITIONS = {
-        "defense",
-        "innocence",
-        "supports_defense",
-        "opposes_prosecution",
-        "did_not_occur",
-        "absent",
-        "no",
-    }
-
-    def build(self, report: CaseTheoryReport) -> DualTheoryReport:
+    def build(
+        self,
+        report: CaseTheoryReport,
+        assignments: tuple[TheorySideAssignment, ...] = (),
+    ) -> DualTheoryReport:
+        assignment_index = self._assignment_index(report, assignments)
         prosecution: list[TheoryViewItem] = []
         defense: list[TheoryViewItem] = []
         neutral: list[TheoryViewItem] = []
 
         for issue in report.issues:
-            side = self._classify(issue)
+            side = assignment_index.get(issue.issue_id, TheorySide.NEUTRAL)
             item = self._item(issue, side)
             if side == TheorySide.PROSECUTION:
                 prosecution.append(item)
@@ -116,13 +110,22 @@ class ProsecutionDefenseTheoryView:
             "requires_human_review": report.requires_human_review,
         }
 
-    def _classify(self, issue: CaseTheoryIssue) -> TheorySide:
-        position = issue.position.strip().casefold()
-        if position in self.PROSECUTION_POSITIONS:
-            return TheorySide.PROSECUTION
-        if position in self.DEFENSE_POSITIONS:
-            return TheorySide.DEFENSE
-        return TheorySide.NEUTRAL
+    @staticmethod
+    def _assignment_index(
+        report: CaseTheoryReport,
+        assignments: tuple[TheorySideAssignment, ...],
+    ) -> dict[str, TheorySide]:
+        valid_ids = {issue.issue_id for issue in report.issues}
+        result: dict[str, TheorySide] = {}
+        for assignment in assignments:
+            if assignment.issue_id not in valid_ids:
+                raise ValueError(f"Unknown theory issue_id: {assignment.issue_id}")
+            if assignment.issue_id in result:
+                raise ValueError(f"Duplicate theory side assignment: {assignment.issue_id}")
+            if assignment.side != TheorySide.NEUTRAL and not assignment.assigned_by.strip():
+                raise ValueError("Non-neutral theory side assignment requires assigned_by")
+            result[assignment.issue_id] = assignment.side
+        return result
 
     @staticmethod
     def _item(issue: CaseTheoryIssue, side: TheorySide) -> TheoryViewItem:
@@ -154,20 +157,21 @@ class ProsecutionDefenseTheoryView:
             prosecution_items = prosecution_by_topic[topic]
             defense_items = defense_by_topic[topic]
             prosecution_sources = tuple(
-                source
-                for item in prosecution_items
-                for source in item.source_refs
+                source for item in prosecution_items for source in item.source_refs
             )
             defense_sources = tuple(
-                source
-                for item in defense_items
-                for source in item.source_refs
+                source for item in defense_items for source in item.source_refs
             )
             defense_challenges = bool(
                 defense_items
                 and all(item.evidence_ids for item in defense_items)
                 and any(
-                    item.status in {TheoryStatus.CONTRADICTED, TheoryStatus.REVIEW_REQUIRED, TheoryStatus.SUPPORTED}
+                    item.status
+                    in {
+                        TheoryStatus.CONTRADICTED,
+                        TheoryStatus.REVIEW_REQUIRED,
+                        TheoryStatus.SUPPORTED,
+                    }
                     for item in prosecution_items
                 )
             )

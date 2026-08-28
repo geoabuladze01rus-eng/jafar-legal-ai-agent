@@ -47,8 +47,9 @@ class EntityQuery:
     """Canonical legal-entity query used by API, adapters and intelligence.
 
     Russian identifiers are validated before they can enter the source pipeline. INN and
-    OGRN/OGRNIP include official control-digit validation. KPP has no checksum, so its
-    documented structural form is validated instead.
+    OGRN/OGRNIP include control-digit validation. KPP has no checksum, so its structural
+    form is validated instead. Numeric auto-detected identifiers fail closed on a bad
+    checksum rather than being silently reinterpreted as an organization name.
     """
 
     value: str
@@ -112,13 +113,9 @@ class EntityQuery:
     def infer(cls, value: str) -> "EntityQuery":
         normalized = value.strip()
         if normalized.isdigit() and len(normalized) in {10, 12}:
-            if valid_inn(normalized):
-                return cls(normalized, "inn")
-            return cls(normalized, "name")
+            return cls(normalized, "inn")
         if normalized.isdigit() and len(normalized) in {13, 15}:
-            if valid_ogrn(normalized):
-                return cls(normalized, "ogrn")
-            return cls(normalized, "name")
+            return cls(normalized, "ogrn")
         if len(normalized) == 9 and valid_kpp(normalized):
             return cls(normalized, "kpp")
         return cls(normalized, "name")

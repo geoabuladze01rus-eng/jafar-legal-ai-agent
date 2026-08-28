@@ -21,7 +21,14 @@ begin
     raise exception 'immutable_action_approval_fields';
   end if;
 
-  if old.state = 'proposed' and new.state in ('approved', 'rejected') then
+  if old.state = 'proposed' and new.state = 'approved' then
+    if old.payload_hash is null or btrim(old.payload_hash) = '' then
+      raise exception 'payload_binding_required';
+    end if;
+    return new;
+  end if;
+
+  if old.state = 'proposed' and new.state = 'rejected' then
     return new;
   end if;
 

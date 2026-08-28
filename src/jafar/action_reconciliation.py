@@ -9,6 +9,11 @@ from typing import Protocol
 from .action_approval import ActionApprovalRepository, ActionRequest, ActionState
 
 
+MAX_ACTION_ID_LENGTH = 200
+MAX_OPERATOR_ID_LENGTH = 200
+MAX_EVIDENCE_NOTE_LENGTH = 4000
+
+
 class ReconciliationDecision(str, Enum):
     CONFIRMED_NOT_EXECUTED = "confirmed_not_executed"
     CONFIRMED_EXECUTED = "confirmed_executed"
@@ -40,6 +45,30 @@ class ReconciliationAuditRepository(Protocol):
     def for_action(self, action_id: str) -> tuple[ReconciliationAuditRecord, ...]: ...
 
 
+def validate_reconciliation_inputs(
+    *,
+    action_id: str,
+    operator_id: str,
+    evidence_note: str,
+) -> tuple[str, str, str]:
+    action = action_id.strip()
+    operator = operator_id.strip()
+    note = evidence_note.strip()
+    if not action:
+        raise ValueError("action_id_required")
+    if len(action) > MAX_ACTION_ID_LENGTH:
+        raise ValueError("action_id_too_long")
+    if not operator:
+        raise ValueError("operator_id_required")
+    if len(operator) > MAX_OPERATOR_ID_LENGTH:
+        raise ValueError("operator_id_too_long")
+    if not note:
+        raise ValueError("reconciliation_evidence_note_required")
+    if len(note) > MAX_EVIDENCE_NOTE_LENGTH:
+        raise ValueError("reconciliation_evidence_note_too_long")
+    return action, operator, note
+
+
 class ReconciliationAuditStore:
     """Append-only local audit trail used by tests and local development."""
 
@@ -48,8 +77,11 @@ class ReconciliationAuditStore:
         self._lock = RLock()
 
     def append(self, record: ReconciliationAuditRecord) -> None:
-        if not record.action_id.strip() or not record.operator_id.strip() or not record.evidence_note.strip():
-            raise ValueError("invalid_reconciliation_audit_record")
+        validate_reconciliation_inputs(
+            action_id=record.action_id,
+            operator_id=record.operator_id,
+            evidence_note=record.evidence_note,
+        )
         with self._lock:
             self._records.append(record)
 
@@ -112,16 +144,15 @@ class ActionReconciliationService:
         operator_id: str,
         evidence_note: str,
     ) -> ActionRequest:
-        operator = operator_id.strip()
-        note = evidence_note.strip()
-        if not operator:
-            raise ValueError("operator_id_required")
-        if not note:
-            raise ValueError("reconciliation_evidence_note_required")
+        action_key, operator, note = validate_reconciliation_inputs(
+            action_id=action_id,
+            operator_id=operator_id,
+            evidence_note=evidence_note,
+        )
 
-        action = self.repository.get(action_id)
+        action = self.repository.get(action_key)
         if action is None:
-            raise KeyError(action_id)
+            raise KeyError(action_key)
         if action.state is not ActionState.EXECUTING:
             raise ValueError("action_not_executing")
         executor = (action.execution_claimed_by or "").strip()
@@ -131,18 +162,18 @@ class ActionReconciliationService:
         audit_reason = f"reconciliation by {operator}: {note}"
         if decision is ReconciliationDecision.CONFIRMED_NOT_EXECUTED:
             updated = self.repository.release_execution_claim(
-                action_id,
+                action_key,
                 executor_id=executor,
                 error=audit_reason,
             )
         elif decision is ReconciliationDecision.CONFIRMED_EXECUTED:
-            updated = self.repository.mark_executed(action_id, executor_id=executor)
+            updated = self.repository.mark_executed(action_key, executor_id=executor)
         else:
             raise ValueError("unsupported_reconciliation_decision")
 
         self.audit_repository.append(
             ReconciliationAuditRecord(
-                action_id=action_id,
+                action_id=action_key,
                 decision=decision,
                 operator_id=operator,
                 evidence_note=note,

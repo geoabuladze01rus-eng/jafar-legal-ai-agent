@@ -17,12 +17,12 @@ struct ConnectedRootView: View {
         }
         .background(JafarPalette.background)
         .task {
-            await dashboard.refresh()
+            await refreshDashboard()
         }
         .sheet(isPresented: $showingConnectionSettings) {
             JafarConnectionSettingsView {
                 dashboard.reconfigure(client: JafarClientFactory.dashboardClient())
-                Task { await dashboard.refresh() }
+                Task { await refreshDashboard() }
             }
         }
         .sheet(isPresented: $showingLiveDashboard) {
@@ -58,7 +58,7 @@ struct ConnectedRootView: View {
                     .controlSize(.small)
             } else {
                 Button {
-                    Task { await dashboard.refresh() }
+                    Task { await refreshDashboard() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption.weight(.semibold))
@@ -166,5 +166,14 @@ struct ConnectedRootView: View {
                 .foregroundStyle(.white)
         }
         .font(.caption2)
+    }
+
+    @MainActor
+    private func refreshDashboard() async {
+        await dashboard.refresh()
+        JafarAlertsStore.shared.replace(
+            with: dashboard.snapshot.signals,
+            generatedAt: dashboard.snapshot.generatedAt
+        )
     }
 }

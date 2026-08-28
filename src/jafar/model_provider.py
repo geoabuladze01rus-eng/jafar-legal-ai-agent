@@ -50,7 +50,6 @@ class OpenAICompatibleProvider:
                 },
                 {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
             ],
-            "temperature": 0.1,
         }
         request = urllib.request.Request(
             url,

@@ -1,6 +1,6 @@
 # Email analysis persistence RPC v2 RFC
 
-Status: READY_FOR_LOCAL_IMPLEMENTATION. Local fresh reset and schema/ACL checks pass; full DB acceptance remains pending targeted pgTAP execution. Production apply: NO.
+Status: READY_FOR_LOCAL_IMPLEMENTATION. Local fresh reset, live schema/ACL checks, synthetic first write and exact retry pass. Full concurrency/rollback/re-analysis/write→read pgTAP acceptance remains pending. Production apply: NO.
 
 ## Problem and verified V1 behavior
 

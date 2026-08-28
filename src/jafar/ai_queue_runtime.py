@@ -66,10 +66,9 @@ def build_ai_queue(settings: Settings) -> AIQueue:
 
     if backend == "supabase":
         supabase_settings = SupabaseSettings()
-        # Production queue records are owner-scoped even when the worker uses service_role.
-        supabase_settings.require_owner_user_id()
+        owner_user_id = supabase_settings.require_owner_user_id()
         client = build_supabase_client(supabase_settings, server=True)
-        return SupabaseAIJobQueue(client)
+        return SupabaseAIJobQueue(client, owner_user_id)
 
     if backend == "memory" and not production:
         return LocalAIJobQueue(

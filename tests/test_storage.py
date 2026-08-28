@@ -1,6 +1,6 @@
 import pytest
 
-from jafar.action_reconciliation import ReconciliationAuditStore
+from jafar.action_reconciliation import ActionReconciliationService, ReconciliationAuditStore
 from jafar.config import Settings
 from jafar.matters import MatterStore
 from jafar.storage import (
@@ -11,6 +11,7 @@ from jafar.storage import (
     storage_backend,
     validate_storage_security,
 )
+from jafar.supabase_action_reconciliation import SupabaseActionReconciliationService
 from jafar.supabase_matter_repository import SupabaseMatterRepository
 from jafar.supabase_reconciliation_audit import SupabaseReconciliationAuditRepository
 
@@ -27,10 +28,15 @@ def config(**overrides) -> Settings:
 
 def test_development_defaults_to_in_memory_repository() -> None:
     settings = config()
+    repositories = build_runtime_repositories(settings)
 
     assert storage_backend(settings) is StorageBackend.MEMORY
     assert isinstance(build_matter_repository(settings), MatterStore)
     assert isinstance(build_reconciliation_audit_repository(settings), ReconciliationAuditStore)
+    assert isinstance(repositories.reconciliation, ActionReconciliationService)
+    assert not isinstance(repositories.reconciliation, SupabaseActionReconciliationService)
+    assert repositories.reconciliation.repository is repositories.approvals
+    assert repositories.reconciliation.audit_repository is repositories.reconciliation_audit
 
 
 def test_production_rejects_ephemeral_memory_storage() -> None:
@@ -70,3 +76,8 @@ def test_supabase_factory_uses_server_mode_and_owner_scope(monkeypatch) -> None:
     assert isinstance(repositories.reconciliation_audit, SupabaseReconciliationAuditRepository)
     assert repositories.reconciliation_audit.client is fake_client
     assert repositories.reconciliation_audit.owner_user_id == "owner-123"
+    assert isinstance(repositories.reconciliation, SupabaseActionReconciliationService)
+    assert repositories.reconciliation.repository is repositories.approvals
+    assert repositories.reconciliation.audit_repository is repositories.reconciliation_audit
+    assert repositories.reconciliation.client is fake_client
+    assert repositories.reconciliation.owner_user_id == "owner-123"

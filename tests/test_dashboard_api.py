@@ -42,6 +42,10 @@ def _development_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:test")
 
 
+def _email_payload() -> dict[str, str]:
+    return {"to": "client@example.com", "subject": "Согласованный ответ"}
+
+
 def test_dashboard_endpoint_exposes_matter_backed_counts(monkeypatch) -> None:
     _development_without_api_key(monkeypatch)
     _patch_approval_services(monkeypatch)
@@ -68,6 +72,7 @@ def test_pending_approval_is_visible_in_dashboard_and_queue(monkeypatch) -> None
         action_type="send_email",
         description="Отправить процессуально значимое письмо",
         evidence_ids=["evidence-1"],
+        payload=_email_payload(),
     )
     client = TestClient(app)
 
@@ -82,6 +87,7 @@ def test_pending_approval_is_visible_in_dashboard_and_queue(monkeypatch) -> None
     assert approvals.status_code == 200
     assert approvals.json()[0]["action_id"] == "mail-1"
     assert approvals.json()[0]["evidence_ids"] == ["evidence-1"]
+    assert approvals.json()[0]["payload_bound"] is True
 
 
 def test_approval_decision_uses_server_identity_and_retains_audit_state(
@@ -94,6 +100,7 @@ def test_approval_decision_uses_server_identity_and_retains_audit_state(
         action_id="mail-approve",
         action_type="send_email",
         description="Отправить ответ доверителю",
+        payload=_email_payload(),
     )
     client = TestClient(app)
 
@@ -107,7 +114,24 @@ def test_approval_decision_uses_server_identity_and_retains_audit_state(
     assert dashboard.json()["pending_approvals"] == 0
     assert dashboard.json()["signals"] == []
     assert approved.json()[0]["action_id"] == "mail-approve"
+    assert approved.json()[0]["payload_bound"] is True
     assert approved.json()[0]["decided_at"]
+
+
+def test_unbound_action_cannot_be_approved_through_api(monkeypatch) -> None:
+    _development_without_api_key(monkeypatch)
+    engine = _patch_approval_services(monkeypatch)
+    engine.propose(
+        action_id="mail-unbound",
+        action_type="send_email",
+        description="Небезопасный старый запрос без payload",
+    )
+
+    response = TestClient(app).post("/v1/approvals/mail-unbound/approve", json={})
+
+    assert response.status_code == 409
+    assert "payload_binding_required" in response.json()["detail"]
+    assert engine.store.get("mail-unbound").state.value == "proposed"
 
 
 def test_client_cannot_spoof_approval_identity(monkeypatch) -> None:
@@ -117,6 +141,7 @@ def test_client_cannot_spoof_approval_identity(monkeypatch) -> None:
         action_id="mail-spoof",
         action_type="send_email",
         description="Отправить письмо",
+        payload=_email_payload(),
     )
 
     response = TestClient(app).post(
@@ -189,6 +214,7 @@ def test_approval_endpoint_fails_closed_without_server_identity(monkeypatch) -> 
         action_id="missing-identity",
         action_type="send_email",
         description="Отправить письмо",
+        payload=_email_payload(),
     )
 
     response = TestClient(app).post("/v1/approvals/missing-identity/approve", json={})

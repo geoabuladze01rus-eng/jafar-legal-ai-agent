@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.4", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.5", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -310,11 +310,10 @@ def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
 @app.post("/v1/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
     analysis = _analyze(request.text, request.task, request.matter_type)
-    if request.matter_id:
-        matter = matter_store.get(request.matter_id)
-        if matter is None:
-            raise HTTPException(status_code=404, detail="Matter not found")
-        matter_store.add_deadlines(request.matter_id, analysis.deadlines)
+    if request.matter_id and matter_store.get(request.matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    # Analysis output is advisory. Candidate deadlines/facts are returned to the lawyer but
+    # never persisted here; record mutation belongs behind the explicit approval/execution gate.
     return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
 
 

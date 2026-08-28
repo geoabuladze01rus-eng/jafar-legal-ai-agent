@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 
-from jafar.action_approval import ActionRequest, ActionState, LegalActionApprovalEngine
+from jafar.action_approval import (
+    ActionRequest,
+    ActionState,
+    LegalActionApprovalEngine,
+    payload_fingerprint,
+)
 from jafar.supabase_action_approval import SupabaseActionApprovalRepository
 
 
@@ -78,12 +83,14 @@ class FakeSupabase:
         return FakeQuery(self, name)
 
 
-def make_request(action_id: str = "a1") -> ActionRequest:
+def make_request(action_id: str = "a1", *, bound: bool = True) -> ActionRequest:
+    payload = {"to": "client@example.com", "subject": "Ответ"}
     return ActionRequest(
         action_id=action_id,
         action_type="send_email",
         description="Отправить письмо доверителю",
         evidence_ids=("e1", "e2"),
+        payload_hash=payload_fingerprint(payload) if bound else None,
         created_at="2026-08-28T12:00:00+00:00",
     )
 
@@ -102,10 +109,39 @@ def test_supabase_store_retains_full_approval_history() -> None:
     assert executed.state is ActionState.EXECUTED
     assert executed.decided_by == "lawyer:chernov"
     assert executed.executed_at is not None
+    assert executed.payload_hash == request.payload_hash
     assert store.pending() == ()
     assert store.approved() == ()
     assert store.executed()[0].evidence_ids == ("e1", "e2")
     assert store.all()[0].state is ActionState.EXECUTED
+
+
+def test_payload_hash_is_persisted_and_hydrated() -> None:
+    client = FakeSupabase()
+    store = SupabaseActionApprovalRepository(client, "owner-1")
+    request = make_request("payload-bound")
+
+    store.add(request)
+    hydrated = store.get("payload-bound")
+
+    assert hydrated is not None
+    assert hydrated.payload_hash == request.payload_hash
+    assert client.data["action_approvals"][0]["payload_hash"] == request.payload_hash
+
+
+def test_unbound_approval_cannot_transition_to_executed() -> None:
+    client = FakeSupabase()
+    store = SupabaseActionApprovalRepository(client, "owner-1")
+    request = make_request("unbound", bound=False)
+    store.add(request)
+    store.decide(
+        "unbound",
+        state=ActionState.APPROVED,
+        decided_by="lawyer",
+    )
+
+    with pytest.raises(ValueError, match="payload_binding_required"):
+        store.mark_executed("unbound")
 
 
 def test_second_decision_cannot_overwrite_first_lawyer_decision() -> None:

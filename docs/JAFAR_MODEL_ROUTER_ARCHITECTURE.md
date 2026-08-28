@@ -2,6 +2,7 @@
 
 ROUTER EXECUTABLE = YES  
 OPENAI ADAPTER IMPLEMENTED = YES (configuration-driven `OpenAICompatibleProvider`)  
+GEMINI CONTRACT = YES (`GeminiProvider`, injected transport only)  
 LIVE OPENAI CALLS = 0 in this package; network is opt-in only.  
 GEMINI ADAPTER = NOT IMPLEMENTED  
 DEEPSEEK ADAPTER = NOT IMPLEMENTED  

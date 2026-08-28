@@ -104,3 +104,35 @@ class OpenAICompatibleProvider:
         if not isinstance(value, dict):
             return None
         return value
+
+
+@dataclass(frozen=True)
+class GeminiProvider:
+    """Configuration-only Gemini boundary; transport is injected for tests."""
+
+    api_key: str = ""
+    model: str = ""
+    enabled: bool = False
+    transport: Any = None
+
+    def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> dict[str, Any] | None:
+        if not self.enabled or self.transport is None:
+            return None
+        request = {"model": self.model, "contents": [{"role": "user", "parts": [{"text": self._prompt(text, task, matter_type)}]}]}
+        response = self.transport(request)
+        if not isinstance(response, dict):
+            return None
+        candidate = response.get("text") or response.get("content")
+        return self._parse_json(candidate) if isinstance(candidate, str) else None
+
+    @staticmethod
+    def _prompt(text: str, task: DocumentTask, matter_type: MatterType) -> str:
+        return f"Task: {task.value}; matter_type: {matter_type.value}\n{text}"
+
+    @staticmethod
+    def _parse_json(content: str) -> dict[str, Any] | None:
+        try:
+            value = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None

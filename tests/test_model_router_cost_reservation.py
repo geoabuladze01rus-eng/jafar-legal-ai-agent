@@ -4,7 +4,12 @@ from decimal import Decimal
 import pytest
 
 from jafar.cost_scale_control import BudgetLimits, CostScaleControl, ProviderPricing, UsageContext
-from jafar.model_router import ModelRequest, ModelResponse, ModelRouter
+from jafar.model_router import (
+    ModelRequest,
+    ModelResponse,
+    ModelRouter,
+    ProviderDispatchUncertainError,
+)
 from jafar.supabase_cost_reservations import CostReservation
 
 
@@ -88,22 +93,23 @@ def test_router_reserves_before_dispatch_and_settles_after_metering() -> None:
     assert reservations.settled == ["req-1:primary:openai"]
 
 
-def test_provider_failure_releases_unused_reservation() -> None:
+def test_provider_failure_keeps_reservation_held_and_blocks_automatic_replay() -> None:
     provider = FakeProvider(fail=True)
     reservations = FakeReservations()
 
-    with pytest.raises(RuntimeError, match="All permitted AI providers failed"):
+    with pytest.raises(ProviderDispatchUncertainError, match="dispatch outcome is uncertain"):
         make_router(provider, reservations).run(request())
 
-    assert reservations.released == ["req-1:primary:openai"]
+    assert provider.calls == 1
+    assert reservations.released == []
     assert reservations.settled == []
 
 
-def test_accounting_failure_does_not_release_spend_after_provider_was_called() -> None:
+def test_accounting_failure_keeps_reservation_held_after_provider_was_called() -> None:
     provider = FakeProvider(usage=False)
     reservations = FakeReservations()
 
-    with pytest.raises(RuntimeError, match="All permitted AI providers failed"):
+    with pytest.raises(ProviderDispatchUncertainError, match="accounting outcome is uncertain"):
         make_router(provider, reservations).run(request())
 
     assert provider.calls == 1

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
+import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +12,7 @@ from typing import Any
 
 
 MAX_POLL_CLOSE_SECONDS = 2_628_000
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _now() -> str:
@@ -93,11 +97,12 @@ def validate_poll(
 
 
 class TelegramPollStore:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, identity_secret: str | None = None) -> None:
         db_path = Path(path).expanduser()
         if db_path.is_symlink():
             raise RuntimeError("telegram_poll_db_must_not_be_symlink")
         self.path = str(db_path)
+        self._identity_secret = (identity_secret or "").encode("utf-8") or None
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.execute("PRAGMA journal_mode=WAL")
@@ -109,6 +114,8 @@ class TelegramPollStore:
                 poll_id TEXT NOT NULL, user_id TEXT NOT NULL, option_ids_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL, PRIMARY KEY(poll_id, user_id)
             )""")
+            if self._identity_secret is not None:
+                self._migrate_legacy_raw_voter_ids(con)
         self._harden_permissions()
 
     def _connect(self) -> sqlite3.Connection:
@@ -126,6 +133,35 @@ class TelegramPollStore:
                 raise RuntimeError("telegram_poll_sidecar_must_not_be_symlink")
             if candidate.exists():
                 candidate.chmod(0o600)
+
+    def _pseudonymize(self, raw_identity: str) -> str | None:
+        if self._identity_secret is None:
+            return None
+        return hmac.new(
+            self._identity_secret,
+            raw_identity.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _migrate_legacy_raw_voter_ids(self, con: sqlite3.Connection) -> None:
+        rows = con.execute(
+            "SELECT poll_id, user_id, option_ids_json, updated_at FROM telegram_poll_answers"
+        ).fetchall()
+        for row in rows:
+            old_key = str(row["user_id"])
+            if _HEX64.fullmatch(old_key):
+                continue
+            new_key = self._pseudonymize(old_key)
+            if new_key is None:
+                continue
+            con.execute(
+                "INSERT OR REPLACE INTO telegram_poll_answers VALUES (?, ?, ?, ?)",
+                (row["poll_id"], new_key, row["option_ids_json"], row["updated_at"]),
+            )
+            con.execute(
+                "DELETE FROM telegram_poll_answers WHERE poll_id=? AND user_id=?",
+                (row["poll_id"], old_key),
+            )
 
     def record_sent(self, *, poll: dict[str, Any], chat_id: str, message_id: int | None) -> None:
         poll_id = str(poll["id"]).strip()
@@ -157,7 +193,8 @@ class TelegramPollStore:
             return False
         voter_key = self._voter_key(answer)
         if voter_key is None:
-            return False
+            # Aggregate poll updates are still retained; individual answer identity is optional.
+            return True
         poll_id = str(answer["poll_id"])
         with self._connect() as con:
             exists = con.execute(
@@ -177,14 +214,13 @@ class TelegramPollStore:
         self._harden_permissions()
         return True
 
-    @staticmethod
-    def _voter_key(answer: dict[str, Any]) -> str | None:
+    def _voter_key(self, answer: dict[str, Any]) -> str | None:
         user = answer.get("user")
         if isinstance(user, dict) and user.get("id") is not None:
-            return str(user["id"])
+            return self._pseudonymize(f"user:{user['id']}")
         voter_chat = answer.get("voter_chat")
         if isinstance(voter_chat, dict) and voter_chat.get("id") is not None:
-            return f"chat:{voter_chat['id']}"
+            return self._pseudonymize(f"chat:{voter_chat['id']}")
         return None
 
     def _upsert_poll(self, poll: dict[str, Any]) -> None:
@@ -229,8 +265,11 @@ class TelegramPollStore:
                 isinstance(value, bool) or not isinstance(value, int) for value in option_ids
             ):
                 raise RuntimeError("telegram_poll_answer_payload_invalid")
+            voter_key = str(answer["user_id"])
+            if not _HEX64.fullmatch(voter_key):
+                raise RuntimeError("telegram_poll_voter_key_not_pseudonymous")
             normalized_answers.append(
-                {"user_id": answer["user_id"], "option_ids": option_ids}
+                {"voter_key": voter_key, "option_ids": option_ids}
             )
         return {
             "poll_id": key,

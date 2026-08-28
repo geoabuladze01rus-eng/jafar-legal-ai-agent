@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from .cost_scale_control import CostScaleControl, UsageContext
 from .domains import DocumentTask
 from .privacy_policy import ProviderPrivacyPolicy
+from .supabase_cost_reservations import CostReservationRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,10 +57,12 @@ class ModelRouter:
         providers: dict[str, ModelProvider],
         privacy_policy: ProviderPrivacyPolicy | None = None,
         cost_control: CostScaleControl | None = None,
+        cost_reservations: CostReservationRepository | None = None,
     ) -> None:
         self.providers = providers
         self.privacy_policy = privacy_policy or ProviderPrivacyPolicy()
         self.cost_control = cost_control
+        self.cost_reservations = cost_reservations
 
     def decide(self, request: ModelRequest) -> RoutingDecision:
         allowed = set(
@@ -165,6 +168,7 @@ class ModelRouter:
             raise RuntimeError(f"Provider {provider_key!r} is disabled by scale control")
 
         context = self._meter_context(request, role=meter_role, provider=provider_key)
+        reservation_id: str | None = None
         if self.cost_control is not None:
             if context is None:
                 raise RuntimeError("usage_context_required")
@@ -172,16 +176,38 @@ class ModelRouter:
             if estimate is None:
                 raise RuntimeError("cost_estimate_required")
             self.cost_control.preflight(context, estimated_cost_usd=estimate)
+            if self.cost_reservations is not None:
+                reservation = self.cost_reservations.reserve(
+                    context=context,
+                    estimated_cost_usd=estimate,
+                    limits=self.cost_control.limits,
+                )
+                reservation_id = reservation.reservation_id
 
-        response = self.providers[provider_key].complete(request)
+        dispatched = False
+        try:
+            dispatched = True
+            response = self.providers[provider_key].complete(request)
+        except Exception:
+            if reservation_id is not None:
+                self.cost_reservations.release(reservation_id)
+            raise
+
         if self.cost_control is not None:
             assert context is not None
-            self.cost_control.meter_response(
-                context=context,
-                provider=response.provider,
-                model=response.model,
-                metadata=response.metadata,
-            )
+            try:
+                self.cost_control.meter_response(
+                    context=context,
+                    provider=response.provider,
+                    model=response.model,
+                    metadata=response.metadata,
+                )
+            except Exception:
+                # Provider spend already occurred. Keep the reservation active until expiry rather
+                # than falsely releasing budget when accounting cannot be completed.
+                raise
+            if reservation_id is not None:
+                self.cost_reservations.settle(reservation_id)
         return response
 
     @staticmethod

@@ -93,6 +93,12 @@ class CaseEvidenceGraph:
     def claim(self, claim_id: str) -> EvidenceClaim | None:
         return self._claims.get(claim_id)
 
+    def claims(self) -> tuple[EvidenceClaim, ...]:
+        return tuple(self._claims.values())
+
+    def sources(self) -> tuple[EvidenceSource, ...]:
+        return tuple(self._sources.values())
+
     def unsupported_claims(self) -> tuple[EvidenceClaim, ...]:
         return tuple(claim for claim in self._claims.values() if not claim.supported)
 

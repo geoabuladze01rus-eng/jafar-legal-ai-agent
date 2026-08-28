@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken
@@ -22,6 +23,10 @@ from jafar.telegram_scheduler import (
 )
 
 
+_LOCAL_MCP_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_MCP_TOKEN_PLACEHOLDERS = {"replace-me", "changeme", "change-me", "secret"}
+
+
 class _StaticTokenVerifier:
     """MVP bearer protection for a private MCP endpoint; never log supplied tokens."""
 
@@ -36,13 +41,54 @@ class _StaticTokenVerifier:
         )
 
 
-def _mcp_server() -> MCPServer:
+def _transport() -> str:
+    return os.getenv("JAFAR_MCP_TRANSPORT", "stdio").strip().lower()
+
+
+def validate_mcp_transport_security(
+    *, transport: str | None = None, host: str | None = None
+) -> tuple[str, str] | None:
+    """Validate remote MCP before a socket is opened.
+
+    Stdio is local-process IPC and does not need HTTP bearer auth. Streamable HTTP is intended
+    only behind a local HTTPS reverse proxy/tunnel, so it must always use a strong bearer token,
+    an HTTPS public URL, and a loopback bind. This prevents a common unsafe configuration where a
+    loopback MCP endpoint is tunneled publicly but accidentally left unauthenticated.
+    """
+
+    selected = (transport or _transport()).strip().lower()
+    if selected == "stdio":
+        return None
+    if selected != "streamable-http":
+        raise RuntimeError(f"unsupported JAFAR_MCP_TRANSPORT: {selected or '<empty>'}")
+
+    bind_host = (host or os.getenv("JAFAR_MCP_HOST", "127.0.0.1")).strip().lower()
+    if bind_host not in _LOCAL_MCP_HOSTS:
+        raise RuntimeError(
+            "streamable HTTP MCP must bind to loopback and be exposed only through an authenticated HTTPS proxy/tunnel"
+        )
+
     token = (settings.jafar_mcp_auth_token or "").strip()
-    if not token:
-        return MCPServer("Jafar Telegram")
+    if len(token) < 32 or token.casefold() in _MCP_TOKEN_PLACEHOLDERS:
+        raise RuntimeError(
+            "streamable HTTP MCP requires a non-placeholder JAFAR_MCP_AUTH_TOKEN of at least 32 characters"
+        )
+
     public_url = (settings.jafar_mcp_public_url or "").strip()
-    if not public_url:
-        raise RuntimeError("JAFAR_MCP_PUBLIC_URL is required when JAFAR_MCP_AUTH_TOKEN is set")
+    parsed = urlparse(public_url)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise RuntimeError("streamable HTTP MCP requires an HTTPS JAFAR_MCP_PUBLIC_URL")
+    if parsed.username or parsed.password:
+        raise RuntimeError("JAFAR_MCP_PUBLIC_URL must not embed credentials")
+
+    return token, public_url
+
+
+def _mcp_server() -> MCPServer:
+    remote = validate_mcp_transport_security()
+    if remote is None:
+        return MCPServer("Jafar Telegram")
+    token, public_url = remote
     auth = AuthSettings(
         issuer_url=public_url,
         resource_server_url=public_url,
@@ -104,9 +150,10 @@ def _publisher() -> TelegramPublisher:
 def _key(
     kind: str, chat: str, payload: dict[str, Any], scheduled: str, supplied: str | None
 ) -> str:
-    if supplied:
+    if supplied is not None:
+        supplied = supplied.strip()
         if not 1 <= len(supplied) <= 200:
-            raise ValueError("idempotency_key must contain 1 to 200 characters")
+            raise ValueError("idempotency_key must contain 1 to 200 non-whitespace characters")
         return supplied
     return "auto:" + hashlib.sha256(f"{kind}|{chat}|{scheduled}|{payload}".encode()).hexdigest()
 
@@ -348,15 +395,16 @@ async def run_scheduler_once() -> int:
 
 
 if __name__ == "__main__":
-    if os.getenv("JAFAR_MCP_TRANSPORT", "stdio").strip().lower() == "streamable-http":
-        host, port = (
-            os.getenv("JAFAR_MCP_HOST", "127.0.0.1"),
-            int(os.getenv("JAFAR_MCP_PORT", "8000")),
-        )
-        if host not in {"127.0.0.1", "localhost", "::1"} and not settings.jafar_mcp_auth_token:
-            raise RuntimeError(
-                "refusing public MCP listener without JAFAR_MCP_AUTH_TOKEN and an authenticating HTTPS proxy"
-            )
+    selected_transport = _transport()
+    if selected_transport == "streamable-http":
+        host = os.getenv("JAFAR_MCP_HOST", "127.0.0.1").strip()
+        validate_mcp_transport_security(transport=selected_transport, host=host)
+        try:
+            port = int(os.getenv("JAFAR_MCP_PORT", "8000"))
+        except ValueError as exc:
+            raise RuntimeError("JAFAR_MCP_PORT must be an integer") from exc
+        if not 1 <= port <= 65535:
+            raise RuntimeError("JAFAR_MCP_PORT must be between 1 and 65535")
         mcp.run(
             transport="streamable-http",
             host=host,
@@ -364,5 +412,7 @@ if __name__ == "__main__":
             stateless_http=True,
             json_response=True,
         )
-    else:
+    elif selected_transport == "stdio":
         mcp.run()
+    else:
+        raise RuntimeError(f"unsupported JAFAR_MCP_TRANSPORT: {selected_transport or '<empty>'}")

@@ -111,6 +111,16 @@ Legal authority identity and legal applicability are separate gates. `LegalAutho
 
 Authority weight is recorded separately (`binding`, `high`, `persuasive`, `contextual`, `unknown`) and is not inferred from model confidence. The final legal assessment of precedential force and applicability remains subject to lawyer review.
 
+## Precedent conflict and freshness
+
+`PrecedentFreshnessEngine` builds a dated chronology of positions on the same legal topic and evaluates only *verified* treatment relationships between them. Supported relationships include `consistent`, `conflicting`, `limiting`, `expanding` and `superseding`.
+
+Recency is never treated as authority by itself. A later persuasive decision does not automatically displace an older binding source. The engine records authority weight separately and may classify an older binding position as `older_but_controlling` when subsequent verified practice remains consistent with it.
+
+A position can be classified as `current`, `older_but_controlling`, `limited`, `superseded`, `conflicting` or `review_required`. Unverified model-generated treatment cannot change precedent status. Pairs of materially different propositions with no verified relationship are surfaced through `detect_unresolved_pairs` for follow-up research rather than silently ranked.
+
+`PrecedentReleasePolicy` blocks final drafting when the relevant set contains superseded, conflicting or unresolved positions. A confirmed consistent chain can pass the release gate; a conflict requires lawyer review and verified research into the later treatment before any conclusion about controlling law.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -136,5 +146,8 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Verification of an authority must not be treated as proof of applicability.
 - Only verified and applicable authorities may pass the authority release gate into final drafting inputs.
 - Superseded, out-of-time, contextually irrelevant or negatively treated authorities must remain blocked or require human review.
+- Precedent freshness must never reduce to “newer wins”; authority weight and verified later treatment must remain explicit.
+- Unverified precedent treatment must not alter status; unresolved materially different positions require research and human review.
+- Conflicting, superseded or unresolved precedent sets must not pass the final drafting release gate.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

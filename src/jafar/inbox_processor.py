@@ -27,6 +27,8 @@ class InboxDocumentResult:
     status: DocumentStatus
     error: str | None
     workflow: DocumentWorkflowResult | None
+    provider: str = "unknown"
+    attachment_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,6 @@ class InboxProcessor:
         except Exception as exc:  # noqa: BLE001 - preserve failure state for every attachment.
             error = f"{type(exc).__name__}: {exc}"
             self.status_store.set_status(message_id=item.message_id, storage_path=storage_path, status=DocumentStatus.FAILED, error=error)
-            return InboxDocumentResult(message_id=item.message_id, sender=item.sender, subject=item.subject, attachment_name=item.attachment.filename, content_type=item.attachment.media_type, storage_path=storage_path, fingerprint=fingerprint, status=DocumentStatus.FAILED, error=error, workflow=None)
+            return InboxDocumentResult(message_id=item.message_id, sender=item.sender, subject=item.subject, attachment_name=item.attachment.filename, content_type=item.attachment.media_type, storage_path=storage_path, fingerprint=fingerprint, status=DocumentStatus.FAILED, error=error, workflow=None, provider=item.attachment.provider, attachment_id=item.attachment.attachment_id)
         self.status_store.set_status(message_id=item.message_id, storage_path=storage_path, status=DocumentStatus.COMPLETED)
-        return InboxDocumentResult(message_id=item.message_id, sender=item.sender, subject=item.subject, attachment_name=item.attachment.filename, content_type=item.attachment.media_type, storage_path=storage_path, fingerprint=fingerprint, status=DocumentStatus.COMPLETED, error=None, workflow=workflow_result)
+        return InboxDocumentResult(message_id=item.message_id, sender=item.sender, subject=item.subject, attachment_name=item.attachment.filename, content_type=item.attachment.media_type, storage_path=storage_path, fingerprint=fingerprint, status=DocumentStatus.COMPLETED, error=None, workflow=workflow_result, provider=item.attachment.provider, attachment_id=item.attachment.attachment_id)

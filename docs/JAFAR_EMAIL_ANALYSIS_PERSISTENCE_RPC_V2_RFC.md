@@ -1,6 +1,6 @@
 # Email analysis persistence RPC v2 RFC
 
-Status: BLOCKED_BY_OPEN_QUESTION. Design only; no migration or production change is included.
+Status: READY_FOR_LOCAL_IMPLEMENTATION. Design only; no migration or production change is included.
 
 ## Problem and verified V1 behavior
 
@@ -81,10 +81,11 @@ text plus media type (not the raw bytes), while the raw-byte SHA-256 in
 timestamps are mutable/ambiguous. No upstream processing key is created once and
 reused across process restarts.
 
-Therefore the selected strategy is **D4 (blocked)**. No currently available field
-is proven to be a durable, unique attachment identity. This is a repository fact,
-not a design preference; inventing a composite from existing fields would be a
-heuristic and could collapse legally distinct artifacts.
+The domain path now preserves provider, message ID and attachment ID on each
+`InboxAttachment`/`InboxDocumentResult` and exposes a deterministic processing key
+at the persistence boundary. Providers without an attachment ID remain explicitly
+ineligible (`None` identity); no filename/fingerprint fallback exists. The selected
+strategy is therefore **D1** for Gmail attachments with an ID.
 
 ### Required V2 contract once the blocker is resolved
 
@@ -128,6 +129,6 @@ RPC change, production write, or real-email processing is part of this RFC.
 
 Repository-wide search finds one runtime caller: `SupabaseProcessingResultStore.save` in `src/jafar/processing_persistence.py`, which ignores the RPC return value and calls `persist_email_processing` once per processing result. Tests and migrations are non-runtime references. V1 writes an email processing record through the RPC's surrounding contract and inserts one `documents` row per payload document; the function returns no IDs and has no `ON CONFLICT` or document deduplication.
 
-The stable logical input identifier is the inbound `message_id`; attachment fingerprints are metadata used by processing, not database identity. The current `documents` table has no uniqueness constraint on fingerprint/message/attachment, and V1 can create duplicate documents when the same result is replayed. The current RPC does not create `ai_analyses` at all. Therefore idempotency classification is **I4** (no reliable DB-enforced idempotency contract). The precise blocker is that the current runtime path does not retain a proven attachment identity or durable retry key across process restarts.
+The stable logical input identifier is the inbound `message_id`; attachment fingerprints remain metadata, not database identity. The current documents table still has no DB-enforced uniqueness and V1 remains I4, but the application source identity is now durable across reconstruction; DB enforcement is future V2 work.
 
 V1 must remain unchanged. V2 may return richer IDs and extend payload semantics, but must preserve V1 side effects and failure behavior. Byte-for-byte payload compatibility is not required for a versioned function; side-effect compatibility is required. Retry and intentional re-analysis must use distinct explicit identities, never timestamps, filenames, storage paths or heuristics.

@@ -36,6 +36,9 @@ class SupabaseProcessingResultStore:
                 "storage_path": item.storage_path,
                 "content_type": item.content_type,
                 "fingerprint": item.fingerprint,
+                "provider": item.provider,
+                "attachment_id": item.attachment_id,
+                "document_processing_key": _processing_key(item.provider, message.message_id, item.attachment_id),
                 "processing_status": item.status.value,
                 "processing_error": item.error,
                 "matter_id": item.workflow.match.matter_id if item.workflow and item.workflow.match else None,
@@ -79,3 +82,10 @@ def _jsonable(value: object) -> object:
     if hasattr(value, "__dict__"):
         return {k: _jsonable(v) for k, v in vars(value).items()}
     return str(value)
+
+
+def _processing_key(provider: str, message_id: str, attachment_id: str | None) -> str | None:
+    from .source_artifact import source_artifact_identity
+
+    identity = source_artifact_identity(provider, message_id, attachment_id)
+    return identity.processing_key if identity else None

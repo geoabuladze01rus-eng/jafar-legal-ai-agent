@@ -4,6 +4,7 @@ from jafar.legal_entity_adapters import (
     LegalEntitySourceRegistry,
     PublicSourceAdapter,
     PublicUrlSourceAdapter,
+    SourceResult,
 )
 from jafar.legal_entity_intelligence import EntityQuery
 
@@ -67,17 +68,7 @@ def test_registry_marks_adapter_source_identity_mismatch_as_error():
         source_key = "kad"
 
         def search(self, query):
-            return type(
-                "Result",
-                (),
-                {
-                    "source_key": "fssp",
-                    "status": "found",
-                    "source_url": None,
-                    "data": {},
-                    "error": None,
-                },
-            )()
+            return SourceResult(source_key="fssp", status="found", data={})
 
     result = LegalEntitySourceRegistry([WrongIdentityAdapter()]).search_all(
         EntityQuery("7701234567", "inn")
@@ -85,4 +76,55 @@ def test_registry_marks_adapter_source_identity_mismatch_as_error():
 
     assert result.source_key == "kad"
     assert result.status == "error"
-    assert "adapter_source_key_mismatch" in (result.error or "")
+    assert result.error == "adapter_source_key_mismatch"
+
+
+def test_registry_rejects_unknown_adapter_status():
+    class BadStatusAdapter:
+        source_key = "kad"
+
+        def search(self, query):
+            return SourceResult(source_key="kad", status="definitely_true", data={})
+
+    result = LegalEntitySourceRegistry([BadStatusAdapter()]).search_all(
+        EntityQuery("7701234567", "inn")
+    )[0]
+
+    assert result.status == "error"
+    assert result.error == "adapter_status_invalid"
+
+
+def test_registry_rejects_private_source_url_returned_by_custom_adapter():
+    class PrivateURLAdapter:
+        source_key = "kad"
+
+        def search(self, query):
+            return SourceResult(
+                source_key="kad",
+                status="found",
+                source_url="http://127.0.0.1/admin",
+                data={},
+            )
+
+    result = LegalEntitySourceRegistry([PrivateURLAdapter()]).search_all(
+        EntityQuery("7701234567", "inn")
+    )[0]
+
+    assert result.status == "error"
+    assert result.error == "adapter_source_url_invalid"
+
+
+def test_registry_does_not_leak_raw_source_exception_text():
+    class SecretLeakingAdapter:
+        source_key = "kad"
+
+        def search(self, query):
+            raise RuntimeError("Authorization: Bearer super-secret-token")
+
+    result = LegalEntitySourceRegistry([SecretLeakingAdapter()]).search_all(
+        EntityQuery("7701234567", "inn")
+    )[0]
+
+    assert result.status == "error"
+    assert result.error == "RuntimeError:source_lookup_failed"
+    assert "super-secret-token" not in result.error

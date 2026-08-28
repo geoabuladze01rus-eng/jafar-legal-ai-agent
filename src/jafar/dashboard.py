@@ -159,6 +159,22 @@ class DashboardService:
         )
 
     @staticmethod
+    def approval_signal(
+        *,
+        action_id: str,
+        action_type: str,
+        description: str,
+    ) -> DashboardSignal:
+        return DashboardSignal(
+            id=f"approval:{action_id}",
+            kind=DashboardSignalKind.APPROVAL,
+            title=f"Требуется одобрение: {action_type}",
+            body=description,
+            priority=85,
+            requires_approval=True,
+        )
+
+    @staticmethod
     def _deadline_signal(
         *,
         matter_id: str,

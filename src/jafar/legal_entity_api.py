@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .legal_entity_adapters import validate_public_url, validate_source_key
 from .legal_entity_intelligence import EntityQuery, LegalEntityIntelligence, SourceFinding
 from .legal_entity_research import LegalEntityResearchService
 
@@ -26,6 +27,16 @@ class SourceFindingRequest(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     details: dict = Field(default_factory=dict, max_length=100)
     source_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("source_key")
+    @classmethod
+    def normalize_source_key(cls, value: str) -> str:
+        return validate_source_key(value)
+
+    @field_validator("source_url")
+    @classmethod
+    def require_public_source_url(cls, value: str | None) -> str | None:
+        return validate_public_url(value) if value is not None else None
 
 
 class EntityProfileRequest(EntityResearchRequest):

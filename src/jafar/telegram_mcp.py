@@ -4,8 +4,8 @@ from typing import Any
 
 from mcp.server import MCPServer
 
-from .config import settings
-from .telegram_runtime import TelegramBotHttpClient
+from jafar.config import settings
+from jafar.telegram_runtime import TelegramBotHttpClient
 
 mcp = MCPServer("Jafar Telegram")
 

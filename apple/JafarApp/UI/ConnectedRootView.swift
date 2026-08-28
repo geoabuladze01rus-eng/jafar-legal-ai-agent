@@ -8,6 +8,9 @@ struct ConnectedRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             liveStatusStrip
+            if let signal = dashboard.snapshot.signals.first {
+                urgentSignalStrip(signal)
+            }
             ContentView()
         }
         .background(JafarPalette.background)
@@ -34,6 +37,7 @@ struct ConnectedRootView: View {
                 metric("Дел", value: dashboard.snapshot.activeMatters)
                 metric("Срочно", value: dashboard.snapshot.overdueDeadlines)
                 metric("7 дней", value: dashboard.snapshot.deadlinesNext7Days)
+                metric("Одобрить", value: dashboard.snapshot.pendingApprovals)
             }
 
             Spacer(minLength: 0)
@@ -63,6 +67,34 @@ struct ConnectedRootView: View {
         }
     }
 
+    private func urgentSignalStrip(_ signal: DashboardSignal) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: signal.requiresApproval ? "checkmark.seal.fill" : "bell.badge.fill")
+                .foregroundStyle(signalColor(signal.priority))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(signal.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(signal.body)
+                    .font(.caption2)
+                    .foregroundStyle(JafarPalette.secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Text("P\(signal.priority)")
+                .font(.caption2.monospacedDigit().weight(.bold))
+                .foregroundStyle(signalColor(signal.priority))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(JafarPalette.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.05))
+                .frame(height: 1)
+        }
+    }
+
     private var connectionTitle: String {
         if JafarAPIConfiguration.baseURL == nil {
             return "Локальный режим"
@@ -81,6 +113,12 @@ struct ConnectedRootView: View {
             return JafarPalette.danger
         }
         return JafarPalette.success
+    }
+
+    private func signalColor(_ priority: Int) -> Color {
+        if priority >= 80 { return JafarPalette.danger }
+        if priority >= 50 { return JafarPalette.warning }
+        return JafarPalette.accent
     }
 
     private func metric(_ title: String, value: Int) -> some View {

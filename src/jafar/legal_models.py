@@ -75,3 +75,5 @@ class AnalysisRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     analysis: LegalAnalysis
     matter_id: str | None = None
+    persisted: bool = False
+    requires_approval_to_persist: bool = True

@@ -28,7 +28,7 @@ struct LiveDashboardView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .refreshable {
-                    await dashboard.refresh()
+                    await refreshDashboard()
                 }
             }
             .navigationTitle("Рабочая сводка")
@@ -40,7 +40,7 @@ struct LiveDashboardView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        Task { await dashboard.refresh() }
+                        Task { await refreshDashboard() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -90,7 +90,10 @@ struct LiveDashboardView: View {
     private var urgentSignals: some View {
         if !dashboard.snapshot.signals.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                sectionTitle("Требует внимания", subtitle: "Сначала показаны наиболее срочные сигналы")
+                sectionTitle(
+                    "Требует внимания",
+                    subtitle: "Сначала показаны наиболее срочные сигналы"
+                )
                 ForEach(dashboard.snapshot.signals.prefix(5)) { signal in
                     HStack(alignment: .top, spacing: 12) {
                         Image(
@@ -223,5 +226,14 @@ struct LiveDashboardView: View {
         if priority >= 80 { return JafarPalette.danger }
         if priority >= 50 { return JafarPalette.warning }
         return JafarPalette.accent
+    }
+
+    @MainActor
+    private func refreshDashboard() async {
+        await dashboard.refresh()
+        JafarAlertsStore.shared.replace(
+            with: dashboard.snapshot.signals,
+            generatedAt: dashboard.snapshot.generatedAt
+        )
     }
 }

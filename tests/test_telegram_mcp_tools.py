@@ -41,6 +41,19 @@ def test_mcp_publish_and_poll_tools(monkeypatch: pytest.MonkeyPatch, tmp_path) -
     assert asyncio.run(telegram_mcp.telegram_get_poll_results("poll-19"))["message_id"] == 19
 
 
+def test_poll_results_recheck_current_allowlist(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _settings(monkeypatch, tmp_path)
+    telegram_mcp._polls().record_sent(
+        poll={"id": "poll-20", "question": "Q", "options": []},
+        chat_id="-1001",
+        message_id=20,
+    )
+    monkeypatch.setattr(settings, "telegram_allowed_chat_ids", "-1002")
+
+    with pytest.raises(PermissionError):
+        asyncio.run(telegram_mcp.telegram_get_poll_results("poll-20"))
+
+
 def test_mcp_schedule_tools_and_delivery_allowlist_recheck(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -71,8 +84,9 @@ def test_mcp_schedule_tools_and_delivery_allowlist_recheck(
             utc_now() + timedelta(seconds=2)
         )
     )
-    assert telegram_mcp._store().get(item.id).status == "failed"
-    assert "allowlist" in (telegram_mcp._store().get(item.id).error or "")
+    failed = telegram_mcp._store().get(item.id)
+    assert failed.status == "failed"
+    assert failed.error == "delivery_policy_denied"
 
 
 def test_mcp_tool_rejects_unknown_chat(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable
+from uuid import uuid4
 
 from .action_approval import ActionApprovalRepository, ActionState, payload_fingerprint
 
@@ -26,13 +27,21 @@ class ExecutionResult:
 class ApprovalExecutionService:
     """Approval-first execution boundary for externally visible side effects.
 
-    Store-backed execution is bound to the exact payload hash captured when the action was
-    proposed. A lawyer approval therefore cannot be replayed with a different recipient,
-    document, amount, destination or other mutated execution data.
+    Store-backed execution is payload-bound and must atomically claim an approved action before
+    invoking a side-effect handler. This prevents two workers from both observing APPROVED and
+    sending the same email, filing, message or other external action twice.
     """
 
-    def __init__(self, store: ActionApprovalRepository | None = None) -> None:
+    def __init__(
+        self,
+        store: ActionApprovalRepository | None = None,
+        *,
+        executor_id: str | None = None,
+    ) -> None:
         self.store = store
+        self.executor_id = (executor_id or f"executor-{uuid4().hex}").strip()
+        if not self.executor_id:
+            raise ValueError("executor_id_required")
         self._handlers: dict[str, Callable[[dict[str, Any]], Any]] = {}
 
     def register(self, action: str, handler: Callable[[dict[str, Any]], Any]) -> None:
@@ -51,35 +60,21 @@ class ApprovalExecutionService:
             )
         request = self.store.get(action_id)
         if request is None:
-            return ExecutionResult(
-                action_id,
-                "not_found",
-                "Запрос на одобрение не найден.",
-            )
+            return ExecutionResult(action_id, "not_found", "Запрос на одобрение не найден.")
         if request.state is ActionState.PROPOSED:
-            return ExecutionResult(
-                action_id,
-                "approval_required",
-                "Требуется подтверждение адвоката.",
-            )
+            return ExecutionResult(action_id, "approval_required", "Требуется подтверждение адвоката.")
         if request.state is ActionState.REJECTED:
+            return ExecutionResult(action_id, "rejected", "Адвокат отклонил действие.")
+        if request.state is ActionState.EXECUTING:
             return ExecutionResult(
                 action_id,
-                "rejected",
-                "Адвокат отклонил действие.",
+                "in_progress",
+                "Действие уже выполняется другим исполнительным процессом.",
             )
         if request.state is ActionState.EXECUTED:
-            return ExecutionResult(
-                action_id,
-                "invalid_state",
-                "Действие уже выполнено.",
-            )
+            return ExecutionResult(action_id, "invalid_state", "Действие уже выполнено.")
         if request.state is not ActionState.APPROVED:
-            return ExecutionResult(
-                action_id,
-                "invalid_state",
-                "Недопустимое состояние действия.",
-            )
+            return ExecutionResult(action_id, "invalid_state", "Недопустимое состояние действия.")
         if not request.payload_hash:
             return ExecutionResult(
                 action_id,
@@ -104,29 +99,66 @@ class ApprovalExecutionService:
 
         handler = self._handlers.get(request.action_type)
         if handler is None:
+            return ExecutionResult(action_id, "not_found", "Действие не зарегистрировано.")
+
+        try:
+            self.store.claim_for_execution(action_id, executor_id=self.executor_id)
+        except ValueError:
+            current = self.store.get(action_id)
+            if current is not None and current.state is ActionState.EXECUTING:
+                return ExecutionResult(
+                    action_id,
+                    "in_progress",
+                    "Действие уже выполняется другим исполнительным процессом.",
+                )
+            if current is not None and current.state is ActionState.EXECUTED:
+                return ExecutionResult(action_id, "invalid_state", "Действие уже выполнено.")
             return ExecutionResult(
                 action_id,
-                "not_found",
-                "Действие не зарегистрировано.",
+                "claim_failed",
+                "Не удалось безопасно зафиксировать право на выполнение действия.",
             )
+
         try:
             result = handler(payload)
         except Exception as exc:
+            error_text = str(exc) or exc.__class__.__name__
+            try:
+                self.store.release_execution_claim(
+                    action_id,
+                    executor_id=self.executor_id,
+                    error=error_text,
+                )
+            except Exception:
+                # Fail closed: if claim release itself cannot be persisted, another worker must not
+                # assume the action is safely retryable. Operational recovery can inspect EXECUTING.
+                return ExecutionResult(
+                    action_id,
+                    "execution_recovery_required",
+                    "Действие не выполнено; состояние исполнительного claim требует проверки.",
+                    {"error": error_text},
+                )
             return ExecutionResult(
                 action_id,
                 "error",
-                "Действие не выполнено.",
-                {"error": str(exc)},
+                "Действие не выполнено; одобрение сохранено для контролируемой повторной попытки.",
+                {"error": error_text},
             )
 
-        self.store.mark_executed(action_id)
+        try:
+            self.store.mark_executed(action_id, executor_id=self.executor_id)
+        except Exception as exc:
+            # The side effect may already have happened. Never release the claim here: automatic
+            # retry could duplicate an external legal action. Human/ops reconciliation is required.
+            return ExecutionResult(
+                action_id,
+                "execution_recovery_required",
+                "Внешнее действие могло быть выполнено, но фиксация результата не завершена.",
+                {"error": str(exc) or exc.__class__.__name__},
+            )
+
         data = result if isinstance(result, dict) else {"result": result}
-        return ExecutionResult(
-            action_id,
-            "executed",
-            "Действие выполнено.",
-            data,
-        )
+        return ExecutionResult(action_id, "executed", "Действие выполнено.", data)
 
     def execute(
         self,
@@ -144,11 +176,7 @@ class ApprovalExecutionService:
         if self.store is not None:
             return self.execute_approved(request.approval_id, payload)
         if request.status != "pending":
-            return ExecutionResult(
-                request.approval_id,
-                "invalid_state",
-                "Запрос уже обработан.",
-            )
+            return ExecutionResult(request.approval_id, "invalid_state", "Запрос уже обработан.")
         if not approved:
             return ExecutionResult(
                 request.approval_id,
@@ -157,20 +185,11 @@ class ApprovalExecutionService:
             )
         handler = self._handlers.get(request.action)
         if handler is None:
-            return ExecutionResult(
-                request.approval_id,
-                "not_found",
-                "Действие не зарегистрировано.",
-            )
+            return ExecutionResult(request.approval_id, "not_found", "Действие не зарегистрировано.")
         try:
             result = handler(payload)
             data = result if isinstance(result, dict) else {"result": result}
-            return ExecutionResult(
-                request.approval_id,
-                "executed",
-                "Действие выполнено.",
-                data,
-            )
+            return ExecutionResult(request.approval_id, "executed", "Действие выполнено.", data)
         except Exception as exc:
             return ExecutionResult(
                 request.approval_id,

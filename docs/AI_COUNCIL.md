@@ -93,6 +93,14 @@ For contradiction work the default sequence is deliberately conservative: first 
 
 The generated script is preparation material only. It does not contact a witness, compel an answer, submit a document, file a motion or decide whether a question is procedurally permissible. Every step remains marked `requires_lawyer_approval=true`, and the final wording, order and admissibility of questions remain the lawyer's responsibility.
 
+## Court speech and motion outline
+
+`CourtOutlineGenerator` composes the case-theory, attack-surface and hearing-preparation layers into a structured outline rather than free-form advocacy text. Each section contains a thesis, its evidence references, contradiction/review points, legal questions for verification, relevant hearing questions and an optional requested-relief field.
+
+The outline generator has a strict authority boundary. It does not invent statutes, Supreme Court positions, case citations or remedies. Authorities enter the outline only through caller-supplied `LegalAuthorityRef` objects. Any authority marked `verified=false` is collected in `unverified_authorities` and sets `requires_source_verification=true`. Requested relief is likewise caller supplied; an omitted relief remains empty rather than being guessed.
+
+This layer is a drafting scaffold only. Every section remains marked `requires_lawyer_approval=true`, and the final legal characterization, authorities, wording, oral submission and filing decision remain with the lawyer.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -114,5 +122,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Attack-surface ranking must be explainable from explicit vulnerability signals and must not be presented as a legal conclusion or outcome probability.
 - Defense actions must remain preparation tasks, preserve source references and require explicit lawyer approval before any external action.
 - Hearing/interrogation scripts must preserve source trails, avoid automatic execution and keep document confrontation behind lawyer judgment.
+- Court outlines must not invent statutes, case law or requested relief; unverified caller-supplied authorities must remain visibly flagged.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

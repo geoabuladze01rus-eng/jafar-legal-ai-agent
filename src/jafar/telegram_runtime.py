@@ -89,16 +89,26 @@ class TelegramBotHttpClient:
         return await self._post("sendPhoto", data=data, files=files)
 
     async def send_poll(self, *, chat_id: int | str, poll: dict[str, Any]) -> dict[str, Any]:
-        """Send a validated Bot API poll without leaking the bot token in errors."""
+        """Send a validated Bot API 10 poll without leaking the bot token in errors."""
+        options = poll.get("options")
+        if not isinstance(options, list):
+            raise ValueError("telegram_poll_options_invalid")
         data: dict[str, Any] = {
             "chat_id": str(chat_id),
             "question": poll["question"],
-            "options": json.dumps(poll["options"]),
+            "options": json.dumps(
+                [{"text": str(option)} for option in options],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
             "is_anonymous": str(bool(poll["is_anonymous"])).lower(),
             "allows_multiple_answers": str(bool(poll["allows_multiple_answers"])).lower(),
             "type": poll["type"],
         }
-        for key in ("correct_option_id", "explanation", "open_period", "close_date"):
+        correct_option_ids = poll.get("correct_option_ids")
+        if correct_option_ids is not None:
+            data["correct_option_ids"] = json.dumps(correct_option_ids, separators=(",", ":"))
+        for key in ("explanation", "open_period", "close_date"):
             if poll.get(key) is not None:
                 data[key] = str(poll[key])
         return await self._post("sendPoll", data=data)

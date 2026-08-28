@@ -9,6 +9,9 @@ struct LiveDashboardView: View {
     @State private var approvalToConfirm: ApprovalItem?
     @State private var showingApprovalConfirmation = false
     @State private var rejectionTarget: ApprovalItem?
+    @State private var localAuthError: String?
+
+    private let localAuthenticator = LawyerLocalAuthenticator()
 
     var body: some View {
         NavigationStack {
@@ -24,7 +27,7 @@ struct LiveDashboardView: View {
                         urgentSignals
                         matters
 
-                        if let error = dashboard.errorMessage ?? approvals.errorMessage {
+                        if let error = localAuthError ?? dashboard.errorMessage ?? approvals.errorMessage {
                             Label(error, systemImage: "exclamationmark.triangle.fill")
                                 .font(.footnote)
                                 .foregroundStyle(JafarPalette.danger)
@@ -72,8 +75,9 @@ struct LiveDashboardView: View {
             Button("Отмена", role: .cancel) {}
         } message: { item in
             Text(
-                "Одобрение будет записано сервером на настроенного адвоката, но само "
-                    + "по себе не отправит письмо, документ или процессуальное обращение."
+                "Перед записью решения Джафар дополнительно запросит Face ID, Touch ID "
+                    + "или код-пароль устройства. Одобрение будет записано сервером на "
+                    + "настроенного адвоката, но само по себе не выполнит действие."
                     + "\n\n\(item.description)"
             )
         }
@@ -129,8 +133,8 @@ struct LiveDashboardView: View {
                 )
 
                 Label(
-                    "Личность адвоката для audit trail задаётся на backend и не может "
-                        + "быть подменена приложением.",
+                    "Личность адвоката задаётся на backend; каждое решение дополнительно "
+                        + "подтверждается локальной аутентификацией устройства.",
                     systemImage: "person.badge.shield.checkmark.fill"
                 )
                 .font(.caption)
@@ -397,6 +401,13 @@ struct LiveDashboardView: View {
 
     @MainActor
     private func approve(_ item: ApprovalItem) async {
+        localAuthError = nil
+        guard await localAuthenticator.authenticate(
+            reason: "Подтвердите личность для одобрения юридически значимого действия."
+        ) else {
+            localAuthError = "Одобрение отменено: личность на устройстве не подтверждена."
+            return
+        }
         if await approvals.approve(item) {
             approvalToConfirm = nil
             await refreshDashboard()
@@ -405,6 +416,13 @@ struct LiveDashboardView: View {
 
     @MainActor
     private func reject(_ item: ApprovalItem, reason: String) async {
+        localAuthError = nil
+        guard await localAuthenticator.authenticate(
+            reason: "Подтвердите личность для отклонения юридически значимого действия."
+        ) else {
+            localAuthError = "Отклонение отменено: личность на устройстве не подтверждена."
+            return
+        }
         if await approvals.reject(item, reason: reason) {
             rejectionTarget = nil
             await refreshDashboard()

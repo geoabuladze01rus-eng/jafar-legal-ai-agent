@@ -12,11 +12,7 @@ MILLION = Decimal("1000000")
 
 @dataclass(frozen=True, slots=True)
 class ProviderPricing:
-    """Configurable model pricing in USD per one million tokens.
-
-    Pricing changes independently from application code. Production should build this catalog
-    from reviewed configuration rather than embedding vendor prices in legal workflow logic.
-    """
+    """Configurable model pricing in USD per one million tokens."""
 
     input_per_million: Decimal
     output_per_million: Decimal
@@ -50,8 +46,6 @@ class TokenUsage:
 
     @classmethod
     def from_provider_metadata(cls, metadata: Mapping[str, Any]) -> TokenUsage | None:
-        """Normalize common provider usage shapes without retaining model output content."""
-
         usage = metadata.get("usage")
         if not isinstance(usage, Mapping):
             return None
@@ -213,7 +207,10 @@ class CostScaleControl:
     ) -> None:
         if not pricing_version.strip():
             raise ValueError("pricing_version_required")
-        self.pricing = dict(pricing)
+        self.pricing = {
+            (provider.strip().casefold(), model.strip()): value
+            for (provider, model), value in pricing.items()
+        }
         self.pricing_version = pricing_version.strip()
         self.ledger = ledger or CostLedger()
         self.limits = limits or BudgetLimits()
@@ -232,6 +229,35 @@ class CostScaleControl:
     def provider_enabled(self, provider: str) -> bool:
         with self._lock:
             return provider.strip().casefold() not in self._disabled_providers
+
+    def pricing_for(self, provider: str, model: str) -> ProviderPricing:
+        provider_key = provider.strip().casefold()
+        model_key = model.strip()
+        pricing = self.pricing.get((provider_key, model_key)) or self.pricing.get(
+            (provider_key, "*")
+        )
+        if pricing is None:
+            raise RuntimeError("provider_pricing_missing")
+        return pricing
+
+    def estimate_cost(
+        self,
+        *,
+        provider: str,
+        model: str,
+        input_tokens_upper_bound: int,
+        output_tokens_upper_bound: int,
+    ) -> Decimal:
+        if input_tokens_upper_bound < 0 or output_tokens_upper_bound < 0:
+            raise ValueError("token_estimate_must_be_non_negative")
+        return calculate_cost(
+            TokenUsage(
+                input_tokens=input_tokens_upper_bound,
+                cached_input_tokens=0,
+                output_tokens=output_tokens_upper_bound,
+            ),
+            self.pricing_for(provider, model),
+        )
 
     def preflight(self, context: UsageContext, *, estimated_cost_usd: Decimal) -> None:
         if estimated_cost_usd < 0:
@@ -270,15 +296,16 @@ class CostScaleControl:
                 raise RuntimeError("provider_usage_metadata_missing")
             return None
 
-        pricing = self.pricing.get((provider, model)) or self.pricing.get((provider, "*"))
-        if pricing is None:
+        try:
+            pricing = self.pricing_for(provider, model)
+        except RuntimeError:
             if self.fail_closed_on_missing_pricing:
-                raise RuntimeError("provider_pricing_missing")
+                raise
             return None
 
         record = CostRecord(
             context=context,
-            provider=provider,
+            provider=provider.strip().casefold(),
             model=model,
             usage=usage,
             cost_usd=calculate_cost(usage, pricing),

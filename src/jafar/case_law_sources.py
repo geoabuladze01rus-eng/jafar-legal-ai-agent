@@ -44,6 +44,11 @@ class CaseLawSourceItem:
         return sha256(raw.encode("utf-8")).hexdigest()
 
 
+class CaseLawSourceFetcher(Protocol):
+    def fetch_since(self, since: date | None = None) -> tuple[CaseLawSourceItem, ...]:
+        ...
+
+
 class CaseLawSourceAdapter(Protocol):
     name: str
     trust: SourceTrust
@@ -68,7 +73,7 @@ class SupremeCourtSourceAdapter:
     name = "supreme_court_rf"
     trust = SourceTrust.CANONICAL
 
-    def __init__(self, fetcher: Protocol) -> None:
+    def __init__(self, fetcher: CaseLawSourceFetcher) -> None:
         self.fetcher = fetcher
 
     def fetch_since(self, since: date | None = None) -> tuple[CaseLawSourceItem, ...]:
@@ -101,7 +106,7 @@ class SudactDiscoveryAdapter:
     name = "sudact"
     trust = SourceTrust.DISCOVERY
 
-    def __init__(self, fetcher: Protocol) -> None:
+    def __init__(self, fetcher: CaseLawSourceFetcher) -> None:
         self.fetcher = fetcher
 
     def fetch_since(self, since: date | None = None) -> tuple[CaseLawSourceItem, ...]:

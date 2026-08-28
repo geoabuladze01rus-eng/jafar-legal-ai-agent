@@ -1,18 +1,54 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Any, Protocol
 
 
 VALID_ENTITY_QUERY_TYPES = {"name", "inn", "ogrn", "kpp"}
+_KPP_RE = re.compile(r"^[0-9]{4}[0-9A-Z]{2}[0-9]{3}$")
+
+
+def _weighted_control_digit(value: str, weights: tuple[int, ...]) -> int:
+    return sum(int(digit) * weight for digit, weight in zip(value, weights, strict=True)) % 11 % 10
+
+
+def valid_inn(value: str) -> bool:
+    if not value.isdigit():
+        return False
+    if len(value) == 10:
+        weights = (2, 4, 10, 3, 5, 9, 4, 6, 8)
+        return _weighted_control_digit(value[:9], weights) == int(value[9])
+    if len(value) == 12:
+        first_weights = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
+        second_weights = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
+        first = _weighted_control_digit(value[:10], first_weights)
+        second = _weighted_control_digit(value[:11], second_weights)
+        return first == int(value[10]) and second == int(value[11])
+    return False
+
+
+def valid_ogrn(value: str) -> bool:
+    if not value.isdigit():
+        return False
+    if len(value) == 13:
+        return int(value[:12]) % 11 % 10 == int(value[12])
+    if len(value) == 15:
+        return int(value[:14]) % 13 % 10 == int(value[14])
+    return False
+
+
+def valid_kpp(value: str) -> bool:
+    return bool(_KPP_RE.fullmatch(value.upper()))
 
 
 @dataclass(frozen=True, slots=True, init=False)
 class EntityQuery:
     """Canonical legal-entity query used by API, adapters and intelligence.
 
-    The class accepts the current ``value/query_type`` shape and remains backward-compatible
-    with keyword identifier construction such as ``EntityQuery(inn="7701234567")``.
+    Russian identifiers are validated before they can enter the source pipeline. INN and
+    OGRN/OGRNIP include official control-digit validation. KPP has no checksum, so its
+    documented structural form is validated instead.
     """
 
     value: str
@@ -59,13 +95,14 @@ class EntityQuery:
             raise ValueError("entity_query_value_too_long")
 
         if normalized_type == "inn":
-            if not normalized_value.isdigit() or len(normalized_value) not in {10, 12}:
+            if not valid_inn(normalized_value):
                 raise ValueError("invalid_inn")
         elif normalized_type == "ogrn":
-            if not normalized_value.isdigit() or len(normalized_value) not in {13, 15}:
+            if not valid_ogrn(normalized_value):
                 raise ValueError("invalid_ogrn")
         elif normalized_type == "kpp":
-            if not normalized_value.isdigit() or len(normalized_value) != 9:
+            normalized_value = normalized_value.upper()
+            if not valid_kpp(normalized_value):
                 raise ValueError("invalid_kpp")
 
         object.__setattr__(self, "value", normalized_value)
@@ -74,12 +111,15 @@ class EntityQuery:
     @classmethod
     def infer(cls, value: str) -> "EntityQuery":
         normalized = value.strip()
-        digits = "".join(ch for ch in normalized if ch.isdigit())
-        if normalized.isdigit() and len(digits) in {10, 12}:
-            return cls(normalized, "inn")
-        if normalized.isdigit() and len(digits) in {13, 15}:
-            return cls(normalized, "ogrn")
-        if normalized.isdigit() and len(digits) == 9:
+        if normalized.isdigit() and len(normalized) in {10, 12}:
+            if valid_inn(normalized):
+                return cls(normalized, "inn")
+            return cls(normalized, "name")
+        if normalized.isdigit() and len(normalized) in {13, 15}:
+            if valid_ogrn(normalized):
+                return cls(normalized, "ogrn")
+            return cls(normalized, "name")
+        if len(normalized) == 9 and valid_kpp(normalized):
             return cls(normalized, "kpp")
         return cls(normalized, "name")
 
@@ -270,4 +310,6 @@ class LegalEntityIntelligence:
 
 
 def error_to_details(exc: Exception) -> dict[str, Any]:
-    return {"reason": str(exc), "type": type(exc).__name__}
+    """Return a stable error class without exposing provider exception text or secrets."""
+
+    return {"reason": "source_lookup_failed", "type": type(exc).__name__}

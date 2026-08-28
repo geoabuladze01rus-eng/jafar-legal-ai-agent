@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .document_intake import ExtractedDocument
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceSource:
@@ -36,6 +38,31 @@ class CaseEvidenceGraph:
 
     def add_source(self, source: EvidenceSource) -> None:
         self._sources[source.evidence_id] = source
+
+    def add_document_fragments(
+        self,
+        document: ExtractedDocument,
+        *,
+        document_name: str | None = None,
+        actor: str | None = None,
+        event_id: str | None = None,
+        max_chars: int = 2_000,
+    ) -> tuple[EvidenceSource, ...]:
+        sources: list[EvidenceSource] = []
+        for fragment in document.fragments(max_chars=max_chars):
+            source = EvidenceSource(
+                evidence_id=document.evidence_id(fragment),
+                document_name=document_name or document.filename,
+                document_fingerprint=document.fingerprint,
+                excerpt=fragment.text,
+                page=fragment.page,
+                actor=actor,
+                event_id=event_id,
+                metadata={"chunk_index": fragment.chunk_index},
+            )
+            self.add_source(source)
+            sources.append(source)
+        return tuple(sources)
 
     def add_claim(
         self,

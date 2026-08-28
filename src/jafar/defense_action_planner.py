@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from .attack_surface import AttackSurfaceItem, AttackSurfaceReport
+from .attack_surface import (
+    AttackSignalKind,
+    AttackSurfaceItem,
+    AttackSurfaceReport,
+)
 
 
 class DefenseActionType(StrEnum):
@@ -40,8 +44,9 @@ class DefenseActionPlan:
 class DefenseActionPlanner:
     """Convert ranked prosecution weak points into source-traceable defense tasks.
 
-    The planner suggests preparation and verification steps only. It never files, sends,
-    schedules, or executes an external legal action without lawyer approval.
+    Stable `AttackSignalKind` values drive planning. Human-readable reason text is output
+    only and is never parsed as control logic. External legal action still requires lawyer
+    approval.
     """
 
     def build(self, attack_surface: AttackSurfaceReport) -> DefenseActionPlan:
@@ -80,7 +85,7 @@ class DefenseActionPlanner:
         actions: list[DefenseAction] = []
         combined_sources = tuple((*item.prosecution_sources, *item.defense_sources))
         base_priority = min(100, max(10, item.score))
-        reasons = " ".join(item.reasons).casefold()
+        signals = set(item.signals)
 
         actions.append(
             self._action(
@@ -93,7 +98,7 @@ class DefenseActionPlanner:
             )
         )
 
-        if item.defense_sources or "противореч" in reasons:
+        if item.defense_sources or AttackSignalKind.CONTRADICTED in signals:
             actions.append(
                 self._action(
                     item,
@@ -115,7 +120,7 @@ class DefenseActionPlanner:
                 )
             )
 
-        if "временн" in reasons or "хронолог" in reasons:
+        if AttackSignalKind.REVIEW_REQUIRED in signals:
             actions.append(
                 self._action(
                     item,
@@ -127,7 +132,13 @@ class DefenseActionPlanner:
                 )
             )
 
-        if "единствен" in reasons or "нет подтверждения" in reasons or "не имеет валидной" in reasons:
+        if signals.intersection(
+            {
+                AttackSignalKind.SINGLE_SOURCE,
+                AttackSignalKind.SINGLE_DOCUMENT_FINGERPRINT,
+                AttackSignalKind.UNSUPPORTED,
+            }
+        ):
             actions.append(
                 self._action(
                     item,
@@ -151,7 +162,10 @@ class DefenseActionPlanner:
                 )
             )
 
-        if any("эксперт" in str(source.get("actor", "")).casefold() for source in combined_sources):
+        if any(
+            "эксперт" in str(source.get("actor", "")).casefold()
+            for source in combined_sources
+        ):
             actions.append(
                 self._action(
                     item,

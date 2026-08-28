@@ -6,7 +6,13 @@ from datetime import timedelta
 import pytest
 
 from jafar.telegram_polls import TelegramPollStore, validate_poll
-from jafar.telegram_publishing import TelegramPublisher, split_telegram_text, validate_photo_bytes
+from jafar.telegram_publishing import (
+    TelegramPublisher,
+    split_telegram_text,
+    validate_filename,
+    validate_photo_bytes,
+    validate_photo_url,
+)
 from jafar.telegram_scheduler import TelegramScheduler, TelegramScheduleStore, utc_now
 
 
@@ -32,6 +38,14 @@ def test_text_is_split_without_loss() -> None:
     assert all(len(part) <= 4096 for part in parts)
 
 
+def test_text_split_preserves_boundary_whitespace_exactly() -> None:
+    text = ("абзац " * 900) + "\n\nФинал  с  пробелами"
+    parts = split_telegram_text(text, limit=128)
+    assert len(parts) > 2
+    assert "".join(parts) == text
+    assert all(len(part) <= 128 for part in parts)
+
+
 def test_photo_and_long_text_publish_separately() -> None:
     bot = FakeBot()
     publisher = TelegramPublisher(lambda: bot, lambda chat: str(chat))
@@ -46,6 +60,27 @@ def test_photo_and_long_text_publish_separately() -> None:
 def test_photo_mime_validation_rejects_non_image() -> None:
     with pytest.raises(ValueError, match="PNG"):
         validate_photo_bytes(b"not-an-image")
+
+
+def test_photo_url_rejects_embedded_credentials() -> None:
+    with pytest.raises(ValueError, match="credentials"):
+        validate_photo_url("https://user:password@example.com/image.png")
+
+
+def test_filename_rejects_header_injection_characters() -> None:
+    with pytest.raises(ValueError, match="control characters"):
+        validate_filename("image.png\r\nX-Evil: yes")
+
+
+def test_publisher_requires_message_id_from_telegram() -> None:
+    class MissingIdBot(FakeBot):
+        async def send_message(self, *, chat_id: str, text: str) -> dict:
+            self.messages.append(text)
+            return {}
+
+    publisher = TelegramPublisher(lambda: MissingIdBot(), lambda chat: str(chat))
+    with pytest.raises(RuntimeError, match="message_id"):
+        asyncio.run(publisher.publish(chat_id="1", text="hello"))
 
 
 def test_schedule_persists_cancel_and_idempotency(tmp_path) -> None:

@@ -123,7 +123,12 @@ class CostRecord:
     model: str
     usage: TokenUsage
     cost_usd: Decimal
+    pricing_version: str = "unversioned"
     recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        if not self.pricing_version.strip():
+            raise ValueError("pricing_version_required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,8 +209,12 @@ class CostScaleControl:
         ledger: CostLedgerRepository | None = None,
         limits: BudgetLimits | None = None,
         fail_closed_on_missing_pricing: bool = True,
+        pricing_version: str = "unversioned",
     ) -> None:
+        if not pricing_version.strip():
+            raise ValueError("pricing_version_required")
         self.pricing = dict(pricing)
+        self.pricing_version = pricing_version.strip()
         self.ledger = ledger or CostLedger()
         self.limits = limits or BudgetLimits()
         self.fail_closed_on_missing_pricing = fail_closed_on_missing_pricing
@@ -273,6 +282,7 @@ class CostScaleControl:
             model=model,
             usage=usage,
             cost_usd=calculate_cost(usage, pricing),
+            pricing_version=self.pricing_version,
         )
         self.ledger.record(record)
         return record

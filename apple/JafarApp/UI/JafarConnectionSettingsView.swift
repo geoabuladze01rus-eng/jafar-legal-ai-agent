@@ -5,6 +5,7 @@ struct JafarConnectionSettingsView: View {
 
     @State private var baseURL = JafarAPIConfiguration.baseURLString
     @State private var token = JafarCredentialStore.readToken() ?? ""
+    @State private var approvalIdentity = JafarApprovalIdentity.value
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var isTesting = false
@@ -20,6 +21,17 @@ struct JafarConnectionSettingsView: View {
 
                     SecureField("API token", text: $token)
                         .textFieldStyle(.roundedBorder)
+
+                    TextField("Имя или ID адвоката", text: $approvalIdentity)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.name)
+
+                    Text(
+                        "Имя или ID используется только для фиксации того, кто явно "
+                            + "одобрил или отклонил юридически значимое действие."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                     Text(
                         "Для рабочего сервера используется HTTPS. HTTP разрешён только "
@@ -49,6 +61,10 @@ struct JafarConnectionSettingsView: View {
                     Label(
                         "Юридические данные не записываются в настройки",
                         systemImage: "lock.shield.fill"
+                    )
+                    Label(
+                        "Одобрение не означает автоматическую отправку или подачу",
+                        systemImage: "hand.raised.fill"
                     )
                     Label(
                         "Пустой адрес переводит приложение в локальный режим",
@@ -147,6 +163,7 @@ struct JafarConnectionSettingsView: View {
         }
         do {
             try JafarAPIConfiguration.save(baseURLString: baseURL, token: token)
+            JafarApprovalIdentity.save(approvalIdentity)
             errorMessage = nil
             onSaved()
             dismiss()

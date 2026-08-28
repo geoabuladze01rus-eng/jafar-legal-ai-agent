@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 
+MAX_POLL_CLOSE_SECONDS = 2_628_000
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -19,42 +22,71 @@ def validate_poll(
     allows_multiple_answers: bool = False,
     poll_type: str = "regular",
     correct_option_id: int | None = None,
+    correct_option_ids: list[int] | None = None,
     explanation: str | None = None,
     open_period: int | None = None,
     close_date: int | None = None,
 ) -> dict[str, Any]:
+    """Normalize the Bot API 10 poll contract while accepting the legacy singular quiz field."""
+
     question = question.strip()
     options = [option.strip() for option in options]
     if not 1 <= len(question) <= 300:
         raise ValueError("question must contain 1 to 300 characters")
-    if not 2 <= len(options) <= 10 or any(not 1 <= len(option) <= 100 for option in options):
-        raise ValueError("options must contain 2 to 10 non-empty values of at most 100 characters")
+    if not 1 <= len(options) <= 12 or any(not 1 <= len(option) <= 100 for option in options):
+        raise ValueError("options must contain 1 to 12 non-empty values of at most 100 characters")
     if poll_type not in {"regular", "quiz"}:
         raise ValueError("poll_type must be regular or quiz")
-    if poll_type == "regular" and (correct_option_id is not None or explanation):
-        raise ValueError("correct_option_id and explanation are only valid for quiz polls")
-    if poll_type == "quiz":
-        if correct_option_id is None or not 0 <= correct_option_id < len(options):
-            raise ValueError("quiz polls require a valid correct_option_id")
-        if allows_multiple_answers:
-            raise ValueError("quiz polls cannot allow multiple answers")
-        if explanation and len(explanation) > 200:
-            raise ValueError("explanation must not exceed 200 characters")
+    if correct_option_id is not None and correct_option_ids is not None:
+        raise ValueError("provide only one of correct_option_id and correct_option_ids")
+
+    normalized_correct: list[int] | None
+    if correct_option_ids is not None:
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in correct_option_ids):
+            raise ValueError("correct_option_ids must contain integer option indexes")
+        normalized_correct = sorted(set(correct_option_ids))
+    elif correct_option_id is not None:
+        if isinstance(correct_option_id, bool):
+            raise ValueError("correct_option_id must be an integer option index")
+        normalized_correct = [correct_option_id]
+    else:
+        normalized_correct = None
+
+    if poll_type == "regular":
+        if normalized_correct or explanation:
+            raise ValueError("correct options and explanation are only valid for quiz polls")
+        normalized_correct = None
+    else:
+        if not normalized_correct:
+            raise ValueError("quiz polls require at least one correct option")
+        if any(value < 0 or value >= len(options) for value in normalized_correct):
+            raise ValueError("quiz polls require valid correct option indexes")
+        if len(normalized_correct) > 1 and not allows_multiple_answers:
+            raise ValueError("multiple correct quiz answers require allows_multiple_answers=true")
+        if explanation is not None:
+            explanation = explanation.strip()
+            if len(explanation) > 200 or explanation.count("\n") > 2:
+                raise ValueError("explanation must not exceed 200 characters or 2 line feeds")
+
     if open_period is not None and close_date is not None:
         raise ValueError("provide only one of open_period and close_date")
-    if open_period is not None and not 5 <= open_period <= 600:
-        raise ValueError("open_period must be between 5 and 600 seconds")
+    if open_period is not None and not 5 <= open_period <= MAX_POLL_CLOSE_SECONDS:
+        raise ValueError(
+            f"open_period must be between 5 and {MAX_POLL_CLOSE_SECONDS} seconds"
+        )
     if close_date is not None:
         seconds = close_date - int(datetime.now(UTC).timestamp())
-        if not 5 <= seconds <= 600:
-            raise ValueError("close_date must be 5 to 600 seconds in the future")
+        if not 5 <= seconds <= MAX_POLL_CLOSE_SECONDS:
+            raise ValueError(
+                f"close_date must be 5 to {MAX_POLL_CLOSE_SECONDS} seconds in the future"
+            )
     return {
         "question": question,
         "options": options,
-        "is_anonymous": is_anonymous,
-        "allows_multiple_answers": allows_multiple_answers,
+        "is_anonymous": bool(is_anonymous),
+        "allows_multiple_answers": bool(allows_multiple_answers),
         "type": poll_type,
-        "correct_option_id": correct_option_id,
+        "correct_option_ids": normalized_correct,
         "explanation": explanation,
         "open_period": open_period,
         "close_date": close_date,
@@ -66,6 +98,7 @@ class TelegramPollStore:
         self.path = str(path)
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
+            con.execute("PRAGMA journal_mode=WAL")
             con.execute("""CREATE TABLE IF NOT EXISTS telegram_polls (
                 poll_id TEXT PRIMARY KEY, chat_id TEXT, message_id INTEGER, question TEXT NOT NULL,
                 options_json TEXT NOT NULL, poll_json TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -76,12 +109,15 @@ class TelegramPollStore:
             )""")
 
     def _connect(self) -> sqlite3.Connection:
-        con = sqlite3.connect(self.path)
+        con = sqlite3.connect(self.path, timeout=5.0)
         con.row_factory = sqlite3.Row
+        con.execute("PRAGMA busy_timeout=5000")
         return con
 
     def record_sent(self, *, poll: dict[str, Any], chat_id: str, message_id: int | None) -> None:
-        poll_id = str(poll["id"])
+        poll_id = str(poll["id"]).strip()
+        if not poll_id:
+            raise ValueError("telegram_poll_id_required")
         with self._connect() as con:
             con.execute(
                 "INSERT OR REPLACE INTO telegram_polls VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -90,8 +126,8 @@ class TelegramPollStore:
                     chat_id,
                     message_id,
                     poll.get("question", ""),
-                    json.dumps(poll.get("options", [])),
-                    json.dumps(poll),
+                    json.dumps(poll.get("options", []), ensure_ascii=False),
+                    json.dumps(poll, ensure_ascii=False),
                     _now(),
                 ),
             )
@@ -101,24 +137,40 @@ class TelegramPollStore:
         if isinstance(poll, dict) and poll.get("id"):
             self._upsert_poll(poll)
             return True
+
         answer = update.get("poll_answer")
-        if (
-            isinstance(answer, dict)
-            and answer.get("poll_id")
-            and answer.get("user", {}).get("id") is not None
-        ):
-            with self._connect() as con:
-                con.execute(
-                    "INSERT OR REPLACE INTO telegram_poll_answers VALUES (?, ?, ?, ?)",
-                    (
-                        str(answer["poll_id"]),
-                        str(answer["user"]["id"]),
-                        json.dumps(answer.get("option_ids", [])),
-                        _now(),
-                    ),
-                )
-            return True
-        return False
+        if not isinstance(answer, dict) or not answer.get("poll_id"):
+            return False
+        voter_key = self._voter_key(answer)
+        if voter_key is None:
+            return False
+        poll_id = str(answer["poll_id"])
+        with self._connect() as con:
+            exists = con.execute(
+                "SELECT 1 FROM telegram_polls WHERE poll_id=?", (poll_id,)
+            ).fetchone()
+            if exists is None:
+                return False
+            con.execute(
+                "INSERT OR REPLACE INTO telegram_poll_answers VALUES (?, ?, ?, ?)",
+                (
+                    poll_id,
+                    voter_key,
+                    json.dumps(answer.get("option_ids", [])),
+                    _now(),
+                ),
+            )
+        return True
+
+    @staticmethod
+    def _voter_key(answer: dict[str, Any]) -> str | None:
+        user = answer.get("user")
+        if isinstance(user, dict) and user.get("id") is not None:
+            return str(user["id"])
+        voter_chat = answer.get("voter_chat")
+        if isinstance(voter_chat, dict) and voter_chat.get("id") is not None:
+            return f"chat:{voter_chat['id']}"
+        return None
 
     def _upsert_poll(self, poll: dict[str, Any]) -> None:
         poll_id = str(poll["id"])
@@ -133,24 +185,29 @@ class TelegramPollStore:
                     old["chat_id"] if old else None,
                     old["message_id"] if old else None,
                     poll.get("question", ""),
-                    json.dumps(poll.get("options", [])),
-                    json.dumps(poll),
+                    json.dumps(poll.get("options", []), ensure_ascii=False),
+                    json.dumps(poll, ensure_ascii=False),
                     _now(),
                 ),
             )
 
     def results(self, poll_id: str) -> dict[str, Any]:
+        key = poll_id.strip()
+        if not key:
+            raise ValueError("poll_id must not be empty")
         with self._connect() as con:
-            row = con.execute("SELECT * FROM telegram_polls WHERE poll_id=?", (poll_id,)).fetchone()
+            row = con.execute("SELECT * FROM telegram_polls WHERE poll_id=?", (key,)).fetchone()
             answers = con.execute(
                 "SELECT user_id, option_ids_json FROM telegram_poll_answers WHERE poll_id=?",
-                (poll_id,),
+                (key,),
             ).fetchall()
         if row is None:
-            raise KeyError(poll_id)
+            raise KeyError(key)
         poll = json.loads(row["poll_json"])
+        if not isinstance(poll, dict):
+            raise RuntimeError("telegram_poll_payload_invalid")
         return {
-            "poll_id": poll_id,
+            "poll_id": key,
             "chat_id": row["chat_id"],
             "message_id": row["message_id"],
             "poll": poll,

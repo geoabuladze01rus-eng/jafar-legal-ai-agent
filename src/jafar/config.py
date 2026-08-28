@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +13,12 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"
+    ai_cost_control_enabled: bool = False
+    ai_pricing_json: str | None = None
+    ai_cost_per_request_usd: Decimal | None = None
+    ai_cost_user_daily_usd: Decimal | None = None
+    ai_cost_user_monthly_usd: Decimal | None = None
+    ai_cost_global_daily_usd: Decimal | None = None
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False

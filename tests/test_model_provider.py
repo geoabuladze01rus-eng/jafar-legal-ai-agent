@@ -1,4 +1,5 @@
 import json
+import urllib.error
 
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
@@ -68,3 +69,44 @@ def test_provider_json_parser_accepts_json_fence():
     }
     parsed = OpenAICompatibleProvider._parse_json(f"```json\n{json.dumps(payload)}\n```")
     assert parsed == payload
+
+
+class _Response:
+    def __init__(self, body): self.body = body if isinstance(body, bytes) else json.dumps(body).encode()
+    def __enter__(self): return self
+    def __exit__(self, *_): return False
+    def read(self, *_): return self.body
+    def close(self): pass
+
+
+def test_provider_uses_responses_contract_and_extracts_output_text():
+    seen = {}
+    def transport(request, timeout):
+        seen.update(url=request.full_url, payload=json.loads(request.data))
+        return _Response({"output_text": '{"summary":"ok"}'})
+    result, category, status = OpenAICompatibleProvider("k", "gpt-test", transport=transport).analyze_with_diagnostics(
+        "synthetic", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL
+    )
+    assert result == {"summary": "ok"} and category is None and status is None
+    assert seen["url"].endswith("/responses")
+    assert "messages" not in seen["payload"]
+    assert seen["payload"]["input"][0]["content"][0]["type"] == "input_text"
+
+
+def test_provider_classifies_http_and_transport_failures():
+    def fail(status, body=b""):
+        def transport(request, timeout):
+            raise urllib.error.HTTPError(request.full_url, status, "x", {}, _Response(body))
+        return OpenAICompatibleProvider("k", "m", transport=transport).analyze_with_diagnostics("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL)[1]
+    assert fail(400) == "INVALID_REQUEST"
+    assert fail(401) == "AUTHENTICATION"
+    assert fail(404) == "MODEL_UNAVAILABLE"
+    assert fail(429) == "RATE_LIMIT"
+    assert fail(429, b'{"error":{"code":"insufficient_quota"}}') == "QUOTA_OR_BILLING"
+    assert fail(500) == "PROVIDER_ERROR"
+
+    def timeout(request, timeout): raise TimeoutError()
+    assert OpenAICompatibleProvider("k", "m", transport=timeout).analyze_with_diagnostics("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL)[1] == "TIMEOUT"
+
+    def network(request, timeout): raise urllib.error.URLError("offline")
+    assert OpenAICompatibleProvider("k", "m", transport=network).analyze_with_diagnostics("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL)[1] == "NETWORK"

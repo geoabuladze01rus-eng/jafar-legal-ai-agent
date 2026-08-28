@@ -19,3 +19,8 @@ When `API_KEY` is absent, Jafar never makes a model network call and uses the de
 The model receives the document text and task/matter type and must return structured JSON. The response is validated against Jafar's Pydantic models. Malformed, unavailable, or timed-out model responses are discarded and the deterministic result is returned.
 
 This is an analysis/enrichment layer, not an authorization layer: consequential actions such as sending messages, changing matters, creating deadlines, or publishing content remain behind explicit application controls.
+## OpenAI Responses API (offline acceptance)
+
+The OpenAI adapter uses `POST /v1/responses` with `model` and structured `input` messages. It reads the SDK-compatible `output_text` field (and safely handles equivalent output content blocks). The adapter exposes diagnostics without logging credentials, prompts, or response bodies. Offline tests cover valid and malformed responses plus authentication, quota, rate-limit, model, request, provider, timeout, and network failures.
+
+The live smoke script is dry-run by default. A second synthetic smoke remains gated until the existing key is connected locally and an explicit opt-in is authorized; no live request was made during this migration.

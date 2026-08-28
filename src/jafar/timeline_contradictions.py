@@ -96,11 +96,6 @@ class TimelineContradictionAnalyzer:
                 right_sources=right_sources,
             )
 
-        if left.latest_at and right.earliest_at and left.latest_at < right.earliest_at:
-            return None
-        if right.latest_at and left.earliest_at and right.latest_at < left.earliest_at:
-            return None
-
         if self._windows_disjoint(left, right):
             return TimelineContradiction(
                 topic=topic,
@@ -150,11 +145,12 @@ class TimelineContradictionAnalyzer:
         graph: CaseEvidenceGraph,
         assertion: TimelineAssertion,
     ) -> tuple[EvidenceSource, ...]:
-        return tuple(
-            source
-            for evidence_id in assertion.evidence_ids
-            if (source := graph.source(evidence_id)) is not None
-        )
+        if not assertion.evidence_ids:
+            return ()
+        sources = tuple(graph.source(evidence_id) for evidence_id in assertion.evidence_ids)
+        if any(source is None for source in sources):
+            return ()
+        return tuple(source for source in sources if source is not None)
 
     @staticmethod
     def _serialize(item: TimelineContradiction) -> dict[str, Any]:

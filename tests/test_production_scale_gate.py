@@ -10,12 +10,14 @@ def _secure_production(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "api_key", "a-secure-production-api-key-123456")
     monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer-1")
     monkeypatch.setattr(main, "validate_storage_security", lambda _settings: None)
+    monkeypatch.setattr(main.settings, "storage_backend", "supabase")
     monkeypatch.setattr(main.settings, "ai_cost_control_enabled", True)
     monkeypatch.setattr(
         main.settings,
         "ai_pricing_json",
         '{"openai":{"*":{"input":"1","output":"4"}}}',
     )
+    monkeypatch.setattr(main.settings, "ai_pricing_version", "2026-08-28-reviewed")
     monkeypatch.setattr(main.settings, "ai_cost_per_request_usd", Decimal("1"))
     monkeypatch.setattr(main.settings, "ai_cost_user_daily_usd", Decimal("10"))
     monkeypatch.setattr(main.settings, "ai_cost_user_monthly_usd", Decimal("100"))
@@ -37,11 +39,19 @@ def test_production_requires_cost_control(monkeypatch) -> None:
         main.validate_runtime_security()
 
 
+def test_production_requires_versioned_reviewed_pricing(monkeypatch) -> None:
+    _secure_production(monkeypatch)
+    monkeypatch.setattr(main.settings, "ai_pricing_version", None)
+
+    with pytest.raises(RuntimeError, match="AI_PRICING_VERSION"):
+        main.validate_runtime_security()
+
+
 def test_production_requires_all_positive_spend_limits(monkeypatch) -> None:
     _secure_production(monkeypatch)
     monkeypatch.setattr(main.settings, "ai_cost_user_daily_usd", Decimal("0"))
 
-    with pytest.raises(RuntimeError, match="positive AI_COST_USER_DAILY_USD"):
+    with pytest.raises(RuntimeError, match="AI_COST_USER_DAILY_USD"):
         main.validate_runtime_security()
 
 

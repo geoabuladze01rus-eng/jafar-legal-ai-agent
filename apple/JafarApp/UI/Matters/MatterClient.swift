@@ -10,6 +10,7 @@ struct MatterSummary: Codable, Identifiable, Sendable {
     let updatedAt: Date
     enum CodingKeys: String, CodingKey { case id, title, matterType = "matter_type", clientName = "client_name", caseNumber = "case_number", status, updatedAt = "updated_at" }
 }
+struct MatterDeadlineDTO: Codable, Sendable { let title: String; let dueDate: String?; let sourceText: String?; enum CodingKeys: String, CodingKey { case title, dueDate = "due_date", sourceText = "source_text" } }
 struct MatterEventDTO: Codable, Identifiable, Sendable { let id: String; let matterID: String; let title: String; let eventDate: Date; let description: String?; let sourceDocument: String?; enum CodingKeys: String, CodingKey { case id, matterID = "matter_id", title, eventDate = "event_date", description, sourceDocument = "source_document" } }
 
 enum MatterClientError: LocalizedError { case unavailable, invalidResponse, notFound, http(Int)
@@ -17,6 +18,7 @@ enum MatterClientError: LocalizedError { case unavailable, invalidResponse, notF
 }
 
 extension MatterClient {
+    func deadlines(id: String) async throws -> [MatterDeadlineDTO] { var request = URLRequest(url: endpoint.appendingPathComponent("v1/matters/\(id)/deadlines")); request.httpMethod = "GET"; if let apiKey { request.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key") }; let (data, response) = try await URLSession.shared.data(for: request); guard let http = response as? HTTPURLResponse else { throw MatterClientError.invalidResponse }; guard (200...299).contains(http.statusCode) else { throw MatterClientError.http(http.statusCode) }; return try JSONDecoder().decode([MatterDeadlineDTO].self, from: data) }
     func documents(id: String) async throws -> [MatterDocumentDTO] { var request = URLRequest(url: endpoint.appendingPathComponent("v1/matters/\(id)/documents")); request.httpMethod = "GET"; if let apiKey { request.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key") }; let (data, response) = try await URLSession.shared.data(for: request); guard let http = response as? HTTPURLResponse else { throw MatterClientError.invalidResponse }; guard (200...299).contains(http.statusCode) else { throw MatterClientError.http(http.statusCode) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; return try decoder.decode([MatterDocumentDTO].self, from: data) }
     func events(id: String) async throws -> [MatterEventDTO] { var request = URLRequest(url: endpoint.appendingPathComponent("v1/matters/\(id)/events")); request.httpMethod = "GET"; if let apiKey { request.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key") }; let (data, response) = try await URLSession.shared.data(for: request); guard let http = response as? HTTPURLResponse else { throw MatterClientError.invalidResponse }; if http.statusCode == 404 { throw MatterClientError.notFound }; guard (200...299).contains(http.statusCode) else { throw MatterClientError.http(http.statusCode) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; return try decoder.decode([MatterEventDTO].self, from: data).sorted { $0.eventDate < $1.eventDate } }
     func get(id: String) async throws -> MatterSummary {

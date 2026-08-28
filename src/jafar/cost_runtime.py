@@ -10,7 +10,54 @@ from .supabase_config import SupabaseSettings, build_supabase_client
 from .supabase_cost_ledger import SupabaseCostLedger
 
 
+def validate_production_ai_scale(settings: Settings) -> None:
+    """Require explicit commercial safety controls before production startup.
+
+    Development remains lightweight, but a production deployment must not be able to silently
+    run an unmetered or single-process AI workload. This guard intentionally checks configuration
+    only; network/database availability is validated by the concrete Supabase runtime builders.
+    """
+
+    if settings.environment.strip().casefold() != "production":
+        return
+    if not settings.ai_cost_control_enabled:
+        raise RuntimeError("Production requires AI cost control")
+    if settings.storage_backend.strip().casefold() != "supabase":
+        raise RuntimeError("Production AI cost control requires persistent Supabase storage")
+    if settings.ai_queue_backend.strip().casefold() != "supabase":
+        raise RuntimeError("Production requires durable Supabase AI queue")
+    if not (settings.ai_pricing_json or "").strip():
+        raise RuntimeError("Production requires reviewed AI_PRICING_JSON")
+
+    ceilings = {
+        "AI_COST_PER_REQUEST_USD": settings.ai_cost_per_request_usd,
+        "AI_COST_USER_DAILY_USD": settings.ai_cost_user_daily_usd,
+        "AI_COST_USER_MONTHLY_USD": settings.ai_cost_user_monthly_usd,
+        "AI_COST_GLOBAL_DAILY_USD": settings.ai_cost_global_daily_usd,
+    }
+    missing = [name for name, value in ceilings.items() if value is None or value <= 0]
+    if missing:
+        raise RuntimeError(
+            "Production requires positive AI spend ceilings: " + ", ".join(sorted(missing))
+        )
+
+    if settings.ai_cost_per_request_usd > settings.ai_cost_user_daily_usd:
+        raise RuntimeError("Per-request AI ceiling cannot exceed per-user daily ceiling")
+    if settings.ai_cost_user_daily_usd > settings.ai_cost_user_monthly_usd:
+        raise RuntimeError("Per-user daily AI ceiling cannot exceed per-user monthly ceiling")
+    if settings.ai_cost_user_daily_usd > settings.ai_cost_global_daily_usd:
+        raise RuntimeError("Per-user daily AI ceiling cannot exceed global daily ceiling")
+
+    if settings.ai_queue_worker_claim_limit <= 0 or settings.ai_queue_worker_claim_limit > 50:
+        raise RuntimeError("Production AI queue worker claim limit must be between 1 and 50")
+
+    # Parse now so malformed or negative pricing cannot reach the first live request.
+    parse_pricing_catalog(settings.ai_pricing_json)
+
+
 def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
+    if settings.environment.strip().casefold() == "production":
+        validate_production_ai_scale(settings)
     if not settings.ai_cost_control_enabled:
         return None
 
@@ -23,8 +70,6 @@ def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
     )
 
     if settings.environment.strip().casefold() == "production":
-        if settings.storage_backend.strip().casefold() != "supabase":
-            raise RuntimeError("Production AI cost control requires persistent Supabase storage")
         supabase_settings = SupabaseSettings()
         owner_user_id = supabase_settings.require_owner_user_id()
         client = build_supabase_client(supabase_settings, server=True)
@@ -80,6 +125,13 @@ def _parse_rates(rates: dict[str, Any]) -> ProviderPricing:
         cached_rate = Decimal(str(cached_raw)) if cached_raw is not None else None
     except (KeyError, InvalidOperation, ValueError) as exc:
         raise RuntimeError("AI_PRICING_JSON rates must be numeric input/output values") from exc
+
+    values = [input_rate, output_rate]
+    if cached_rate is not None:
+        values.append(cached_rate)
+    if any(value < 0 or not value.is_finite() for value in values):
+        raise RuntimeError("AI_PRICING_JSON rates must be finite non-negative values")
+
     return ProviderPricing(
         input_per_million=input_rate,
         cached_input_per_million=cached_rate,

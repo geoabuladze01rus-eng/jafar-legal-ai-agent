@@ -6,7 +6,7 @@ struct JafarDashboardView: View {
     let send: () -> Void
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 22) {
-            HStack { VStack(alignment: .leading) { Text("Доброе утро").font(.largeTitle.weight(.bold)).foregroundStyle(JafarPalette.text); Text("JAFAR AI готов служить вашей практике").foregroundStyle(JafarPalette.secondary) }; Spacer(); Button("＋ Создать") {}.buttonStyle(.bordered).tint(JafarPalette.gold) }
+            HStack { VStack(alignment: .leading) { Text("Доброе утро").font(.largeTitle.weight(.bold)).foregroundStyle(JafarPalette.text); Text("JAFAR AI готов служить вашей практике").foregroundStyle(JafarPalette.secondary) }; Spacer(); Menu("＋ Создать") { Button("Новое дело") {}.disabled(true); Button("Загрузить документ") {}.disabled(true); Button("Новая задача") {}.disabled(true); Text("Действия появятся после подключения данных") }.buttonStyle(.bordered).tint(JafarPalette.gold) }
             Text("Поиск по делам, документам, правовым позициям…").foregroundStyle(JafarPalette.secondary).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(JafarPalette.panel, in: RoundedRectangle(cornerRadius: 8))
             JusticeHeroView(); JafarCommandBar(text: $commandText, voice: voice, send: send); JafarCommandResultView(voice: voice)
             HStack(alignment: .top, spacing: 16) { VStack(spacing: 16) { FocusDayView(); MattersOverviewView(); JafarActivityView() }.frame(maxWidth: .infinity); VStack(spacing: 16) { TasksDeadlinesView(); UpcomingHearingsView(); LegalRadarView(); AIAnalyticsView(); VoiceMaterialsSummaryView() }.frame(width: 300) }

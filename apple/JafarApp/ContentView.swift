@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var commandText = ""
     @State private var selected: JafarSection = .home
     @State private var showingSettings = false
+    @State private var showingCreateMenu = false
 
     var body: some View {
         NavigationSplitView {
@@ -17,6 +18,8 @@ struct ContentView: View {
                     guard !text.isEmpty else { return }
                     Task { await voice.send(text: text) }
                 }
+            } else if selected == .matters {
+                JafarMattersView()
             } else { JafarComingSoonView(title: selected.title) }
         }
         .preferredColorScheme(.dark)

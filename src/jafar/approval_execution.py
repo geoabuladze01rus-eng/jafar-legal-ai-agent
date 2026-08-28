@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .action_approval import ActionApprovalRepository, ActionState
+from .action_approval import ActionApprovalRepository, ActionState, payload_fingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,9 +26,9 @@ class ExecutionResult:
 class ApprovalExecutionService:
     """Approval-first execution boundary for externally visible side effects.
 
-    When an auditable approval repository is configured, a caller-provided boolean can never
-    grant permission. The service reads persisted lawyer state and marks the action executed
-    only after the registered handler completes successfully.
+    Store-backed execution is bound to the exact payload hash captured when the action was
+    proposed. A lawyer approval therefore cannot be replayed with a different recipient,
+    document, amount, destination or other mutated execution data.
     """
 
     def __init__(self, store: ActionApprovalRepository | None = None) -> None:
@@ -79,6 +79,27 @@ class ApprovalExecutionService:
                 action_id,
                 "invalid_state",
                 "Недопустимое состояние действия.",
+            )
+        if not request.payload_hash:
+            return ExecutionResult(
+                action_id,
+                "payload_binding_required",
+                "Одобрение не связано с точным payload; требуется новый запрос на одобрение.",
+            )
+        try:
+            actual_hash = payload_fingerprint(payload)
+        except (TypeError, ValueError):
+            return ExecutionResult(
+                action_id,
+                "invalid_payload",
+                "Payload действия не может быть детерминированно проверен.",
+            )
+        if actual_hash != request.payload_hash:
+            return ExecutionResult(
+                action_id,
+                "payload_mismatch",
+                "Payload изменён после формирования запроса на одобрение.",
+                {"expected_hash": request.payload_hash, "actual_hash": actual_hash},
             )
 
         handler = self._handlers.get(request.action_type)

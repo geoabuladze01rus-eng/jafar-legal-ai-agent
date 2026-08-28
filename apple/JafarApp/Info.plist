@@ -6,6 +6,8 @@
     <string>Джафар использует микрофон для голосовых команд.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Джафар использует распознавание речи для выполнения голосовых команд.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Джафар использует Face ID для подтверждения юридически значимых решений адвоката.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

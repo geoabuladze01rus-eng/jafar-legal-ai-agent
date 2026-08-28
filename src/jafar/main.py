@@ -17,6 +17,7 @@ from .document_repository import (
     SupabaseDocumentRepository,
 )
 from .document_workflow import DocumentWorkflow
+from .deadline_repository import DeadlineRepository, MatterDeadlineSummary
 from .domains import DocumentTask, MatterType
 from .gmail_gateway import make_local_gmail_gateway
 from .lawyer_context import LawyerContext
@@ -86,7 +87,8 @@ document_workflow = DocumentWorkflow(matter_store, analyzer)
 try:
     document_repository = SupabaseDocumentRepository(build_supabase_client(SupabaseSettings()))
 except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
-    document_repository = EmptyDocumentRepository()
+document_repository = EmptyDocumentRepository()
+deadline_repository = DeadlineRepository(matter_store)
 command_runtime = JafarCommandRuntime(
     matter_store,
     lawyer_context,
@@ -320,6 +322,12 @@ def list_matter_documents(matter_id: str) -> list[MatterDocumentSummary]:
     if matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
     return document_repository.list_for_matter(matter_id)
+
+@app.get("/v1/matters/{matter_id}/deadlines", response_model=list[MatterDeadlineSummary], dependencies=[Depends(require_api_key)])
+def list_matter_deadlines(matter_id: str) -> list[MatterDeadlineSummary]:
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    return deadline_repository.list_for_matter(matter_id)
 
 
 @app.get(

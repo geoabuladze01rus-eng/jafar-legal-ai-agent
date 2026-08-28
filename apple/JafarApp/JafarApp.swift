@@ -4,7 +4,7 @@ import SwiftUI
 struct JafarApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ConnectedRootView()
         }
     }
 }

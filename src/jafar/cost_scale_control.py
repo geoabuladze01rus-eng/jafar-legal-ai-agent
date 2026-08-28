@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from threading import RLock
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 
 MILLION = Decimal("1000000")
@@ -144,8 +144,16 @@ class BudgetLimits:
             raise ValueError("budget_limits_must_be_positive")
 
 
-class CostLedger:
-    """Thread-safe in-memory cost ledger; persistence can implement the same public contract."""
+class CostLedgerRepository(Protocol):
+    def record(self, record: CostRecord) -> None: ...
+
+    def spend_for_user(self, user_id: str, *, since: datetime) -> Decimal: ...
+
+    def spend_global(self, *, since: datetime) -> Decimal: ...
+
+
+class CostLedger(CostLedgerRepository):
+    """Thread-safe in-memory cost ledger for local development and tests."""
 
     def __init__(self) -> None:
         self._records: list[CostRecord] = []
@@ -193,7 +201,7 @@ class CostScaleControl:
         self,
         *,
         pricing: Mapping[tuple[str, str], ProviderPricing],
-        ledger: CostLedger | None = None,
+        ledger: CostLedgerRepository | None = None,
         limits: BudgetLimits | None = None,
         fail_closed_on_missing_pricing: bool = True,
     ) -> None:

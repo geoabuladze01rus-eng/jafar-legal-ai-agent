@@ -20,7 +20,22 @@ class CostReservation:
     expires_at: datetime
 
 
-class SupabaseCostReservationRepository:
+class CostReservationRepository(Protocol):
+    def reserve(
+        self,
+        *,
+        context: UsageContext,
+        estimated_cost_usd: Decimal,
+        limits: BudgetLimits,
+        ttl_seconds: int = 300,
+    ) -> CostReservation: ...
+
+    def release(self, reservation_id: str) -> None: ...
+
+    def settle(self, reservation_id: str) -> None: ...
+
+
+class SupabaseCostReservationRepository(CostReservationRepository):
     """Atomic cross-process spend reservation using server-only Supabase RPCs."""
 
     RESERVE_RPC = "reserve_ai_cost_for_owner"

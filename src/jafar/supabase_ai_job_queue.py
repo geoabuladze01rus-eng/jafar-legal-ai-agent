@@ -16,14 +16,13 @@ class AIJob:
 
 
 class SupabaseAIJobQueue:
-    """Service-role adapter for the durable production AI queue.
+    """Owner-scoped service-role adapter for the durable production AI queue."""
 
-    The queue payload may contain privileged legal material and therefore must never be exposed
-    directly to app clients. Claim/finish transitions are performed by server-only RPCs.
-    """
-
-    def __init__(self, client: object) -> None:
+    def __init__(self, client: object, owner_id: str) -> None:
+        if not owner_id.strip():
+            raise ValueError("ai_queue_owner_id_required")
         self.client = client
+        self.owner_id = owner_id.strip()
 
     def enqueue(
         self,
@@ -37,6 +36,8 @@ class SupabaseAIJobQueue:
     ) -> None:
         if not job_id.strip() or not owner_id.strip() or not operation.strip():
             raise ValueError("ai_job_identity_required")
+        if owner_id.strip() != self.owner_id:
+            raise PermissionError("ai_job_owner_mismatch")
         if not isinstance(payload, dict):
             raise ValueError("ai_job_payload_must_be_object")
         if not 1 <= max_attempts <= 20:
@@ -45,7 +46,7 @@ class SupabaseAIJobQueue:
         self.client.table("ai_jobs").insert(
             {
                 "id": job_id,
-                "owner_id": owner_id,
+                "owner_id": self.owner_id,
                 "operation": operation,
                 "payload": payload,
                 "priority": int(priority),
@@ -58,31 +59,44 @@ class SupabaseAIJobQueue:
             raise ValueError("ai_worker_id_required")
         response = self.client.rpc(
             "claim_ai_jobs",
-            {"p_worker_id": worker_id.strip(), "p_limit": max(1, min(int(limit), 50))},
+            {
+                "p_owner_id": self.owner_id,
+                "p_worker_id": worker_id.strip(),
+                "p_limit": max(1, min(int(limit), 50)),
+            },
         ).execute()
-        return [self._hydrate(row) for row in (response.data or [])]
+        jobs = [self._hydrate(row) for row in (response.data or [])]
+        if any(job.owner_id != self.owner_id for job in jobs):
+            raise RuntimeError("ai_job_cross_owner_response")
+        return jobs
 
     def mark_dispatched(self, *, job_id: str, worker_id: str) -> AIJob:
-        """Record the point after which automatic replay is unsafe.
-
-        Workers must call this immediately before invoking an external model provider. If the
-        worker disappears afterwards, the job intentionally remains held for reconciliation.
-        """
+        """Record the point after which automatic replay is unsafe."""
         if not job_id.strip() or not worker_id.strip():
             raise ValueError("ai_job_and_worker_required")
         response = self.client.rpc(
             "mark_ai_job_dispatched",
-            {"p_id": job_id, "p_worker_id": worker_id.strip()},
+            {
+                "p_owner_id": self.owner_id,
+                "p_id": job_id,
+                "p_worker_id": worker_id.strip(),
+            },
         ).execute()
-        return self._hydrate_single(response.data, "ai_job_dispatch_response_invalid")
+        job = self._hydrate_single(response.data, "ai_job_dispatch_response_invalid")
+        self._require_owner(job)
+        return job
 
     def reclaim_stale_undispatched(self, *, stale_seconds: int = 300, limit: int = 50) -> int:
-        """Recover only claims for which provider dispatch provably never began."""
+        """Recover only owner-scoped claims for which provider dispatch provably never began."""
         stale = max(60, min(int(stale_seconds), 86400))
         bounded_limit = max(1, min(int(limit), 500))
         response = self.client.rpc(
             "reclaim_stale_undispatched_ai_jobs",
-            {"p_stale_seconds": stale, "p_limit": bounded_limit},
+            {
+                "p_owner_id": self.owner_id,
+                "p_stale_seconds": stale,
+                "p_limit": bounded_limit,
+            },
         ).execute()
         value = response.data
         if isinstance(value, list):
@@ -106,6 +120,7 @@ class SupabaseAIJobQueue:
         response = self.client.rpc(
             "finish_ai_job",
             {
+                "p_owner_id": self.owner_id,
                 "p_id": job_id,
                 "p_worker_id": worker_id.strip(),
                 "p_success": bool(success),
@@ -113,7 +128,13 @@ class SupabaseAIJobQueue:
                 "p_retry_after_seconds": max(0, min(int(retry_after_seconds), 86400)),
             },
         ).execute()
-        return self._hydrate_single(response.data, "ai_job_finish_response_invalid")
+        job = self._hydrate_single(response.data, "ai_job_finish_response_invalid")
+        self._require_owner(job)
+        return job
+
+    def _require_owner(self, job: AIJob) -> None:
+        if job.owner_id != self.owner_id:
+            raise RuntimeError("ai_job_cross_owner_response")
 
     @classmethod
     def _hydrate_single(cls, data: Any, error_code: str) -> AIJob:

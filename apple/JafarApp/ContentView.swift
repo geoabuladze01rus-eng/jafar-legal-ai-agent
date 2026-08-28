@@ -53,20 +53,13 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(JafarPalette.accentSoft)
-                    .frame(width: 52, height: 52)
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(JafarPalette.accent)
-            }
+            JusticePresenceView(state: justiceState, compact: true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("ДЖАФАР")
+                Text("ЮСТИЦИЯ AI")
                     .font(.title2.weight(.heavy))
-                    .tracking(1.4)
-                Text("ИИ-помощник адвоката")
+                    .tracking(1.2)
+                Text("Интеллектуальная система адвоката")
                     .font(.subheadline)
                     .foregroundStyle(JafarPalette.secondaryText)
             }
@@ -91,12 +84,12 @@ struct ContentView: View {
                     color: JafarPalette.success
                 )
                 statusChip(
-                    "Human approval",
+                    "Решение адвоката",
                     icon: "person.badge.shield.checkmark.fill",
                     color: JafarPalette.accent
                 )
                 statusChip(
-                    "Audit trail",
+                    "Журнал действий",
                     icon: "clock.arrow.circlepath",
                     color: JafarPalette.secondaryText
                 )
@@ -106,9 +99,11 @@ struct ContentView: View {
 
     private var voiceConsole: some View {
         VStack(spacing: 18) {
-            HStack {
+            HStack(alignment: .center, spacing: 14) {
+                JusticePresenceView(state: justiceState)
+
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Голосовой помощник")
+                    Text("Юстиция")
                         .font(.headline)
                     Text(voiceStatus)
                         .font(.subheadline)
@@ -183,9 +178,9 @@ struct ContentView: View {
                 }
                 if !voice.response.isEmpty {
                     messageBlock(
-                        title: "Джафар",
+                        title: "Юстиция",
                         text: voice.response,
-                        icon: "shield.fill",
+                        icon: "scalemass.fill",
                         color: JafarPalette.accent
                     )
                 }
@@ -290,10 +285,17 @@ struct ContentView: View {
         .jafarCard()
     }
 
+    private var justiceState: JusticePresenceState {
+        if voice.errorMessage != nil { return .control }
+        if voice.isListening || voice.isSpeaking { return .analyzing }
+        return .calm
+    }
+
     private var voiceStatus: String {
         if voice.isListening { return "Слушаю команду…" }
         if voice.isSpeaking { return "Отвечаю голосом…" }
-        return "Готов к команде"
+        if voice.errorMessage != nil { return "Требуется ваше решение" }
+        return "Готова к команде"
     }
 
     private func statusChip(_ title: String, icon: String, color: Color) -> some View {

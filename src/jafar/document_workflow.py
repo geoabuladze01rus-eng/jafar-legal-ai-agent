@@ -61,6 +61,8 @@ class DocumentWorkflow:
             council_review = self.council_review_service.review(
                 document_text=extracted.text,
                 analysis=analysis,
+                document_name=document_name,
+                document_fingerprint=extracted.fingerprint,
                 confidential=confidential,
                 allowed_providers=allowed_providers,
                 minimum_responses=council_minimum_responses,

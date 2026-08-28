@@ -32,7 +32,15 @@ For non-page-based inputs the identifier still carries a stable chunk index. The
 
 A model claim is never treated as a fact. Invented evidence IDs are rejected, recorded as invalid references and force human review. A claim with no valid source reference remains unsupported even if multiple models agree with it.
 
-`CaseEvidenceGraph` links review claims to concrete sources. A source can carry the document name, fingerprint, excerpt, page, chunk index, actor and event ID. This allows later cross-document tracing such as a witness statement on one page against an investigator's assertion in another document.
+`CaseEvidenceGraph` links review claims to concrete sources. A source can carry the document name, fingerprint, excerpt, page, chunk index, actor and event ID.
+
+## Cross-document contradiction graph
+
+`CrossDocumentContradictionGraph` compares only supported claims that share the same normalized topic. It never promotes unsupported or unreferenced model output into a contradiction signal.
+
+When two supported claims take opposing positions, the graph preserves both source trails: document, page, chunk, actor, event and excerpt. It marks whether the conflict crosses document boundaries and whether it is between different actors. This supports workflows such as comparing two witness interviews, a witness statement against an investigator decision, or competing expert conclusions.
+
+Every cross-document contradiction requires human review. The graph reports the conflict; it does not decide which source is true.
 
 ## Confidentiality
 
@@ -46,5 +54,7 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Disagreements must remain visible to the calling application.
 - Model output must not invent evidence identifiers or promote unsupported claims to facts.
 - PDF page boundaries and fragment-level source IDs must survive extraction into Council review.
+- Cross-document contradictions must include both concrete source trails.
+- Unsupported claims must not produce cross-document contradiction signals.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

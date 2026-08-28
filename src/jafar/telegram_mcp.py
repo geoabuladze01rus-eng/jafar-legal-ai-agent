@@ -3,11 +3,11 @@ from __future__ import annotations
 from os import getenv
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from .telegram_runtime import TelegramBotHttpClient
 
-mcp = FastMCP("Jafar Telegram")
+mcp = MCPServer("Jafar Telegram")
 
 
 def _allowed_chat_ids() -> set[str]:

@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from jafar import main
@@ -27,6 +28,7 @@ def _dashboard_store() -> MatterStore:
 
 
 def test_dashboard_endpoint_exposes_matter_backed_counts(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
     monkeypatch.setattr(main, "dashboard_service", DashboardService(_dashboard_store()))
 
@@ -42,6 +44,7 @@ def test_dashboard_endpoint_exposes_matter_backed_counts(monkeypatch) -> None:
 
 
 def test_v1_dashboard_requires_bearer_key_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", "top-secret")
     monkeypatch.setattr(main, "dashboard_service", DashboardService(_dashboard_store()))
     client = TestClient(app)
@@ -56,3 +59,29 @@ def test_v1_dashboard_requires_bearer_key_when_configured(monkeypatch) -> None:
     assert denied.status_code == 401
     assert allowed.status_code == 200
     assert health.status_code == 200
+
+
+def test_production_v1_api_fails_closed_without_authentication(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(main.settings, "api_key", None)
+
+    response = TestClient(app).get("/v1/dashboard")
+
+    assert response.status_code == 503
+    assert "authentication" in response.json()["detail"].casefold()
+
+
+def test_production_runtime_rejects_placeholder_or_short_keys(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "production")
+
+    for value in (None, "replace-me", "short"):
+        monkeypatch.setattr(main.settings, "api_key", value)
+        with pytest.raises(RuntimeError, match="Production requires"):
+            main.validate_runtime_security()
+
+    monkeypatch.setattr(
+        main.settings,
+        "api_key",
+        "this-is-a-long-random-production-key",
+    )
+    main.validate_runtime_security()

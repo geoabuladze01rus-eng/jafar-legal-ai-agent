@@ -22,11 +22,20 @@ begin
   if p_action_id is null or btrim(p_action_id) = '' then
     raise exception 'action_id_required';
   end if;
+  if char_length(btrim(p_action_id)) > 200 then
+    raise exception 'action_id_too_long';
+  end if;
   if p_operator_id is null or btrim(p_operator_id) = '' then
     raise exception 'operator_id_required';
   end if;
+  if char_length(btrim(p_operator_id)) > 200 then
+    raise exception 'operator_id_too_long';
+  end if;
   if p_evidence_note is null or btrim(p_evidence_note) = '' then
     raise exception 'reconciliation_evidence_note_required';
+  end if;
+  if char_length(btrim(p_evidence_note)) > 4000 then
+    raise exception 'reconciliation_evidence_note_too_long';
   end if;
   if p_decision not in ('confirmed_not_executed', 'confirmed_executed') then
     raise exception 'unsupported_reconciliation_decision';
@@ -35,7 +44,7 @@ begin
   select * into v_action
   from public.action_approvals
   where owner_user_id = p_owner_user_id
-    and action_id = p_action_id
+    and action_id = btrim(p_action_id)
   for update;
 
   if not found then
@@ -57,7 +66,7 @@ begin
         execution_claimed_by = null,
         execution_error = v_audit_reason
     where owner_user_id = p_owner_user_id
-      and action_id = p_action_id
+      and action_id = btrim(p_action_id)
       and state = 'executing'
     returning * into v_action;
   else
@@ -66,7 +75,7 @@ begin
         executed_at = now(),
         execution_error = null
     where owner_user_id = p_owner_user_id
-      and action_id = p_action_id
+      and action_id = btrim(p_action_id)
       and state = 'executing'
     returning * into v_action;
   end if;
@@ -84,7 +93,7 @@ begin
     recorded_at
   ) values (
     p_owner_user_id,
-    p_action_id,
+    btrim(p_action_id),
     p_decision,
     btrim(p_operator_id),
     btrim(p_evidence_note),

@@ -46,7 +46,7 @@ struct LocalApprovalClient: ApprovalClient {
     }
 
     func approve(actionId: String, approver: String) async throws -> ApprovalDecision {
-        throw JafarAPIError.remoteModeRequired
+        throw JafarAPIError.httpStatus(503)
     }
 
     func reject(
@@ -54,7 +54,7 @@ struct LocalApprovalClient: ApprovalClient {
         approver: String,
         reason: String
     ) async throws -> ApprovalDecision {
-        throw JafarAPIError.remoteModeRequired
+        throw JafarAPIError.httpStatus(503)
     }
 }
 

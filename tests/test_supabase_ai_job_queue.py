@@ -56,9 +56,13 @@ class _Client:
         return action
 
 
-def test_queue_enqueues_and_claims_server_jobs() -> None:
+def _queue(client=None) -> SupabaseAIJobQueue:
+    return SupabaseAIJobQueue(client or _Client(), "lawyer-1")
+
+
+def test_queue_enqueues_and_claims_only_configured_owner_jobs() -> None:
     client = _Client()
-    queue = SupabaseAIJobQueue(client)
+    queue = _queue(client)
 
     queue.enqueue(
         job_id="job-1",
@@ -74,29 +78,41 @@ def test_queue_enqueues_and_claims_server_jobs() -> None:
     assert client.calls[1] == (
         "rpc",
         "claim_ai_jobs",
-        {"p_worker_id": "worker-a", "p_limit": 50},
+        {"p_owner_id": "lawyer-1", "p_worker_id": "worker-a", "p_limit": 50},
     )
     assert jobs[0].id == "job-1"
     assert jobs[0].attempts == 1
 
 
-def test_worker_marks_provider_dispatch_before_external_call() -> None:
+def test_queue_rejects_cross_owner_enqueue() -> None:
+    queue = _queue()
+
+    with pytest.raises(PermissionError, match="ai_job_owner_mismatch"):
+        queue.enqueue(
+            job_id="job-2",
+            owner_id="lawyer-2",
+            operation="case_analysis",
+            payload={"matter_id": "matter-2"},
+        )
+
+
+def test_worker_marks_provider_dispatch_with_owner_scope() -> None:
     client = _Client()
-    queue = SupabaseAIJobQueue(client)
+    queue = _queue(client)
 
     job = queue.mark_dispatched(job_id="job-1", worker_id="worker-a")
 
     assert client.calls[-1] == (
         "rpc",
         "mark_ai_job_dispatched",
-        {"p_id": "job-1", "p_worker_id": "worker-a"},
+        {"p_owner_id": "lawyer-1", "p_id": "job-1", "p_worker_id": "worker-a"},
     )
     assert job.id == "job-1"
 
 
-def test_only_stale_undispatched_claims_have_automatic_recovery_path() -> None:
+def test_only_stale_undispatched_claims_have_owner_scoped_automatic_recovery_path() -> None:
     client = _Client()
-    queue = SupabaseAIJobQueue(client)
+    queue = _queue(client)
 
     reclaimed = queue.reclaim_stale_undispatched(stale_seconds=1, limit=9999)
 
@@ -104,13 +120,13 @@ def test_only_stale_undispatched_claims_have_automatic_recovery_path() -> None:
     assert client.calls[-1] == (
         "rpc",
         "reclaim_stale_undispatched_ai_jobs",
-        {"p_stale_seconds": 60, "p_limit": 500},
+        {"p_owner_id": "lawyer-1", "p_stale_seconds": 60, "p_limit": 500},
     )
 
 
-def test_finish_uses_worker_claim_and_sanitized_retry_parameters() -> None:
+def test_finish_uses_owner_and_worker_claim_with_sanitized_retry_parameters() -> None:
     client = _Client()
-    queue = SupabaseAIJobQueue(client)
+    queue = _queue(client)
 
     job = queue.finish(
         job_id="job-1",
@@ -122,6 +138,7 @@ def test_finish_uses_worker_claim_and_sanitized_retry_parameters() -> None:
 
     kind, name, payload = client.calls[-1]
     assert (kind, name) == ("rpc", "finish_ai_job")
+    assert payload["p_owner_id"] == "lawyer-1"
     assert payload["p_worker_id"] == "worker-a"
     assert payload["p_retry_after_seconds"] == 86400
     assert len(payload["p_error_code"]) == 96
@@ -129,7 +146,7 @@ def test_finish_uses_worker_claim_and_sanitized_retry_parameters() -> None:
 
 
 def test_queue_rejects_missing_identity_and_non_object_payload() -> None:
-    queue = SupabaseAIJobQueue(_Client())
+    queue = _queue()
 
     with pytest.raises(ValueError, match="ai_job_identity_required"):
         queue.enqueue(job_id="", owner_id="lawyer-1", operation="analysis", payload={})
@@ -140,3 +157,15 @@ def test_queue_rejects_missing_identity_and_non_object_payload() -> None:
             operation="analysis",
             payload=[],  # type: ignore[arg-type]
         )
+
+
+def test_queue_rejects_cross_owner_rpc_response() -> None:
+    client = _Client()
+    queue = _queue(client)
+    original = _JOB["owner_id"]
+    _JOB["owner_id"] = "lawyer-2"
+    try:
+        with pytest.raises(RuntimeError, match="ai_job_cross_owner_response"):
+            queue.claim(worker_id="worker-a")
+    finally:
+        _JOB["owner_id"] = original

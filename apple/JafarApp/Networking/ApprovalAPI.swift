@@ -31,14 +31,15 @@ private struct ApprovalDecisionBody: Encodable {
 
 protocol ApprovalClient: Sendable {
     func fetchPending() async throws -> [ApprovalItem]
+    func fetchApprovedAwaitingExecution() async throws -> [ApprovalItem]
     func approve(actionId: String) async throws -> ApprovalDecision
     func reject(actionId: String, reason: String) async throws -> ApprovalDecision
 }
 
 struct LocalApprovalClient: ApprovalClient {
-    func fetchPending() async throws -> [ApprovalItem] {
-        []
-    }
+    func fetchPending() async throws -> [ApprovalItem] { [] }
+
+    func fetchApprovedAwaitingExecution() async throws -> [ApprovalItem] { [] }
 
     func approve(actionId: String) async throws -> ApprovalDecision {
         throw JafarAPIError.httpStatus(503)
@@ -65,18 +66,11 @@ struct RemoteApprovalClient: ApprovalClient {
     }
 
     func fetchPending() async throws -> [ApprovalItem] {
-        var components = URLComponents(
-            url: baseURL.appendingPathComponent("v1/approvals"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [URLQueryItem(name: "state", value: "proposed")]
-        guard let url = components?.url else {
-            throw JafarAPIError.invalidResponse
-        }
-        var request = authorizedRequest(url: url, method: "GET")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let data = try await perform(request)
-        return try decoder.decode([ApprovalItem].self, from: data)
+        try await fetch(state: "proposed")
+    }
+
+    func fetchApprovedAwaitingExecution() async throws -> [ApprovalItem] {
+        try await fetch(state: "approved")
     }
 
     func approve(actionId: String) async throws -> ApprovalDecision {
@@ -93,6 +87,21 @@ struct RemoteApprovalClient: ApprovalClient {
             operation: "reject",
             body: ApprovalDecisionBody(reason: reason)
         )
+    }
+
+    private func fetch(state: String) async throws -> [ApprovalItem] {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("v1/approvals"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "state", value: state)]
+        guard let url = components?.url else {
+            throw JafarAPIError.invalidResponse
+        }
+        var request = authorizedRequest(url: url, method: "GET")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let data = try await perform(request)
+        return try decoder.decode([ApprovalItem].self, from: data)
     }
 
     private func decide(
@@ -156,6 +165,7 @@ extension JafarClientFactory {
 @MainActor
 final class ApprovalStore: ObservableObject {
     @Published private(set) var pending: [ApprovalItem] = []
+    @Published private(set) var approvedAwaitingExecution: [ApprovalItem] = []
     @Published private(set) var isLoading = false
     @Published private(set) var processingIDs: Set<String> = []
     @Published private(set) var errorMessage: String?
@@ -169,6 +179,7 @@ final class ApprovalStore: ObservableObject {
     func reconfigure(client: any ApprovalClient) {
         self.client = client
         pending = []
+        approvedAwaitingExecution = []
         processingIDs = []
         errorMessage = nil
     }
@@ -178,7 +189,10 @@ final class ApprovalStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            pending = try await client.fetchPending()
+            async let pendingRequest = client.fetchPending()
+            async let approvedRequest = client.fetchApprovedAwaitingExecution()
+            pending = try await pendingRequest
+            approvedAwaitingExecution = try await approvedRequest
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

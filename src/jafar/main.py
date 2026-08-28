@@ -28,6 +28,7 @@ from .rate_limit_runtime import RateLimiter, build_ai_rate_limiter
 from .storage import build_runtime_repositories, validate_storage_security
 from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
+from .telegram_security import validate_telegram_settings
 
 telegram_runtime: TelegramRuntime | None = None
 telegram_scheduler_task: asyncio.Task[None] | None = None
@@ -43,6 +44,7 @@ def production_api_key_is_secure() -> bool:
 
 
 def validate_runtime_security() -> None:
+    validate_telegram_settings(settings)
     if settings.environment.strip().casefold() != "production":
         return
     if not production_api_key_is_secure():
@@ -89,7 +91,8 @@ async def lifespan(app: FastAPI):
     ai_rate_limiter = build_ai_rate_limiter(settings)
     if settings.ai_cost_control_enabled and openai_analyzer is not None:
         _ensure_metered_openai_runtime()
-    if settings.telegram_polling_enabled and settings.telegram_bot_token:
+    if settings.telegram_polling_enabled:
+        assert settings.telegram_bot_token is not None
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
             production_send=settings.telegram_production_send,
@@ -97,8 +100,6 @@ async def lifespan(app: FastAPI):
         )
         telegram_runtime.start()
     if settings.telegram_scheduler_enabled:
-        if not settings.telegram_bot_token:
-            raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_BOT_TOKEN")
         from .telegram_mcp import _deliver, _store
         from .telegram_scheduler import TelegramScheduler
 
@@ -120,7 +121,7 @@ async def lifespan(app: FastAPI):
             telegram_scheduler_task = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.13", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.14", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (

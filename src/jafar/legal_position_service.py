@@ -17,3 +17,7 @@ class LegalPositionReadService:
     def get(self, matter_id: str) -> LegalPositionRead:
         if self.matter_store.get(matter_id) is None: raise KeyError(matter_id)
         return LegalPositionRead(matter_id=matter_id)
+
+def validate_provenance(*, matter_id: str, document_matter_id: str | None, document_exists: bool = True) -> None:
+    if not document_exists: raise ValueError("document reference is missing")
+    if document_matter_id is not None and document_matter_id != matter_id: raise ValueError("document does not belong to matter")

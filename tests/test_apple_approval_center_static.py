@@ -25,6 +25,8 @@ def test_live_dashboard_requires_explicit_human_decision() -> None:
     assert "Причина сохраняется в журнале решения" in source
     assert "само по себе не отправит" in source
     assert "JafarApprovalIdentity.value.isEmpty" in source
+    assert "let decisionDisabled = JafarApprovalIdentity.value.isEmpty" in source
+    assert source.count(".disabled(decisionDisabled)") == 2
 
 
 def test_connection_settings_capture_auditable_approver_identity() -> None:

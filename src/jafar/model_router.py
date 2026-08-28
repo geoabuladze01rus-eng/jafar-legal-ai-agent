@@ -44,6 +44,9 @@ class RoutingDecision:
 class ModelRouter:
     """Provider-agnostic routing guarded by the central privacy policy."""
 
+    PROVIDER_ORDER = ("openai", "qwen", "kimi", "deepseek", "gemini", "nano_banana")
+    VERIFIER_ORDER = ("qwen", "kimi", "deepseek", "gemini", "openai")
+
     def __init__(
         self,
         providers: dict[str, ModelProvider],
@@ -63,7 +66,7 @@ class ModelRouter:
 
         if primary not in allowed or not self._available(primary):
             primary = self._first_available(
-                tuple(key for key in ("openai", "gemini", "deepseek", "nano_banana") if key in allowed)
+                tuple(key for key in self.PROVIDER_ORDER if key in allowed)
             )
             if primary is None:
                 raise RuntimeError("No permitted and available AI provider is available")
@@ -71,7 +74,11 @@ class ModelRouter:
         verifier = None
         if request.verification:
             verifier = self._first_available(
-                tuple(key for key in ("deepseek", "gemini", "openai") if key in allowed and key != primary)
+                tuple(
+                    key
+                    for key in self.VERIFIER_ORDER
+                    if key in allowed and key != primary
+                )
             )
             if verifier is None:
                 raise RuntimeError("Verification requested but no independent permitted provider is available")
@@ -98,8 +105,12 @@ class ModelRouter:
     def _preferred_provider(self, request: ModelRequest) -> str:
         if request.requires_vision or request.requires_google_context:
             return "gemini"
-        if request.task in {"coding", "technical_analysis", "second_opinion"}:
+        if request.task in {"coding", "technical_analysis"}:
             return "deepseek"
+        if request.task == "second_opinion":
+            return "qwen"
+        if request.task in {"long_context", "case_timeline", "cross_document_analysis"}:
+            return "kimi"
         if request.task in {DocumentTask.LEGAL_ANALYSIS.value, DocumentTask.RISK_REVIEW.value}:
             return "openai"
         return "openai"
@@ -113,7 +124,7 @@ class ModelRouter:
         )
         candidates = (primary,) + tuple(
             key
-            for key in ("openai", "gemini", "deepseek", "nano_banana")
+            for key in self.PROVIDER_ORDER
             if key != primary and key in allowed and self._available(key)
         )
         last_error: Exception | None = None

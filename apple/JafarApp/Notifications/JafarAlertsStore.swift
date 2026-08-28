@@ -12,6 +12,8 @@ struct JafarAlert: Identifiable, Sendable {
 
 @MainActor
 final class JafarAlertsStore: ObservableObject {
+    static let shared = JafarAlertsStore()
+
     @Published private(set) var alerts: [JafarAlert] = []
     private var dismissedIDs: Set<String> = []
 

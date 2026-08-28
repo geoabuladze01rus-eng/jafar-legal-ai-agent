@@ -180,4 +180,5 @@ def test_production_runtime_rejects_placeholder_or_short_keys(monkeypatch) -> No
         "api_key",
         "this-is-a-long-random-production-key",
     )
+    monkeypatch.setattr(main.settings, "storage_backend", "supabase")
     main.validate_runtime_security()

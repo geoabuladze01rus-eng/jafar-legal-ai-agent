@@ -1,4 +1,9 @@
-from jafar.attack_surface import AttackSeverity, AttackSurfaceItem, AttackSurfaceReport
+from jafar.attack_surface import (
+    AttackSeverity,
+    AttackSignalKind,
+    AttackSurfaceItem,
+    AttackSurfaceReport,
+)
 from jafar.case_theory import CaseTheoryIssue, CaseTheoryReport, TheoryStatus
 from jafar.court_outline import CourtOutlineGenerator, LegalAuthorityRef, OutlineKind
 from jafar.hearing_preparation import HearingPreparationPlan, PreparationMode, PreparationStep
@@ -13,7 +18,15 @@ def make_theory(status: TheoryStatus = TheoryStatus.CONTRADICTED) -> CaseTheoryR
         status=status,
         claim_ids=("claim-1",),
         evidence_ids=("e1",),
-        source_refs=({"evidence_id": "e1", "document_name": "protocol.pdf", "page": 8, "chunk_index": 1},),
+        source_refs=(
+            {
+                "evidence_id": "e1",
+                "document_name": "protocol.pdf",
+                "document_fingerprint": "fp-protocol",
+                "page": 8,
+                "chunk_index": 1,
+            },
+        ),
         reasons=("Есть противоречие.",),
     )
     return CaseTheoryReport(
@@ -33,12 +46,35 @@ def make_attack() -> AttackSurfaceReport:
         statement="Денежные средства были переданы.",
         score=85,
         severity=AttackSeverity.CRITICAL,
+        signals=(
+            AttackSignalKind.CONTRADICTED,
+            AttackSignalKind.SINGLE_SOURCE,
+            AttackSignalKind.DEFENSE_COUNTERTHESIS,
+        ),
         reasons=("Тезис зависит от одного источника.",),
-        prosecution_sources=({"evidence_id": "e1", "document_name": "protocol.pdf", "page": 8},),
-        defense_sources=({"evidence_id": "e2", "document_name": "interview.pdf", "page": 14},),
+        prosecution_sources=(
+            {
+                "evidence_id": "e1",
+                "document_name": "protocol.pdf",
+                "document_fingerprint": "fp-protocol",
+                "page": 8,
+            },
+        ),
+        defense_sources=(
+            {
+                "evidence_id": "e2",
+                "document_name": "interview.pdf",
+                "document_fingerprint": "fp-interview",
+                "page": 14,
+            },
+        ),
         recommended_focus=("Сопоставить версии.",),
     )
-    return AttackSurfaceReport(items=(item,), highest_priority_issue_ids=(item.issue_id,), requires_human_review=True)
+    return AttackSurfaceReport(
+        items=(item,),
+        highest_priority_issue_ids=(item.issue_id,),
+        requires_human_review=True,
+    )
 
 
 def make_hearing() -> HearingPreparationPlan:
@@ -50,11 +86,17 @@ def make_hearing() -> HearingPreparationPlan:
         objective="Проверить противоречие.",
         primary_questions=("Из какого источника вам это известно?",),
         fallback_questions=("Что вы наблюдали лично?",),
-        documents_to_present=({"evidence_id": "e1", "document_name": "protocol.pdf", "page": 8},),
+        documents_to_present=(
+            {"evidence_id": "e1", "document_name": "protocol.pdf", "page": 8},
+        ),
         contradiction_sequence=("Сначала получить самостоятельную версию.",),
         caution="Тактику определяет адвокат.",
     )
-    return HearingPreparationPlan(mode=PreparationMode.HEARING, steps=(step,), document_index=step.documents_to_present)
+    return HearingPreparationPlan(
+        mode=PreparationMode.HEARING,
+        steps=(step,),
+        document_index=step.documents_to_present,
+    )
 
 
 def test_outline_preserves_source_refs_and_questions() -> None:
@@ -115,9 +157,13 @@ def test_verified_authority_and_relief_are_only_caller_supplied() -> None:
         attack_surface=make_attack(),
         hearing=make_hearing(),
         authorities_by_topic={"money_transfer": (authority,)},
-        relief_by_topic={"money_transfer": ("Просительная формулировка, заданная адвокатом.",)},
+        relief_by_topic={
+            "money_transfer": ("Просительная формулировка, заданная адвокатом.",)
+        },
     )
     section = outline.sections[0]
     assert section.authorities == (authority,)
-    assert section.requested_relief == ("Просительная формулировка, заданная адвокатом.",)
+    assert section.requested_relief == (
+        "Просительная формулировка, заданная адвокатом.",
+    )
     assert outline.requires_source_verification is False

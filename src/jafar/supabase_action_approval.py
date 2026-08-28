@@ -121,6 +121,16 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
         raise ValueError("action_not_pending")
 
     def mark_executed(self, action_id: str) -> ActionRequest:
+        current = self.get(action_id)
+        if current is None:
+            raise KeyError(action_id)
+        if current.state is not ActionState.APPROVED:
+            if current.state is ActionState.EXECUTED and current.executed_at:
+                return current
+            raise ValueError("only_approved_action_can_be_executed")
+        if not current.payload_hash:
+            raise ValueError("payload_binding_required")
+
         executed_at = datetime.now(timezone.utc).isoformat()
         response = (
             self.client.table(self.TABLE)

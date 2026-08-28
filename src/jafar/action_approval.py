@@ -143,6 +143,8 @@ class ActionApprovalStore:
                 raise KeyError(action_id)
             if request.state is not ActionState.APPROVED:
                 raise ValueError("only_approved_action_can_be_executed")
+            if not request.payload_hash:
+                raise ValueError("payload_binding_required")
             updated = replace(
                 request,
                 state=ActionState.EXECUTED,

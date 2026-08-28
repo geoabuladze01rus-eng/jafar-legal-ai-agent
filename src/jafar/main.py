@@ -18,7 +18,7 @@ from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
-from .legal_models import AnalysisRequest, AnalysisResponse, Matter
+from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
 from .storage import build_runtime_repositories, validate_storage_security
 from .telegram_runtime import TelegramRuntime
 
@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.9", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.10", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -83,6 +83,20 @@ document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
 action_approval_engine = LegalActionApprovalEngine(action_approval_store)
+
+
+def _analyze(request: AnalysisRequest) -> LegalAnalysis:
+    if openai_analyzer is not None:
+        return openai_analyzer.analyze(
+            text=request.text,
+            task=request.task,
+            matter_type=request.matter_type,
+        )
+    return heuristic_analyzer.analyze(
+        request.text,
+        request.task,
+        request.matter_type,
+    )
 
 
 @app.middleware("http")
@@ -286,10 +300,11 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
             matter_store.get_matter(request.matter_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Matter not found") from exc
-    analyzer = openai_analyzer or heuristic_analyzer
-    response = analyzer.analyze(request)
-    return response.model_copy(
-        update={"persisted": False, "requires_approval_to_persist": True}
+    return AnalysisResponse(
+        analysis=_analyze(request),
+        matter_id=request.matter_id,
+        persisted=False,
+        requires_approval_to_persist=True,
     )
 
 

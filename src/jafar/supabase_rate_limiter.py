@@ -15,6 +15,12 @@ class SupabaseRateLimiter:
     def __init__(self, client: object, policy: RateLimitPolicy, *, namespace: str = "ai") -> None:
         if not namespace.strip():
             raise ValueError("rate_limit_namespace_required")
+        if policy.window_seconds < 1 or not float(policy.window_seconds).is_integer():
+            raise ValueError("distributed_rate_limit_window_must_be_whole_seconds")
+        if policy.window_seconds > 86400:
+            raise ValueError("distributed_rate_limit_window_too_large")
+        if policy.max_requests > 1000000:
+            raise ValueError("distributed_rate_limit_max_requests_too_large")
         self.client = client
         self.policy = policy
         self.namespace = namespace.strip()

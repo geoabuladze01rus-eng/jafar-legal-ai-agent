@@ -96,8 +96,12 @@ struct RemoteDashboardClient: DashboardClient {
 
 enum JafarAPIConfiguration {
     private static let baseURLDefaultsKey = "jafar.api.base_url"
+    private static let remoteDisabledDefaultsKey = "jafar.api.remote_disabled"
 
     static var baseURL: URL? {
+        if UserDefaults.standard.bool(forKey: remoteDisabledDefaultsKey) {
+            return nil
+        }
         if let saved = UserDefaults.standard.string(forKey: baseURLDefaultsKey),
            let url = URL(string: saved),
            !saved.isEmpty {
@@ -117,7 +121,10 @@ enum JafarAPIConfiguration {
     }
 
     static var baseURLString: String {
-        UserDefaults.standard.string(forKey: baseURLDefaultsKey) ?? baseURL?.absoluteString ?? ""
+        if UserDefaults.standard.bool(forKey: remoteDisabledDefaultsKey) {
+            return ""
+        }
+        return UserDefaults.standard.string(forKey: baseURLDefaultsKey) ?? baseURL?.absoluteString ?? ""
     }
 
     static var authorizationToken: String? {
@@ -129,8 +136,10 @@ enum JafarAPIConfiguration {
         let normalized = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized.isEmpty {
             UserDefaults.standard.removeObject(forKey: baseURLDefaultsKey)
+            UserDefaults.standard.set(true, forKey: remoteDisabledDefaultsKey)
         } else {
             UserDefaults.standard.set(normalized, forKey: baseURLDefaultsKey)
+            UserDefaults.standard.set(false, forKey: remoteDisabledDefaultsKey)
         }
 
         let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -143,6 +152,7 @@ enum JafarAPIConfiguration {
 
     static func disableRemoteMode() throws {
         UserDefaults.standard.removeObject(forKey: baseURLDefaultsKey)
+        UserDefaults.standard.set(true, forKey: remoteDisabledDefaultsKey)
         try JafarCredentialStore.deleteToken()
     }
 }

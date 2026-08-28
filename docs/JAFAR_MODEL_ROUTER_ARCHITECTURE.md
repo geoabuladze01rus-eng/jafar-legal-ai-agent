@@ -21,6 +21,14 @@ credential reference. A credential being present alone cannot activate network
 access. Smoke input is synthetic-only, one request maximum, no retry/fallback, and
 the response is not persisted.
 
+Failure diagnostics use status/transport categories only and never include request,
+response, authorization or credential material. The first observed smoke cannot be
+retrospectively assigned an HTTP category because the original adapter intentionally
+discarded status/body; its safe classification is `UNKNOWN`. The adapter accepts
+both legacy chat-completions content and Responses-style `output_text`, but the
+request endpoint/schema remains chat-completions and must be verified before a
+second smoke.
+
 The domain uses provider-neutral `ModelTier`, `ModelRequest`, `ModelResponse` and
 `ModelRouter` contracts. Routing is deterministic: classification/extraction use
 FAST, ordinary analysis/drafting STANDARD, complex legal position EXPERT, and an

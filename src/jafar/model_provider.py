@@ -58,10 +58,19 @@ class OpenAICompatibleProvider:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
-            content = body["choices"][0]["message"]["content"]
+            content = self._extract_content(body)
             return self._parse_json(content)
         except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, json.JSONDecodeError):
             return None
+
+    @staticmethod
+    def _extract_content(body: dict[str, Any]) -> str:
+        if isinstance(body.get("output_text"), str):
+            return body["output_text"]
+        choices = body.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            return choices[0]["message"]["content"]
+        raise KeyError("response content")
 
     @staticmethod
     def _prompt(text: str, task: DocumentTask, matter_type: MatterType) -> str:

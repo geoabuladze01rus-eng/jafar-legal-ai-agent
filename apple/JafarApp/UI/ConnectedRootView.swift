@@ -5,6 +5,7 @@ struct ConnectedRootView: View {
         client: JafarClientFactory.dashboardClient()
     )
     @State private var showingConnectionSettings = false
+    @State private var showingLiveDashboard = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,9 @@ struct ConnectedRootView: View {
                 dashboard.reconfigure(client: JafarClientFactory.dashboardClient())
                 Task { await dashboard.refresh() }
             }
+        }
+        .sheet(isPresented: $showingLiveDashboard) {
+            LiveDashboardView(dashboard: dashboard)
         }
     }
 
@@ -63,6 +67,16 @@ struct ConnectedRootView: View {
                 .foregroundStyle(JafarPalette.secondaryText)
                 .accessibilityLabel("Обновить данные Джафара")
             }
+
+            Button {
+                showingLiveDashboard = true
+            } label: {
+                Image(systemName: "rectangle.3.group.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(JafarPalette.secondaryText)
+            .accessibilityLabel("Открыть рабочую сводку")
 
             Button {
                 showingConnectionSettings = true

@@ -18,6 +18,17 @@ class AIProviderConfig:
     timeout_seconds: float = 60.0
     max_retries: int = 2
     retry_backoff_seconds: float = 0.5
+    max_output_tokens: int = 6000
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("ai_provider_timeout_must_be_positive")
+        if self.max_retries < 0 or self.max_retries > 5:
+            raise ValueError("ai_provider_retries_out_of_range")
+        if self.retry_backoff_seconds < 0:
+            raise ValueError("ai_provider_retry_backoff_must_be_non_negative")
+        if self.max_output_tokens <= 0 or self.max_output_tokens > 20_000:
+            raise ValueError("ai_provider_max_output_tokens_out_of_range")
 
 
 class OpenAILegalAnalyzer:
@@ -84,6 +95,7 @@ class OpenAILegalAnalyzer:
                         },
                     ],
                     text_format=LegalAnalysis,
+                    max_output_tokens=self.config.max_output_tokens,
                 )
                 if response.output_parsed is None:
                     raise RuntimeError("OpenAI returned no structured legal analysis")

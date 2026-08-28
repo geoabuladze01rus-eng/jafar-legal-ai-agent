@@ -9,11 +9,6 @@ from .telegram_runtime import TelegramBotHttpClient
 MAX_MESSAGE_CHARS = 4096
 MAX_CAPTION_CHARS = 1024
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
-_IMAGE_TYPES = {
-    b"\x89PNG\r\n\x1a\n": "image/png",
-    b"\xff\xd8\xff": "image/jpeg",
-    b"RIFF": "image/webp",
-}
 
 
 def image_mime_type(content: bytes) -> str:
@@ -37,28 +32,52 @@ def validate_photo_bytes(content: bytes) -> str:
 def validate_photo_url(value: str) -> str:
     url = value.strip()
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("photo_url must be an absolute http(s) URL")
+    if parsed.username or parsed.password:
+        raise ValueError("photo_url must not embed credentials")
     if len(url) > 2048:
         raise ValueError("photo_url exceeds 2048 character limit")
     return url
 
 
+def validate_filename(value: str) -> str:
+    filename = value.strip()
+    if not filename or len(filename) > 200:
+        raise ValueError("filename must contain 1 to 200 characters")
+    if any(char in filename for char in ("\r", "\n", "\x00")):
+        raise ValueError("filename contains unsafe control characters")
+    return filename
+
+
 def split_telegram_text(text: str, limit: int = MAX_MESSAGE_CHARS) -> list[str]:
-    """Split without truncating Unicode text, preferring paragraph/word boundaries."""
+    """Split without truncation or whitespace loss, preferring paragraph/word boundaries."""
+    if limit < 1:
+        raise ValueError("split limit must be positive")
     if not text:
         return []
     result: list[str] = []
     remaining = text
     while len(remaining) > limit:
-        cut = max(remaining.rfind("\n", 0, limit + 1), remaining.rfind(" ", 0, limit + 1))
-        if cut <= 0:
+        # Search only inside the first `limit` characters; include the delimiter in this part.
+        newline = remaining.rfind("\n", 0, limit)
+        space = remaining.rfind(" ", 0, limit)
+        boundary = max(newline, space)
+        cut = boundary + 1 if boundary >= 0 else limit
+        if cut <= 0 or cut > limit:
             cut = limit
-        result.append(remaining[:cut].rstrip())
-        remaining = remaining[cut:].lstrip(" \n")
+        result.append(remaining[:cut])
+        remaining = remaining[cut:]
     if remaining:
         result.append(remaining)
     return result
+
+
+def _message_id(result: dict, *, operation: str) -> int:
+    value = result.get("message_id")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeError(f"Telegram {operation} returned no valid message_id")
+    return value
 
 
 @dataclass(frozen=True)
@@ -89,33 +108,33 @@ class TelegramPublisher:
         filename: str = "image.png",
     ) -> PublishResult:
         safe_chat_id = self._allow_chat(chat_id)  # Deliberately checked at delivery time.
-        clean_text = text.strip()
-        if not clean_text:
+        if not text or not text.strip():
             raise ValueError("text must not be empty")
         if bool(photo_url) and bool(photo_bytes):
             raise ValueError("provide only one of photo_url or photo_base64")
         if photo_url:
             photo_url = validate_photo_url(photo_url)
         mime_type = validate_photo_bytes(photo_bytes) if photo_bytes else None
+        safe_filename = validate_filename(filename)
         client = self._client_factory()
 
         if not photo_url and not photo_bytes:
-            messages = await self._send_text(client, safe_chat_id, clean_text)
+            messages = await self._send_text(client, safe_chat_id, text)
             return PublishResult("text", messages)
 
-        caption = clean_text if len(clean_text) <= MAX_CAPTION_CHARS else ""
+        caption = text if len(text) <= MAX_CAPTION_CHARS else ""
         photo = await client.send_photo(
             chat_id=safe_chat_id,
             caption=caption,
             photo_url=photo_url,
             photo_bytes=photo_bytes,
-            filename=filename,
+            filename=safe_filename,
             mime_type=mime_type or "application/octet-stream",
         )
-        photo_id = int(photo["message_id"]) if photo.get("message_id") is not None else None
+        photo_id = _message_id(photo, operation="sendPhoto")
         if caption:
             return PublishResult("photo_with_caption", [], photo_id)
-        messages = await self._send_text(client, safe_chat_id, clean_text)
+        messages = await self._send_text(client, safe_chat_id, text)
         return PublishResult("photo_then_text", messages, photo_id)
 
     async def _send_text(self, client: TelegramBotHttpClient, chat_id: str, text: str) -> list[int]:
@@ -124,6 +143,5 @@ class TelegramPublisher:
             # A second check protects multi-part sends if policy changes mid-publication.
             safe_chat_id = self._allow_chat(chat_id)
             result = await client.send_message(chat_id=safe_chat_id, text=part)
-            if result.get("message_id") is not None:
-                ids.append(int(result["message_id"]))
+            ids.append(_message_id(result, operation="sendMessage"))
         return ids

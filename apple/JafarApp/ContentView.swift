@@ -5,6 +5,7 @@ struct ContentView: View {
         commandClient: LocalCommandClient(),
         userId: "local-user"
     )
+    @StateObject private var alerts = JafarAlertsStore()
 
     private let columns = [
         GridItem(.adaptive(minimum: 165), spacing: 12)
@@ -22,6 +23,7 @@ struct ContentView: View {
                         trustStrip
                         voiceConsole
                         conversation
+                        alertCenter
                         modules
                         reviewGate
                     }
@@ -83,9 +85,21 @@ struct ContentView: View {
     private var trustStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 9) {
-                statusChip("Конфиденциальность", icon: "lock.shield.fill", color: JafarPalette.success)
-                statusChip("Human approval", icon: "person.badge.shield.checkmark.fill", color: JafarPalette.accent)
-                statusChip("Audit trail", icon: "clock.arrow.circlepath", color: JafarPalette.secondaryText)
+                statusChip(
+                    "Конфиденциальность",
+                    icon: "lock.shield.fill",
+                    color: JafarPalette.success
+                )
+                statusChip(
+                    "Human approval",
+                    icon: "person.badge.shield.checkmark.fill",
+                    color: JafarPalette.accent
+                )
+                statusChip(
+                    "Audit trail",
+                    icon: "clock.arrow.circlepath",
+                    color: JafarPalette.secondaryText
+                )
             }
         }
     }
@@ -103,7 +117,9 @@ struct ContentView: View {
                 Spacer()
                 Image(systemName: voice.isListening ? "waveform" : "sparkles")
                     .font(.title2)
-                    .foregroundStyle(voice.isListening ? JafarPalette.danger : JafarPalette.accent)
+                    .foregroundStyle(
+                        voice.isListening ? JafarPalette.danger : JafarPalette.accent
+                    )
             }
 
             Button {
@@ -117,23 +133,37 @@ struct ContentView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill((voice.isListening ? JafarPalette.danger : JafarPalette.accent).opacity(0.16))
+                        .fill(
+                            (voice.isListening ? JafarPalette.danger : JafarPalette.accent)
+                                .opacity(0.16)
+                        )
                         .frame(width: 112, height: 112)
                     Circle()
                         .fill(voice.isListening ? JafarPalette.danger : JafarPalette.accent)
                         .frame(width: 78, height: 78)
-                        .shadow(color: (voice.isListening ? JafarPalette.danger : JafarPalette.accent).opacity(0.30), radius: 18)
+                        .shadow(
+                            color: (
+                                voice.isListening ? JafarPalette.danger : JafarPalette.accent
+                            ).opacity(0.30),
+                            radius: 18
+                        )
                     Image(systemName: voice.isListening ? "stop.fill" : "mic.fill")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(JafarPalette.background)
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(voice.isListening ? "Остановить и отправить" : "Начать голосовую команду")
+            .accessibilityLabel(
+                voice.isListening ? "Остановить и отправить" : "Начать голосовую команду"
+            )
 
-            Text(voice.isListening ? "Нажмите, чтобы завершить и отправить" : "Нажмите и говорите естественно")
-                .font(.caption)
-                .foregroundStyle(JafarPalette.secondaryText)
+            Text(
+                voice.isListening
+                    ? "Нажмите, чтобы завершить и отправить"
+                    : "Нажмите и говорите естественно"
+            )
+            .font(.caption)
+            .foregroundStyle(JafarPalette.secondaryText)
         }
         .frame(maxWidth: .infinity)
         .jafarCard()
@@ -171,9 +201,55 @@ struct ContentView: View {
         }
     }
 
+    private var alertCenter: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle(
+                    "Сигналы и одобрения",
+                    subtitle: "Срочные изменения, риски и действия, требующие решения"
+                )
+                Spacer()
+                if !alerts.alerts.isEmpty {
+                    Text("\(alerts.alerts.count)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(JafarPalette.background)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(JafarPalette.accent))
+                }
+            }
+
+            if alerts.alerts.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.title3)
+                        .foregroundStyle(JafarPalette.success)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Нет срочных сигналов")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Здесь появятся новые сроки, изменения практики и правки на одобрение.")
+                            .font(.caption)
+                            .foregroundStyle(JafarPalette.secondaryText)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .jafarCard()
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(Array(alerts.alerts.prefix(3))) { alert in
+                        alertRow(alert)
+                    }
+                }
+            }
+        }
+    }
+
     private var modules: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Рабочее пространство", subtitle: "Ключевые модули юридической практики")
+            sectionTitle(
+                "Рабочее пространство",
+                subtitle: "Ключевые модули юридической практики"
+            )
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(JafarModule.allCases) { module in
                     NavigationLink(value: module) {
@@ -198,9 +274,18 @@ struct ContentView: View {
                     .foregroundStyle(JafarPalette.success)
             }
 
-            gateRow("Новая практика не меняет документ автоматически", icon: "hand.raised.fill")
-            gateRow("Каждая правка привязана к authority и source refs", icon: "link")
-            gateRow("Применение и rollback фиксируются в audit ledger", icon: "arrow.uturn.backward.circle.fill")
+            gateRow(
+                "Новая практика не меняет документ автоматически",
+                icon: "hand.raised.fill"
+            )
+            gateRow(
+                "Каждая правка привязана к authority и source refs",
+                icon: "link"
+            )
+            gateRow(
+                "Применение и rollback фиксируются в audit ledger",
+                icon: "arrow.uturn.backward.circle.fill"
+            )
         }
         .jafarCard()
     }
@@ -238,6 +323,49 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .jafarCard()
+    }
+
+    private func alertRow(_ alert: JafarAlert) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: alert.requiresApproval ? "checkmark.seal.fill" : "bell.badge.fill")
+                .foregroundStyle(alertColor(alert.priority))
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(alert.title)
+                        .font(.subheadline.weight(.semibold))
+                    if alert.requiresApproval {
+                        Text("ОДОБРЕНИЕ")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(JafarPalette.accent)
+                    }
+                }
+                Text(alert.body)
+                    .font(.caption)
+                    .foregroundStyle(JafarPalette.secondaryText)
+                    .lineLimit(3)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                alerts.dismiss(alert.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(JafarPalette.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Скрыть сигнал")
+        }
+        .jafarCard()
+    }
+
+    private func alertColor(_ priority: Int) -> Color {
+        if priority >= 80 { return JafarPalette.danger }
+        if priority >= 50 { return JafarPalette.warning }
+        return JafarPalette.accent
     }
 
     private func sectionTitle(_ title: String, subtitle: String) -> some View {
@@ -301,7 +429,10 @@ private struct JafarModuleDetailView: View {
                             .font(.title2)
                             .foregroundStyle(JafarPalette.accent)
                             .frame(width: 48, height: 48)
-                            .background(RoundedRectangle(cornerRadius: 14).fill(JafarPalette.accentSoft))
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(JafarPalette.accentSoft)
+                            )
                         VStack(alignment: .leading, spacing: 3) {
                             Text(module.title)
                                 .font(.title2.weight(.bold))
@@ -326,9 +457,12 @@ private struct JafarModuleDetailView: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "lock.shield.fill")
                             .foregroundStyle(JafarPalette.accent)
-                        Text("Юридически значимые действия, отправка документов и изменение рабочей позиции требуют отдельного подтверждения адвоката.")
-                            .font(.footnote)
-                            .foregroundStyle(JafarPalette.secondaryText)
+                        Text(
+                            "Юридически значимые действия, отправка документов и изменение "
+                                + "рабочей позиции требуют отдельного подтверждения адвоката."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(JafarPalette.secondaryText)
                     }
                     .jafarCard()
                 }

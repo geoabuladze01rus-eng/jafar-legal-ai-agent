@@ -76,7 +76,9 @@ class LegalEntityResearchService:
             )
             for result in results
         ]
-        profile = self.intelligence.build_profile(findings)
+        # These findings crossed the server-owned adapter registry and its source/status/URL
+        # validation boundary. Caller-supplied findings use trusted=False at the HTTP API.
+        profile = self.intelligence.build_profile(findings, trusted=True)
         if self.persist:
             self.persist(query, results, profile)
         return ResearchReport(query=query, profile=profile, results=tuple(results))

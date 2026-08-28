@@ -5,12 +5,14 @@ from enum import StrEnum
 from typing import Any
 
 from .action_approval import ActionApprovalRepository, ActionApprovalStore
+from .action_reconciliation import ReconciliationAuditRepository, ReconciliationAuditStore
 from .config import Settings
 from .matter_repository import MatterRepository
 from .matters import MatterStore
 from .supabase_action_approval import SupabaseActionApprovalRepository
 from .supabase_config import SupabaseSettings, build_supabase_client
 from .supabase_matter_repository import SupabaseMatterRepository
+from .supabase_reconciliation_audit import SupabaseReconciliationAuditRepository
 
 
 class StorageBackend(StrEnum):
@@ -22,6 +24,7 @@ class StorageBackend(StrEnum):
 class RuntimeRepositories:
     matters: MatterRepository
     approvals: ActionApprovalRepository
+    reconciliation_audit: ReconciliationAuditRepository
 
 
 def storage_backend(settings: Settings) -> StorageBackend:
@@ -50,6 +53,7 @@ def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
         return RuntimeRepositories(
             matters=MatterStore(),
             approvals=ActionApprovalStore(),
+            reconciliation_audit=ReconciliationAuditStore(),
         )
 
     client, owner_user_id = _supabase_context()
@@ -60,6 +64,7 @@ def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
             server_mode=True,
         ),
         approvals=SupabaseActionApprovalRepository(client, owner_user_id),
+        reconciliation_audit=SupabaseReconciliationAuditRepository(client, owner_user_id),
     )
 
 
@@ -69,6 +74,10 @@ def build_matter_repository(settings: Settings) -> MatterRepository:
 
 def build_action_approval_repository(settings: Settings) -> ActionApprovalRepository:
     return build_runtime_repositories(settings).approvals
+
+
+def build_reconciliation_audit_repository(settings: Settings) -> ReconciliationAuditRepository:
+    return build_runtime_repositories(settings).reconciliation_audit
 
 
 def _supabase_context() -> tuple[Any, str]:

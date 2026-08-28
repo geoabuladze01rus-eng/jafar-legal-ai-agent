@@ -17,6 +17,9 @@ def test_approval_api_uses_authenticated_backend_queue_without_client_identity()
     assert "LocalApprovalClient" in source
     assert "fetchApprovedAwaitingExecution" in source
     assert 'fetch(state: "approved")' in source
+    assert "let payloadBound: Bool" in source
+    assert "guard item.payloadBound" in source
+    assert "точное содержимое действия не зафиксировано" in source
 
 
 def test_live_dashboard_requires_explicit_human_decision() -> None:

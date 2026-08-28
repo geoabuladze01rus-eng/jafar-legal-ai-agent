@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sqlite3
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -30,6 +31,19 @@ def parse_schedule_time(value: str) -> datetime:
     return parsed
 
 
+def _safe_delivery_error(exc: Exception) -> str:
+    """Persist a low-information error code rather than exception text or Telegram payloads."""
+
+    if isinstance(exc, PermissionError):
+        return "delivery_policy_denied"
+    if isinstance(exc, ValueError):
+        return "delivery_invalid_payload"
+    if isinstance(exc, TimeoutError):
+        return "delivery_timeout"
+    name = re.sub(r"[^a-z0-9]+", "_", type(exc).__name__.casefold()).strip("_")
+    return f"delivery_{name or 'failure'}"[:96]
+
+
 @dataclass(frozen=True)
 class ScheduledItem:
     id: str
@@ -53,12 +67,14 @@ class TelegramScheduleStore:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        con = sqlite3.connect(self.path)
+        con = sqlite3.connect(self.path, timeout=5.0)
         con.row_factory = sqlite3.Row
+        con.execute("PRAGMA busy_timeout=5000")
         return con
 
     def _init_db(self) -> None:
         with self._connect() as con:
+            con.execute("PRAGMA journal_mode=WAL")
             con.execute("""CREATE TABLE IF NOT EXISTS telegram_scheduled_items (
                 id TEXT PRIMARY KEY, kind TEXT NOT NULL, chat_id TEXT NOT NULL, payload_json TEXT NOT NULL,
                 scheduled_for TEXT NOT NULL, status TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
@@ -70,7 +86,7 @@ class TelegramScheduleStore:
             )
             # Sending can mean Telegram received it before a restart. Failing closed avoids duplicates.
             con.execute(
-                "UPDATE telegram_scheduled_items SET status='failed', error='interrupted while sending; not retried to prevent duplicate delivery', updated_at=? WHERE status='sending'",
+                "UPDATE telegram_scheduled_items SET status='failed', error='interrupted_before_delivery_confirmation', updated_at=? WHERE status='sending'",
                 (utc_now().isoformat(),),
             )
 
@@ -88,6 +104,7 @@ class TelegramScheduleStore:
         if recurrence_seconds is not None and recurrence_seconds < 60:
             raise ValueError("recurrence_seconds must be at least 60")
         item_id, now = str(uuid4()), utc_now().isoformat()
+        normalized_time = scheduled_for.astimezone(UTC)
         try:
             with self._connect() as con:
                 con.execute(
@@ -96,8 +113,8 @@ class TelegramScheduleStore:
                         item_id,
                         kind,
                         chat_id,
-                        json.dumps(payload),
-                        scheduled_for.isoformat(),
+                        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                        normalized_time.isoformat(),
                         idempotency_key,
                         recurrence_seconds,
                         now,
@@ -106,7 +123,16 @@ class TelegramScheduleStore:
                     ),
                 )
         except sqlite3.IntegrityError:
-            return self.by_idempotency_key(idempotency_key)
+            existing = self.by_idempotency_key(idempotency_key)
+            if (
+                existing.kind != kind
+                or existing.chat_id != chat_id
+                or existing.payload != payload
+                or existing.scheduled_for != normalized_time
+                or existing.recurrence_seconds != recurrence_seconds
+            ):
+                raise ValueError("idempotency_key_conflict") from None
+            return existing
         return self.get(item_id)
 
     def by_idempotency_key(self, key: str) -> ScheduledItem:
@@ -130,6 +156,8 @@ class TelegramScheduleStore:
     def list(
         self, statuses: tuple[str, ...] = ("pending", "sending", "failed")
     ) -> list[ScheduledItem]:
+        if not statuses:
+            return []
         marks = ",".join("?" for _ in statuses)
         with self._connect() as con:
             rows = con.execute(
@@ -152,13 +180,15 @@ class TelegramScheduleStore:
         return self.get(item_id)
 
     def claim_due(self, now: datetime | None = None) -> list[ScheduledItem]:
-        current = (now or utc_now()).isoformat()
+        current = (now or utc_now()).astimezone(UTC).isoformat()
+        claimed: list[str] = []
         with self._connect() as con:
+            # Serialize claim selection across multiple scheduler processes sharing this SQLite DB.
+            con.execute("BEGIN IMMEDIATE")
             rows = con.execute(
-                "SELECT id FROM telegram_scheduled_items WHERE status='pending' AND scheduled_for<=?",
+                "SELECT id FROM telegram_scheduled_items WHERE status='pending' AND scheduled_for<=? ORDER BY scheduled_for, id",
                 (current,),
             ).fetchall()
-            claimed: list[str] = []
             for row in rows:
                 if con.execute(
                     "UPDATE telegram_scheduled_items SET status='sending', attempts=attempts+1, updated_at=? WHERE id=? AND status='pending'",
@@ -172,10 +202,12 @@ class TelegramScheduleStore:
     ) -> None:
         status = "failed" if error else "sent"
         with self._connect() as con:
-            con.execute(
+            changed = con.execute(
                 "UPDATE telegram_scheduled_items SET status=?, message_id=?, error=?, updated_at=? WHERE id=? AND status='sending'",
                 (status, message_id, error, utc_now().isoformat(), item.id),
-            )
+            ).rowcount
+        if not changed:
+            raise RuntimeError("scheduled_item_finish_state_mismatch")
         if not error and item.recurrence_seconds:
             next_time = item.scheduled_for + timedelta(seconds=item.recurrence_seconds)
             while next_time <= utc_now():
@@ -192,11 +224,14 @@ class TelegramScheduleStore:
 
     @staticmethod
     def _item(row: sqlite3.Row) -> ScheduledItem:
+        payload = json.loads(row["payload_json"])
+        if not isinstance(payload, dict):
+            raise RuntimeError("scheduled_item_payload_invalid")
         return ScheduledItem(
             row["id"],
             row["kind"],
             row["chat_id"],
-            json.loads(row["payload_json"]),
+            payload,
             datetime.fromisoformat(row["scheduled_for"]),
             row["status"],
             row["idempotency_key"],
@@ -219,8 +254,8 @@ class TelegramScheduler:
         for item in items:
             try:
                 message_id = await self.deliver(item)
-            except Exception as exc:  # noqa: BLE001 - a job runner must persist every delivery failure
-                self.store.finish(item, error=str(exc)[:1000])
+            except Exception as exc:  # noqa: BLE001 - every failure must close the state machine
+                self.store.finish(item, error=_safe_delivery_error(exc))
             else:
                 self.store.finish(item, message_id=message_id)
         return len(items)

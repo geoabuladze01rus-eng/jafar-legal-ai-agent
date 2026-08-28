@@ -101,6 +101,16 @@ The outline generator has a strict authority boundary. It does not invent statut
 
 This layer is a drafting scaffold only. Every section remains marked `requires_lawyer_approval=true`, and the final legal characterization, authorities, wording, oral submission and filing decision remain with the lawyer.
 
+## Legal authority verification and applicability
+
+Legal authority identity and legal applicability are separate gates. `LegalAuthorityVerifier` first confirms canonical citation, canonical source URL and a stable source fingerprint. A model suggestion or a plausible citation cannot verify itself.
+
+`AuthorityApplicabilityEngine` then checks whether a verified authority is usable for the concrete legal question. It evaluates the legally relevant date, subject matter, proceeding type, source weight, supersession and negative later treatment. A verified source can therefore still be classified as `not_applicable`, `outside_time`, `superseded` or `review_required`.
+
+`AuthorityApplicabilityPipeline` promotes only authorities with `applicable` status into drafting inputs. Anything else remains in `blocked_citations` and prevents the authority release gate from passing. This prevents Jafar from citing a genuine but outdated, superseded or contextually irrelevant authority merely because its requisites are correct.
+
+Authority weight is recorded separately (`binding`, `high`, `persuasive`, `contextual`, `unknown`) and is not inferred from model confidence. The final legal assessment of precedential force and applicability remains subject to lawyer review.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -123,5 +133,8 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Defense actions must remain preparation tasks, preserve source references and require explicit lawyer approval before any external action.
 - Hearing/interrogation scripts must preserve source trails, avoid automatic execution and keep document confrontation behind lawyer judgment.
 - Court outlines must not invent statutes, case law or requested relief; unverified caller-supplied authorities must remain visibly flagged.
+- Verification of an authority must not be treated as proof of applicability.
+- Only verified and applicable authorities may pass the authority release gate into final drafting inputs.
+- Superseded, out-of-time, contextually irrelevant or negatively treated authorities must remain blocked or require human review.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

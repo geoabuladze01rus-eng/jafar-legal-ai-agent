@@ -14,6 +14,7 @@ from .config import Settings
 from .matter_repository import MatterRepository
 from .matters import MatterStore
 from .supabase_action_approval import SupabaseActionApprovalRepository
+from .supabase_action_reconciliation import SupabaseActionReconciliationService
 from .supabase_config import SupabaseSettings, build_supabase_client
 from .supabase_matter_repository import SupabaseMatterRepository
 from .supabase_reconciliation_audit import SupabaseReconciliationAuditRepository
@@ -29,12 +30,7 @@ class RuntimeRepositories:
     matters: MatterRepository
     approvals: ActionApprovalRepository
     reconciliation_audit: ReconciliationAuditRepository
-
-    def reconciliation_service(self) -> ActionReconciliationService:
-        return ActionReconciliationService(
-            self.approvals,
-            audit_repository=self.reconciliation_audit,
-        )
+    reconciliation: ActionReconciliationService
 
 
 def storage_backend(settings: Settings) -> StorageBackend:
@@ -60,21 +56,35 @@ def validate_storage_security(settings: Settings) -> None:
 def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
     backend = storage_backend(settings)
     if backend is StorageBackend.MEMORY:
+        approvals = ActionApprovalStore()
+        audit = ReconciliationAuditStore()
         return RuntimeRepositories(
             matters=MatterStore(),
-            approvals=ActionApprovalStore(),
-            reconciliation_audit=ReconciliationAuditStore(),
+            approvals=approvals,
+            reconciliation_audit=audit,
+            reconciliation=ActionReconciliationService(
+                approvals,
+                audit_repository=audit,
+            ),
         )
 
     client, owner_user_id = _supabase_context()
+    approvals = SupabaseActionApprovalRepository(client, owner_user_id)
+    audit = SupabaseReconciliationAuditRepository(client, owner_user_id)
     return RuntimeRepositories(
         matters=SupabaseMatterRepository(
             client,
             owner_user_id,
             server_mode=True,
         ),
-        approvals=SupabaseActionApprovalRepository(client, owner_user_id),
-        reconciliation_audit=SupabaseReconciliationAuditRepository(client, owner_user_id),
+        approvals=approvals,
+        reconciliation_audit=audit,
+        reconciliation=SupabaseActionReconciliationService(
+            approvals,
+            audit,
+            client=client,
+            owner_user_id=owner_user_id,
+        ),
     )
 
 

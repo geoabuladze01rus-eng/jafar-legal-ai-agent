@@ -15,6 +15,8 @@ def test_approval_api_uses_authenticated_backend_queue_without_client_identity()
     assert "JafarApprovalIdentity" not in source
     assert "let approver" not in source
     assert "LocalApprovalClient" in source
+    assert "fetchApprovedAwaitingExecution" in source
+    assert 'fetch(state: "approved")' in source
 
 
 def test_live_dashboard_requires_explicit_human_decision() -> None:
@@ -28,6 +30,16 @@ def test_live_dashboard_requires_explicit_human_decision() -> None:
     assert "задаётся на backend" in source
     assert "JafarApprovalIdentity" not in source
     assert source.count(".disabled(decisionDisabled)") == 2
+
+
+def test_live_dashboard_distinguishes_approval_from_execution() -> None:
+    source = (APP / "UI" / "LiveDashboardView.swift").read_text(encoding="utf-8")
+
+    assert "approvedAwaitingExecutionCenter" in source
+    assert "Одобрено — ожидает выполнения" in source
+    assert "Одобрение и фактическое выполнение намеренно разделены" in source
+    assert "НЕ ВЫПОЛНЕНО" in source
+    assert "execution step" in source
 
 
 def test_connection_settings_explain_server_controlled_audit_identity() -> None:

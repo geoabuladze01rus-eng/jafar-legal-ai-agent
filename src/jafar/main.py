@@ -12,7 +12,8 @@ from .command_runtime import JafarCommandRuntime
 from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
-from .document_repository import EmptyDocumentRepository, MatterDocumentSummary
+from .document_repository import EmptyDocumentRepository, MatterDocumentSummary, SupabaseDocumentRepository
+from .supabase_config import SupabaseSettings, build_supabase_client
 from .domains import DocumentTask, MatterType
 from .gmail_gateway import make_local_gmail_gateway
 from .lawyer_context import LawyerContext
@@ -78,7 +79,10 @@ matter_store = MatterStore()
 lawyer_context = LawyerContext()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, analyzer)
-document_repository = EmptyDocumentRepository()
+try:
+    document_repository = SupabaseDocumentRepository(build_supabase_client(SupabaseSettings()))
+except Exception:
+    document_repository = EmptyDocumentRepository()
 command_runtime = JafarCommandRuntime(
     matter_store,
     lawyer_context,

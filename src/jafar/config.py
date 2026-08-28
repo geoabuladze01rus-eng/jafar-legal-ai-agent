@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ai_queue_max_size: int = 1000
     ai_queue_max_per_user: int = 20
     ai_queue_worker_claim_limit: int = 5
+    ai_rate_limit_requests: int = 30
+    ai_rate_limit_window_seconds: int = 60
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -19,23 +20,38 @@ from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 
 telegram_runtime: TelegramRuntime | None = None
+telegram_scheduler_task: asyncio.Task[None] | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global telegram_runtime
+    global telegram_runtime, telegram_scheduler_task
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
             production_send=settings.telegram_production_send,
+            dry_run=settings.telegram_dry_run,
         )
         telegram_runtime.start()
+    if settings.telegram_scheduler_enabled and settings.telegram_bot_token:
+        from .telegram_mcp import _deliver, _store
+        from .telegram_scheduler import TelegramScheduler
+
+        app.state.telegram_scheduler_stop = asyncio.Event()
+        telegram_scheduler_task = asyncio.create_task(
+            TelegramScheduler(_store(), _deliver).serve(app.state.telegram_scheduler_stop),
+            name="jafar-telegram-scheduler",
+        )
     try:
         yield
     finally:
         if telegram_runtime is not None:
             await telegram_runtime.stop()
             telegram_runtime = None
+        if telegram_scheduler_task is not None:
+            app.state.telegram_scheduler_stop.set()
+            await telegram_scheduler_task
+            telegram_scheduler_task = None
 
 
 app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)

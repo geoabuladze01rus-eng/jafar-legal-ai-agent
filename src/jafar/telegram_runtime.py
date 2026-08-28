@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
 import httpx
 
 from .comment_pipeline import process_update
+from .config import settings
 from .production_guard import ProductionGuard
 from .telegram_outbound import TelegramOutbound
+from .telegram_polls import TelegramPollStore
 from .telegram_update_receiver import TelegramUpdateReceiver, run_polling
 
 logger = logging.getLogger(__name__)
@@ -41,6 +44,7 @@ class TelegramBotHttpClient:
         photo_url: str | None = None,
         photo_bytes: bytes | None = None,
         filename: str = "image.png",
+        mime_type: str = "application/octet-stream",
     ) -> dict[str, Any]:
         """Send a photo by public URL or uploaded bytes."""
         if bool(photo_url) == bool(photo_bytes):
@@ -54,7 +58,7 @@ class TelegramBotHttpClient:
         if photo_url:
             data["photo"] = photo_url
         else:
-            files = {"photo": (filename, photo_bytes, "application/octet-stream")}
+            files = {"photo": (filename, photo_bytes, mime_type)}
 
         async with httpx.AsyncClient(timeout=self.request_timeout) as client:
             response = await client.post(
@@ -68,6 +72,29 @@ class TelegramBotHttpClient:
             raise RuntimeError(f"Telegram sendPhoto failed: {payload}")
         return dict(payload.get("result") or {})
 
+    async def send_poll(self, *, chat_id: int | str, poll: dict[str, Any]) -> dict[str, Any]:
+        """Send a validated Bot API poll without leaking the bot token in errors."""
+        data: dict[str, Any] = {
+            "chat_id": str(chat_id),
+            "question": poll["question"],
+            "options": json.dumps(poll["options"]),
+            "is_anonymous": str(bool(poll["is_anonymous"])).lower(),
+            "allows_multiple_answers": str(bool(poll["allows_multiple_answers"])).lower(),
+            "type": poll["type"],
+        }
+        for key in ("correct_option_id", "explanation", "open_period", "close_date"):
+            if poll.get(key) is not None:
+                data[key] = str(poll[key])
+        async with httpx.AsyncClient(timeout=self.request_timeout) as client:
+            response = await client.post(f"{self.base_url}/sendPoll", data=data)
+            response.raise_for_status()
+            payload = response.json()
+        if not payload.get("ok"):
+            raise RuntimeError(
+                f"Telegram sendPoll failed: {payload.get('description', 'unknown error')}"
+            )
+        return dict(payload.get("result") or {})
+
 
 class TelegramRuntime:
     """Connect Telegram polling, the comment pipeline, safety and outbound delivery."""
@@ -77,7 +104,7 @@ class TelegramRuntime:
         bot_token: str,
         *,
         production_send: bool = False,
-        dry_run: bool = True,
+        dry_run: bool = False,
     ) -> None:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
@@ -89,6 +116,9 @@ class TelegramRuntime:
         self._task: asyncio.Task[None] | None = None
 
     async def handle_update(self, update: dict[str, Any]) -> None:
+        # Poll/poll_answer updates are state updates, not inbound comments.
+        if TelegramPollStore(settings.telegram_scheduler_db_path).ingest_update(update):
+            return
         result = process_update(update)
         if result is None or not result.safety.allowed:
             return

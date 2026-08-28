@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
@@ -13,7 +14,10 @@ class TelegramUpdateReceiver:
         self.request_timeout = request_timeout
 
     async def fetch(self, offset: int | None = None) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"timeout": self.timeout, "allowed_updates": json.dumps(["message"])}
+        params: dict[str, Any] = {
+            "timeout": self.timeout,
+            "allowed_updates": json.dumps(["message", "poll", "poll_answer"]),
+        }
         if offset is not None:
             params["offset"] = offset
         async with httpx.AsyncClient(timeout=self.request_timeout) as client:
@@ -39,7 +43,7 @@ async def run_polling(
             update_id = int(update["update_id"])
             try:
                 await handler(update)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - bad updates must not poison the queue
                 if on_error is not None:
                     await on_error(update, exc)
             finally:

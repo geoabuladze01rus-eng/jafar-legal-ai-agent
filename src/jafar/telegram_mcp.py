@@ -1,23 +1,61 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import os
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 
 from jafar.config import settings
+from jafar.telegram_polls import TelegramPollStore, validate_poll
+from jafar.telegram_publishing import MAX_PHOTO_BYTES, TelegramPublisher, validate_photo_bytes
 from jafar.telegram_runtime import TelegramBotHttpClient
+from jafar.telegram_scheduler import (
+    ScheduledItem,
+    TelegramScheduler,
+    TelegramScheduleStore,
+    parse_schedule_time,
+)
 
-mcp = MCPServer("Jafar Telegram")
 
-_MAX_PHOTO_BYTES = 10 * 1024 * 1024
-_MAX_CAPTION_CHARS = 1024
+class _StaticTokenVerifier:
+    """MVP bearer protection for a private MCP endpoint; never log supplied tokens."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not hmac.compare_digest(token, self._token):
+            return None
+        return AccessToken(
+            token="redacted", client_id="jafar-private-mcp", scopes=["jafar:telegram"]
+        )
+
+
+def _mcp_server() -> MCPServer:
+    token = (settings.jafar_mcp_auth_token or "").strip()
+    if not token:
+        return MCPServer("Jafar Telegram")
+    public_url = (settings.jafar_mcp_public_url or "").strip()
+    if not public_url:
+        raise RuntimeError("JAFAR_MCP_PUBLIC_URL is required when JAFAR_MCP_AUTH_TOKEN is set")
+    auth = AuthSettings(
+        issuer_url=public_url,
+        resource_server_url=public_url,
+        required_scopes=["jafar:telegram"],
+    )
+    return MCPServer("Jafar Telegram", auth=auth, token_verifier=_StaticTokenVerifier(token))
+
+
+mcp = _mcp_server()
 
 
 def _allowed_chat_ids() -> set[str]:
-    raw = settings.telegram_allowed_chat_ids
-    return {item.strip() for item in raw.split(",") if item.strip()}
+    return {part.strip() for part in settings.telegram_allowed_chat_ids.split(",") if part.strip()}
 
 
 def _require_token() -> str:
@@ -28,52 +66,119 @@ def _require_token() -> str:
 
 
 def _require_allowed_chat(chat_id: int | str) -> str:
-    value = str(chat_id).strip()
-    allowed = _allowed_chat_ids()
+    chat, allowed = str(chat_id).strip(), _allowed_chat_ids()
     if not allowed:
         raise RuntimeError("TELEGRAM_ALLOWED_CHAT_IDS is empty; outbound access is disabled")
-    if value not in allowed:
-        raise PermissionError(f"Telegram chat {value} is not in the allowlist")
-    return value
+    if chat not in allowed:
+        raise PermissionError(f"Telegram chat {chat} is not in the allowlist")
+    return chat
 
 
-def _decode_photo_base64(photo_base64: str) -> bytes:
-    value = photo_base64.strip()
+def _decode_photo_base64(value: str) -> bytes:
+    value = value.strip()
     if value.startswith("data:"):
         _, _, value = value.partition(",")
     try:
-        decoded = base64.b64decode(value, validate=True)
+        data = base64.b64decode(value, validate=True)
     except Exception as exc:
         raise ValueError("photo_base64 is not valid base64") from exc
-    if not decoded:
+    if not data:
         raise ValueError("photo_base64 decodes to an empty file")
-    if len(decoded) > _MAX_PHOTO_BYTES:
+    if len(data) > MAX_PHOTO_BYTES:
         raise ValueError("photo exceeds 10 MB limit")
-    return decoded
+    return data
+
+
+def _store() -> TelegramScheduleStore:
+    return TelegramScheduleStore(settings.telegram_scheduler_db_path)
+
+
+def _polls() -> TelegramPollStore:
+    return TelegramPollStore(settings.telegram_scheduler_db_path)
+
+
+def _publisher() -> TelegramPublisher:
+    return TelegramPublisher(lambda: TelegramBotHttpClient(_require_token()), _require_allowed_chat)
+
+
+def _key(
+    kind: str, chat: str, payload: dict[str, Any], scheduled: str, supplied: str | None
+) -> str:
+    if supplied:
+        if not 1 <= len(supplied) <= 200:
+            raise ValueError("idempotency_key must contain 1 to 200 characters")
+        return supplied
+    return "auto:" + hashlib.sha256(f"{kind}|{chat}|{scheduled}|{payload}".encode()).hexdigest()
+
+
+async def _deliver(item: ScheduledItem) -> int | None:
+    """Delivery-time policy check is intentionally inside every branch."""
+    if item.kind == "post":
+        payload = item.payload
+        image = (
+            _decode_photo_base64(payload["photo_base64"]) if payload.get("photo_base64") else None
+        )
+        result = await _publisher().publish(
+            chat_id=item.chat_id,
+            text=payload["text"],
+            photo_url=payload.get("photo_url"),
+            photo_bytes=image,
+            filename=payload.get("filename", "image.png"),
+        )
+        return result.message_ids[-1] if result.message_ids else result.photo_message_id
+    if item.kind == "poll":
+        chat = _require_allowed_chat(item.chat_id)
+        result = await TelegramBotHttpClient(_require_token()).send_poll(
+            chat_id=chat, poll=item.payload
+        )
+        if isinstance(result.get("poll"), dict):
+            _polls().record_sent(
+                poll=result["poll"], chat_id=chat, message_id=result.get("message_id")
+            )
+        return result.get("message_id")
+    raise ValueError(f"unsupported scheduled item kind {item.kind}")
+
+
+def _scheduled(item: ScheduledItem, detail: bool = True) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "schedule_id": item.id,
+        "kind": item.kind,
+        "chat_id": item.chat_id,
+        "scheduled_for": item.scheduled_for.isoformat(),
+        "status": item.status,
+        "idempotency_key": item.idempotency_key,
+        "recurrence_seconds": item.recurrence_seconds,
+        "message_id": item.message_id,
+        "error": item.error,
+    }
+    if detail:
+        result["has_photo"] = bool(
+            item.payload.get("photo_url") or item.payload.get("photo_base64")
+        )
+    return result
 
 
 @mcp.tool()
 async def telegram_status() -> dict[str, Any]:
-    """Return Jafar Telegram MCP configuration status without exposing secrets."""
+    """Return Telegram MCP configuration status without secrets."""
     return {
         "configured": bool((settings.telegram_bot_token or "").strip()),
         "allowed_chat_ids_count": len(_allowed_chat_ids()),
         "outbound_enabled": bool(_allowed_chat_ids()),
+        "scheduler_db": settings.telegram_scheduler_db_path,
+        "remote_auth_configured": bool(settings.jafar_mcp_auth_token),
     }
 
 
 @mcp.tool()
 async def telegram_send_message(chat_id: int | str, text: str) -> dict[str, Any]:
-    """Send a Telegram message only to an explicitly allowlisted chat."""
-    safe_chat_id = _require_allowed_chat(chat_id)
-    if not text.strip():
-        raise ValueError("text must not be empty")
-    client = TelegramBotHttpClient(_require_token())
-    result = await client.send_message(chat_id=safe_chat_id, text=text)
+    """Send an allowlisted text message, safely splitting content over 4096 chars."""
+    result = await _publisher().publish(chat_id=chat_id, text=text)
     return {
         "ok": True,
-        "chat_id": safe_chat_id,
-        "message_id": result.get("message_id"),
+        "chat_id": _require_allowed_chat(chat_id),
+        "message_id": result.message_ids[-1] if result.message_ids else None,
+        "message_ids": result.message_ids,
     }
 
 
@@ -85,59 +190,173 @@ async def telegram_publish_post(
     photo_base64: str | None = None,
     filename: str = "image.png",
 ) -> dict[str, Any]:
-    """Publish a Telegram post with optional photo to an allowlisted chat.
+    """Publish text or a photo. A long caption becomes photo then complete text messages."""
+    if photo_url and photo_base64:
+        raise ValueError("provide only one of photo_url or photo_base64")
+    image = _decode_photo_base64(photo_base64) if photo_base64 else None
+    if image:
+        validate_photo_bytes(image)
+    result = await _publisher().publish(
+        chat_id=chat_id, text=text, photo_url=photo_url, photo_bytes=image, filename=filename
+    )
+    return {
+        "ok": True,
+        "chat_id": _require_allowed_chat(chat_id),
+        "mode": result.mode,
+        "photo_message_id": result.photo_message_id,
+        "message_id": result.message_ids[-1] if result.message_ids else result.photo_message_id,
+        "message_ids": result.message_ids,
+    }
 
-    Supply either photo_url or photo_base64, never both. If the text is longer
-    than Telegram's photo-caption limit, the photo is posted first and the full
-    text follows as a separate message.
-    """
-    safe_chat_id = _require_allowed_chat(chat_id)
-    clean_text = text.strip()
-    if not clean_text:
+
+@mcp.tool()
+async def telegram_schedule_post(
+    chat_id: int | str,
+    text: str,
+    scheduled_for: str,
+    photo_url: str | None = None,
+    photo_base64: str | None = None,
+    filename: str = "image.png",
+    idempotency_key: str | None = None,
+    recurrence_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Persist an allowlisted text/photo publication for a future timezone-aware time."""
+    chat = _require_allowed_chat(chat_id)
+    if not text.strip():
         raise ValueError("text must not be empty")
     if photo_url and photo_base64:
         raise ValueError("provide only one of photo_url or photo_base64")
-
-    client = TelegramBotHttpClient(_require_token())
-
-    if not photo_url and not photo_base64:
-        result = await client.send_message(chat_id=safe_chat_id, text=clean_text)
-        return {
-            "ok": True,
-            "chat_id": safe_chat_id,
-            "message_id": result.get("message_id"),
-            "mode": "text",
-        }
-
-    photo_bytes = _decode_photo_base64(photo_base64) if photo_base64 else None
-    caption = clean_text if len(clean_text) <= _MAX_CAPTION_CHARS else ""
-    photo_result = await client.send_photo(
-        chat_id=safe_chat_id,
-        caption=caption,
-        photo_url=photo_url,
-        photo_bytes=photo_bytes,
-        filename=filename,
+    if photo_base64:
+        validate_photo_bytes(_decode_photo_base64(photo_base64))
+    scheduled = parse_schedule_time(scheduled_for)
+    payload = {
+        "text": text,
+        "photo_url": photo_url,
+        "photo_base64": photo_base64,
+        "filename": filename,
+    }
+    item = _store().schedule(
+        kind="post",
+        chat_id=chat,
+        payload=payload,
+        scheduled_for=scheduled,
+        idempotency_key=_key("post", chat, payload, scheduled.isoformat(), idempotency_key),
+        recurrence_seconds=recurrence_seconds,
     )
+    return _scheduled(item)
 
-    response: dict[str, Any] = {
+
+@mcp.tool()
+async def telegram_list_scheduled_posts() -> dict[str, Any]:
+    """List pending, sending and failed scheduled posts/polls; image bytes are never returned."""
+    return {"items": [_scheduled(item, False) for item in _store().list()]}
+
+
+@mcp.tool()
+async def telegram_cancel_scheduled_post(schedule_id: str) -> dict[str, Any]:
+    """Cancel a pending scheduled post or poll."""
+    return _scheduled(_store().cancel(schedule_id))
+
+
+@mcp.tool()
+async def telegram_send_poll(
+    chat_id: int | str,
+    question: str,
+    options: list[str],
+    is_anonymous: bool = True,
+    allows_multiple_answers: bool = False,
+    poll_type: str = "regular",
+    correct_option_id: int | None = None,
+    explanation: str | None = None,
+    open_period: int | None = None,
+    close_date: int | None = None,
+) -> dict[str, Any]:
+    """Create a regular or quiz poll in an allowlisted Telegram chat."""
+    chat = _require_allowed_chat(chat_id)
+    poll = validate_poll(
+        question=question,
+        options=options,
+        is_anonymous=is_anonymous,
+        allows_multiple_answers=allows_multiple_answers,
+        poll_type=poll_type,
+        correct_option_id=correct_option_id,
+        explanation=explanation,
+        open_period=open_period,
+        close_date=close_date,
+    )
+    result = await TelegramBotHttpClient(_require_token()).send_poll(
+        chat_id=_require_allowed_chat(chat), poll=poll
+    )
+    if not isinstance(result.get("poll"), dict) or not result["poll"].get("id"):
+        raise RuntimeError("Telegram sendPoll returned no poll identifier")
+    _polls().record_sent(poll=result["poll"], chat_id=chat, message_id=result.get("message_id"))
+    return {
         "ok": True,
-        "chat_id": safe_chat_id,
-        "photo_message_id": photo_result.get("message_id"),
-        "mode": "photo_with_caption" if caption else "photo_then_text",
+        "chat_id": chat,
+        "message_id": result.get("message_id"),
+        "poll_id": result["poll"]["id"],
     }
 
-    if not caption:
-        text_result = await client.send_message(chat_id=safe_chat_id, text=clean_text)
-        response["message_id"] = text_result.get("message_id")
 
-    return response
+@mcp.tool()
+async def telegram_schedule_poll(
+    chat_id: int | str,
+    question: str,
+    options: list[str],
+    scheduled_for: str,
+    is_anonymous: bool = True,
+    allows_multiple_answers: bool = False,
+    poll_type: str = "regular",
+    correct_option_id: int | None = None,
+    explanation: str | None = None,
+    open_period: int | None = None,
+    close_date: int | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Persist a poll for one future delivery."""
+    chat = _require_allowed_chat(chat_id)
+    poll = validate_poll(
+        question=question,
+        options=options,
+        is_anonymous=is_anonymous,
+        allows_multiple_answers=allows_multiple_answers,
+        poll_type=poll_type,
+        correct_option_id=correct_option_id,
+        explanation=explanation,
+        open_period=open_period,
+        close_date=close_date,
+    )
+    scheduled = parse_schedule_time(scheduled_for)
+    item = _store().schedule(
+        kind="poll",
+        chat_id=chat,
+        payload=poll,
+        scheduled_for=scheduled,
+        idempotency_key=_key("poll", chat, poll, scheduled.isoformat(), idempotency_key),
+    )
+    return _scheduled(item)
+
+
+@mcp.tool()
+async def telegram_get_poll_results(poll_id: str) -> dict[str, Any]:
+    """Return persisted poll state and available non-anonymous answers."""
+    return _polls().results(poll_id)
+
+
+async def run_scheduler_once() -> int:
+    return await TelegramScheduler(_store(), _deliver).run_due()
 
 
 if __name__ == "__main__":
-    transport = os.getenv("JAFAR_MCP_TRANSPORT", "stdio").strip().lower()
-    if transport == "streamable-http":
-        host = os.getenv("JAFAR_MCP_HOST", "127.0.0.1")
-        port = int(os.getenv("JAFAR_MCP_PORT", "8000"))
+    if os.getenv("JAFAR_MCP_TRANSPORT", "stdio").strip().lower() == "streamable-http":
+        host, port = (
+            os.getenv("JAFAR_MCP_HOST", "127.0.0.1"),
+            int(os.getenv("JAFAR_MCP_PORT", "8000")),
+        )
+        if host not in {"127.0.0.1", "localhost", "::1"} and not settings.jafar_mcp_auth_token:
+            raise RuntimeError(
+                "refusing public MCP listener without JAFAR_MCP_AUTH_TOKEN and an authenticating HTTPS proxy"
+            )
         mcp.run(
             transport="streamable-http",
             host=host,

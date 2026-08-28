@@ -4,17 +4,103 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 
-@dataclass(frozen=True)
+VALID_ENTITY_QUERY_TYPES = {"name", "inn", "ogrn", "kpp"}
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class EntityQuery:
-    name: str | None = None
-    inn: str | None = None
-    ogrn: str | None = None
-    kpp: str | None = None
+    """Canonical legal-entity query used by API, adapters and intelligence.
+
+    The class accepts the current ``value/query_type`` shape and remains backward-compatible
+    with keyword identifier construction such as ``EntityQuery(inn="7701234567")``.
+    """
+
+    value: str
+    query_type: str
+
+    def __init__(
+        self,
+        value: str | None = None,
+        query_type: str = "name",
+        *,
+        name: str | None = None,
+        inn: str | None = None,
+        ogrn: str | None = None,
+        kpp: str | None = None,
+    ) -> None:
+        identifiers = {
+            "name": name,
+            "inn": inn,
+            "ogrn": ogrn,
+            "kpp": kpp,
+        }
+        supplied_identifiers = [
+            (kind, raw)
+            for kind, raw in identifiers.items()
+            if raw is not None and str(raw).strip()
+        ]
+        if value is not None and supplied_identifiers:
+            raise ValueError("entity_query_ambiguous_input")
+        if len(supplied_identifiers) > 1:
+            raise ValueError("entity_query_requires_single_identifier")
+
+        if supplied_identifiers:
+            normalized_type, raw_value = supplied_identifiers[0]
+        else:
+            normalized_type = query_type.strip().casefold()
+            raw_value = value
+
+        if normalized_type not in VALID_ENTITY_QUERY_TYPES:
+            raise ValueError("unsupported_entity_query_type")
+        normalized_value = str(raw_value or "").strip()
+        if not normalized_value:
+            raise ValueError("entity_query_value_required")
+        if len(normalized_value) > 500:
+            raise ValueError("entity_query_value_too_long")
+
+        if normalized_type == "inn":
+            if not normalized_value.isdigit() or len(normalized_value) not in {10, 12}:
+                raise ValueError("invalid_inn")
+        elif normalized_type == "ogrn":
+            if not normalized_value.isdigit() or len(normalized_value) not in {13, 15}:
+                raise ValueError("invalid_ogrn")
+        elif normalized_type == "kpp":
+            if not normalized_value.isdigit() or len(normalized_value) != 9:
+                raise ValueError("invalid_kpp")
+
+        object.__setattr__(self, "value", normalized_value)
+        object.__setattr__(self, "query_type", normalized_type)
+
+    @classmethod
+    def infer(cls, value: str) -> "EntityQuery":
+        normalized = value.strip()
+        digits = "".join(ch for ch in normalized if ch.isdigit())
+        if normalized.isdigit() and len(digits) in {10, 12}:
+            return cls(normalized, "inn")
+        if normalized.isdigit() and len(digits) in {13, 15}:
+            return cls(normalized, "ogrn")
+        if normalized.isdigit() and len(digits) == 9:
+            return cls(normalized, "kpp")
+        return cls(normalized, "name")
+
+    @property
+    def name(self) -> str | None:
+        return self.value if self.query_type == "name" else None
+
+    @property
+    def inn(self) -> str | None:
+        return self.value if self.query_type == "inn" else None
+
+    @property
+    def ogrn(self) -> str | None:
+        return self.value if self.query_type == "ogrn" else None
+
+    @property
+    def kpp(self) -> str | None:
+        return self.value if self.query_type == "kpp" else None
 
     def normalized(self) -> "EntityQuery":
-        return EntityQuery(
-            *(value.strip() if value else None for value in (self.name, self.inn, self.ogrn, self.kpp))
-        )
+        return self
 
 
 @dataclass(frozen=True)
@@ -56,8 +142,6 @@ class LegalEntityIntelligence:
 
     def investigate(self, query: EntityQuery) -> dict[str, Any]:
         q = query.normalized()
-        if not any((q.name, q.inn, q.ogrn, q.kpp)):
-            raise ValueError("At least one entity identifier is required")
         findings = []
         for source in self.sources:
             try:

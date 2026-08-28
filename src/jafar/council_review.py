@@ -8,6 +8,14 @@ from .model_router import ModelRequest
 
 
 @dataclass(frozen=True, slots=True)
+class CouncilEvidenceInput:
+    evidence_id: str
+    text: str
+    page: int | None = None
+    chunk_index: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CouncilReview:
     council: CouncilResult
     prompt: str
@@ -27,18 +35,22 @@ class CouncilReviewService:
         analysis: LegalAnalysis,
         document_name: str = "document",
         document_fingerprint: str | None = None,
+        evidence_inputs: tuple[CouncilEvidenceInput, ...] | None = None,
         confidential: bool = True,
         allowed_providers: tuple[str, ...] | None = None,
         minimum_responses: int = 2,
     ) -> CouncilReview:
-        fingerprint = document_fingerprint or "unidentified"
-        evidence_id = f"document:{fingerprint}"
-        allowed_evidence_ids = (evidence_id,)
+        if evidence_inputs:
+            allowed_evidence_ids = tuple(item.evidence_id for item in evidence_inputs)
+        else:
+            fingerprint = document_fingerprint or "unidentified"
+            allowed_evidence_ids = (f"document:{fingerprint}",)
         prompt = self._build_prompt(
             document_text=document_text,
             analysis=analysis,
             document_name=document_name,
             allowed_evidence_ids=allowed_evidence_ids,
+            evidence_inputs=evidence_inputs or (),
         )
         result = self.council.run(
             ModelRequest(
@@ -62,6 +74,7 @@ class CouncilReviewService:
         analysis: LegalAnalysis,
         document_name: str,
         allowed_evidence_ids: tuple[str, ...],
+        evidence_inputs: tuple[CouncilEvidenceInput, ...],
     ) -> str:
         facts = "\n".join(f"- {item}" for item in analysis.key_facts) or "- none extracted"
         issues = "\n".join(
@@ -72,7 +85,16 @@ class CouncilReviewService:
             for item in analysis.deadlines
         ) or "- none extracted"
         missing = "\n".join(f"- {item}" for item in analysis.missing_information) or "- none"
-        evidence_ids = ", ".join(allowed_evidence_ids)
+        evidence_ids = "\n".join(f"- {item}" for item in allowed_evidence_ids)
+        evidence_context = "\n\n".join(
+            (
+                f"EVIDENCE ID: {item.evidence_id}\n"
+                f"PAGE: {item.page if item.page is not None else 'n/a'}\n"
+                f"CHUNK: {item.chunk_index if item.chunk_index is not None else 'n/a'}\n"
+                f"TEXT:\n{item.text}"
+            )
+            for item in evidence_inputs
+        )
 
         return (
             "You are an independent legal-review model inside Jafar AI Council.\n"
@@ -81,14 +103,15 @@ class CouncilReviewService:
             "Return ONLY valid JSON with keys: claims, missing_evidence, lawyer_questions.\n"
             "Each claim must contain: topic, statement, position, evidence_ids.\n"
             "For evidence_ids, use ONLY identifiers listed under ALLOWED EVIDENCE IDS. "
-            "If a claim is not supported by the listed source, use an empty evidence_ids list.\n"
+            "Cite the most specific page/chunk source that directly supports the claim. "
+            "If a claim is not supported by a listed source, use an empty evidence_ids list.\n"
             "Identify legal issues, weaknesses, contradictions, missing evidence, alternative interpretations, "
             "and questions requiring lawyer verification. Clearly distinguish document facts from your inferences.\n\n"
             f"Task: {analysis.task.value}\n"
             f"Matter type: {analysis.matter_type.value}\n"
             f"Deterministic confidence: {analysis.confidence:.2f}\n\n"
             "ALLOWED EVIDENCE IDS\n"
-            f"- {evidence_ids}\n\n"
+            f"{evidence_ids}\n\n"
             "EXTRACTED FACTS\n"
             f"{facts}\n\n"
             "DETECTED ISSUES\n"
@@ -97,6 +120,8 @@ class CouncilReviewService:
             f"{deadlines}\n\n"
             "MISSING INFORMATION\n"
             f"{missing}\n\n"
+            "EVIDENCE FRAGMENTS\n"
+            f"{evidence_context or 'No fragment-level provenance supplied.'}\n\n"
             "SOURCE DOCUMENT\n"
             f"Name: {document_name}\n"
             f"{document_text}"

@@ -19,16 +19,23 @@ class SupabaseClient(Protocol):
 class SupabaseMatterRepository(MatterRepository):
     """Supabase adapter for durable matter state.
 
-    Matter rows and deadline rows are hydrated together. This is important for the connected
-    dashboard: a persistent repository must expose the same deadline state as ``MatterStore``
-    instead of silently returning matters with empty deadlines.
+    Matter rows and deadline rows are hydrated together. Server mode is intended for the
+    backend-only service-role client; every table operation remains explicitly scoped to one
+    owner and atomic document events use a service-role-only RPC.
     """
 
-    def __init__(self, client: SupabaseClient, owner_user_id: str) -> None:
+    def __init__(
+        self,
+        client: SupabaseClient,
+        owner_user_id: str,
+        *,
+        server_mode: bool = False,
+    ) -> None:
         if not owner_user_id.strip():
             raise ValueError("owner_user_id_required")
         self.client = client
         self.owner_user_id = owner_user_id.strip()
+        self.server_mode = server_mode
 
     def create(self, matter: Matter) -> Matter:
         payload = self._matter_payload(matter)
@@ -113,7 +120,11 @@ class SupabaseMatterRepository(MatterRepository):
             "p_document_fingerprint": document_fingerprint,
             "p_deadlines": [self._deadline_payload(item) for item in deadlines or []],
         }
-        response = self.client.rpc("record_document_event", params).execute()
+        rpc_name = "record_document_event"
+        if self.server_mode:
+            rpc_name = "record_document_event_for_owner"
+            params["p_owner_user_id"] = self.owner_user_id
+        response = self.client.rpc(rpc_name, params).execute()
         row = response.data
         if isinstance(row, list):
             row = row[0] if row else None

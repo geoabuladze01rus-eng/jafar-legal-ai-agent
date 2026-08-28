@@ -26,18 +26,13 @@ struct ApprovalDecision: Codable, Sendable {
 }
 
 private struct ApprovalDecisionBody: Encodable {
-    let approver: String
     let reason: String?
 }
 
 protocol ApprovalClient: Sendable {
     func fetchPending() async throws -> [ApprovalItem]
-    func approve(actionId: String, approver: String) async throws -> ApprovalDecision
-    func reject(
-        actionId: String,
-        approver: String,
-        reason: String
-    ) async throws -> ApprovalDecision
+    func approve(actionId: String) async throws -> ApprovalDecision
+    func reject(actionId: String, reason: String) async throws -> ApprovalDecision
 }
 
 struct LocalApprovalClient: ApprovalClient {
@@ -45,15 +40,11 @@ struct LocalApprovalClient: ApprovalClient {
         []
     }
 
-    func approve(actionId: String, approver: String) async throws -> ApprovalDecision {
+    func approve(actionId: String) async throws -> ApprovalDecision {
         throw JafarAPIError.httpStatus(503)
     }
 
-    func reject(
-        actionId: String,
-        approver: String,
-        reason: String
-    ) async throws -> ApprovalDecision {
+    func reject(actionId: String, reason: String) async throws -> ApprovalDecision {
         throw JafarAPIError.httpStatus(503)
     }
 }
@@ -88,23 +79,19 @@ struct RemoteApprovalClient: ApprovalClient {
         return try decoder.decode([ApprovalItem].self, from: data)
     }
 
-    func approve(actionId: String, approver: String) async throws -> ApprovalDecision {
+    func approve(actionId: String) async throws -> ApprovalDecision {
         try await decide(
             actionId: actionId,
             operation: "approve",
-            body: ApprovalDecisionBody(approver: approver, reason: nil)
+            body: ApprovalDecisionBody(reason: nil)
         )
     }
 
-    func reject(
-        actionId: String,
-        approver: String,
-        reason: String
-    ) async throws -> ApprovalDecision {
+    func reject(actionId: String, reason: String) async throws -> ApprovalDecision {
         try await decide(
             actionId: actionId,
             operation: "reject",
-            body: ApprovalDecisionBody(approver: approver, reason: reason)
+            body: ApprovalDecisionBody(reason: reason)
         )
     }
 
@@ -154,23 +141,6 @@ struct RemoteApprovalClient: ApprovalClient {
     }
 }
 
-enum JafarApprovalIdentity {
-    private static let key = "jafar.approval.identity"
-
-    static var value: String {
-        UserDefaults.standard.string(forKey: key) ?? ""
-    }
-
-    static func save(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized.isEmpty {
-            UserDefaults.standard.removeObject(forKey: key)
-        } else {
-            UserDefaults.standard.set(normalized, forKey: key)
-        }
-    }
-}
-
 extension JafarClientFactory {
     static func approvalClient() -> any ApprovalClient {
         guard let baseURL = JafarAPIConfiguration.baseURL else {
@@ -215,23 +185,15 @@ final class ApprovalStore: ObservableObject {
         }
     }
 
-    func approve(_ item: ApprovalItem, approver: String) async -> Bool {
+    func approve(_ item: ApprovalItem) async -> Bool {
         await decide(item: item) {
-            try await client.approve(actionId: item.actionId, approver: approver)
+            try await client.approve(actionId: item.actionId)
         }
     }
 
-    func reject(
-        _ item: ApprovalItem,
-        approver: String,
-        reason: String
-    ) async -> Bool {
+    func reject(_ item: ApprovalItem, reason: String) async -> Bool {
         await decide(item: item) {
-            try await client.reject(
-                actionId: item.actionId,
-                approver: approver,
-                reason: reason
-            )
+            try await client.reject(actionId: item.actionId, reason: reason)
         }
     }
 

@@ -13,6 +13,7 @@ struct MatterSummary: Codable, Identifiable, Sendable {
 struct LegalPositionItemDTO: Codable, Sendable { let kind: String; let text: String; let reviewState: String; let sources: [[String:String]]; enum CodingKeys: String, CodingKey { case kind, text, reviewState = "review_state", sources } }
 struct MatterLegalPositionDTO: Codable, Sendable { let matterID: String; let summary: String?; let items: [LegalPositionItemDTO]; enum CodingKeys: String, CodingKey { case matterID = "matter_id", summary, items } }
 struct MatterDeadlineDTO: Codable, Sendable { let title: String; let dueDate: String?; let sourceText: String?; enum CodingKeys: String, CodingKey { case title, dueDate = "due_date", sourceText = "source_text" } }
+struct DashboardDeadlineDTO: Codable, Identifiable, Sendable { let matterID: String; let matterTitle: String; let title: String; let dueDate: String?; let sourceText: String?; var id: String { "\(matterID)-\(title)-\(dueDate ?? "none")" }; enum CodingKeys: String, CodingKey { case matterID = "matter_id", matterTitle = "matter_title", title, dueDate = "due_date", sourceText = "source_text" } }
 struct MatterEventDTO: Codable, Identifiable, Sendable { let id: String; let matterID: String; let title: String; let eventDate: Date; let description: String?; let sourceDocument: String?; enum CodingKeys: String, CodingKey { case id, matterID = "matter_id", title, eventDate = "event_date", description, sourceDocument = "source_document" } }
 
 enum MatterClientError: LocalizedError { case unavailable, invalidResponse, notFound, http(Int)
@@ -61,6 +62,21 @@ struct MatterClient: Sendable {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode([MatterSummary].self, from: data)
     }
+    func dashboardDeadlines() async throws -> [DashboardDeadlineDTO] {
+        var request = URLRequest(url: endpoint.appendingPathComponent("v1/deadlines")); request.httpMethod = "GET"
+        if let apiKey { request.setValue(apiKey, forHTTPHeaderField: "X-Jafar-API-Key") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw MatterClientError.invalidResponse }
+        guard (200...299).contains(http.statusCode) else { throw MatterClientError.http(http.statusCode) }
+        return try JSONDecoder().decode([DashboardDeadlineDTO].self, from: data)
+    }
+}
+
+@MainActor final class JafarDashboardDeadlinesViewModel: ObservableObject {
+    enum State { case idle, loading, loaded([DashboardDeadlineDTO]), empty, failed(String), offline }
+    @Published private(set) var state: State = .idle
+    func load() { state = .loading; Task { await fetch() } }
+    private func fetch() async { guard let config = JafarClientConfiguration.configuredRemoteClient() else { state = .offline; return }; do { let rows = try await MatterClient(endpoint: config.endpoint, apiKey: config.apiKey).dashboardDeadlines(); state = rows.isEmpty ? .empty : .loaded(rows) } catch { state = .failed("Не удалось загрузить сроки") } }
 }
 
 @MainActor final class JafarMattersViewModel: ObservableObject {

@@ -3,6 +3,12 @@ import SwiftUI
 struct LiveDashboardView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var dashboard: DashboardStore
+    @StateObject private var approvals = ApprovalStore(
+        client: JafarClientFactory.approvalClient()
+    )
+    @State private var approvalToConfirm: ApprovalItem?
+    @State private var showingApprovalConfirmation = false
+    @State private var rejectionTarget: ApprovalItem?
 
     var body: some View {
         NavigationStack {
@@ -13,10 +19,11 @@ struct LiveDashboardView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         metrics
+                        approvalCenter
                         urgentSignals
                         matters
 
-                        if let error = dashboard.errorMessage {
+                        if let error = dashboard.errorMessage ?? approvals.errorMessage {
                             Label(error, systemImage: "exclamationmark.triangle.fill")
                                 .font(.footnote)
                                 .foregroundStyle(JafarPalette.danger)
@@ -44,9 +51,33 @@ struct LiveDashboardView: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .disabled(dashboard.isLoading)
+                    .disabled(dashboard.isLoading || approvals.isLoading)
                     .accessibilityLabel("Обновить рабочую сводку")
                 }
+            }
+        }
+        .task {
+            await approvals.refresh()
+        }
+        .confirmationDialog(
+            "Подтвердить юридически значимое действие?",
+            isPresented: $showingApprovalConfirmation,
+            titleVisibility: .visible,
+            presenting: approvalToConfirm
+        ) { item in
+            Button("Одобрить действие") {
+                Task { await approve(item) }
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: { item in
+            Text(
+                "Одобрение зафиксирует решение адвоката, но само по себе не отправит "
+                    + "письмо, документ или процессуальное обращение.\n\n\(item.description)"
+            )
+        }
+        .sheet(item: $rejectionTarget) { item in
+            ApprovalRejectionSheet(item: item) { reason in
+                Task { await reject(item, reason: reason) }
             }
         }
         .preferredColorScheme(.dark)
@@ -84,6 +115,84 @@ struct LiveDashboardView: View {
                 color: JafarPalette.accent
             )
         }
+    }
+
+    @ViewBuilder
+    private var approvalCenter: some View {
+        if !approvals.pending.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(
+                    "На одобрение адвоката",
+                    subtitle: "Ни одно из этих действий ещё не разрешено к исполнению"
+                )
+
+                if JafarApprovalIdentity.value.isEmpty {
+                    Label(
+                        "Укажите имя или ID адвоката в настройках подключения, чтобы "
+                            + "решения фиксировались в audit trail.",
+                        systemImage: "person.crop.circle.badge.exclamationmark"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(JafarPalette.warning)
+                    .jafarCard()
+                }
+
+                ForEach(approvals.pending) { item in
+                    approvalCard(item)
+                }
+            }
+        }
+    }
+
+    private func approvalCard(_ item: ApprovalItem) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(item.actionType, systemImage: "checkmark.seal.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(JafarPalette.accent)
+                Spacer()
+                Text("ОЖИДАЕТ")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(JafarPalette.warning)
+            }
+
+            Text(item.description)
+                .font(.subheadline.weight(.semibold))
+                .textSelection(.enabled)
+
+            if !item.evidenceIds.isEmpty {
+                Label(
+                    "Оснований: \(item.evidenceIds.count)",
+                    systemImage: "link"
+                )
+                .font(.caption)
+                .foregroundStyle(JafarPalette.secondaryText)
+            }
+
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
+            HStack(spacing: 10) {
+                Button("Отклонить", role: .destructive) {
+                    rejectionTarget = item
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("Одобрить") {
+                    approvalToConfirm = item
+                    showingApprovalConfirmation = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(JafarPalette.accent)
+                .disabled(
+                    JafarApprovalIdentity.value.isEmpty
+                        || approvals.processingIDs.contains(item.id)
+                )
+            }
+        }
+        .jafarCard()
     }
 
     @ViewBuilder
@@ -231,9 +340,71 @@ struct LiveDashboardView: View {
     @MainActor
     private func refreshDashboard() async {
         await dashboard.refresh()
+        await approvals.refresh()
         JafarAlertsStore.shared.replace(
             with: dashboard.snapshot.signals,
             generatedAt: dashboard.snapshot.generatedAt
         )
+    }
+
+    @MainActor
+    private func approve(_ item: ApprovalItem) async {
+        let approver = JafarApprovalIdentity.value
+        guard !approver.isEmpty else { return }
+        if await approvals.approve(item, approver: approver) {
+            approvalToConfirm = nil
+            await refreshDashboard()
+        }
+    }
+
+    @MainActor
+    private func reject(_ item: ApprovalItem, reason: String) async {
+        let approver = JafarApprovalIdentity.value
+        guard !approver.isEmpty else { return }
+        if await approvals.reject(item, approver: approver, reason: reason) {
+            rejectionTarget = nil
+            await refreshDashboard()
+        }
+    }
+}
+
+private struct ApprovalRejectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let item: ApprovalItem
+    let onReject: (String) -> Void
+    @State private var reason = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Действие") {
+                    Text(item.description)
+                        .textSelection(.enabled)
+                }
+                Section("Причина отклонения") {
+                    TextEditor(text: $reason)
+                        .frame(minHeight: 120)
+                    Text("Причина сохраняется в журнале решения.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Отклонить действие")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Отклонить", role: .destructive) {
+                        let value = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onReject(value)
+                        dismiss()
+                    }
+                    .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
     }
 }

@@ -47,7 +47,12 @@ class GeminiProvider(ModelProvider):
             data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
 
         text = self._extract_text(data)
-        return ModelResponse(provider=self.key, model=self.config.model, text=text, metadata=data)
+        return ModelResponse(
+            provider=self.key,
+            model=self.config.model,
+            text=text,
+            metadata=self._safe_metadata(data),
+        )
 
     @staticmethod
     def _extract_text(data: dict[str, Any]) -> str:
@@ -57,7 +62,29 @@ class GeminiProvider(ModelProvider):
             if isinstance(content, dict):
                 parts = content.get("parts", [])
                 if isinstance(parts, list):
-                    texts = [p.get("text") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)]
+                    texts = [
+                        part.get("text")
+                        for part in parts
+                        if isinstance(part, dict) and isinstance(part.get("text"), str)
+                    ]
                     if texts:
                         return "".join(texts)
-        return json.dumps(data, ensure_ascii=False)
+        raise RuntimeError("Gemini response contained no recognizable assistant text")
+
+    @staticmethod
+    def _safe_metadata(data: dict[str, Any]) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        usage = data.get("usageMetadata")
+        if isinstance(usage, dict):
+            metadata["usage"] = {
+                key: value
+                for key, value in usage.items()
+                if isinstance(value, (int, float, bool)) or value is None
+            }
+        model_version = data.get("modelVersion")
+        if isinstance(model_version, str):
+            metadata["model_version"] = model_version
+        response_id = data.get("responseId")
+        if isinstance(response_id, str):
+            metadata["response_id"] = response_id
+        return metadata

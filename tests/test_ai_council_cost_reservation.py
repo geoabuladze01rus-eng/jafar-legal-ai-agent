@@ -82,6 +82,7 @@ def test_council_reserves_each_provider_before_dispatch_and_settles() -> None:
     result = council.run(request())
 
     assert result.providers == ("openai", "qwen")
+    assert result.uncertain_providers == ()
     assert reservations.reserved == [
         "req-council:council:openai",
         "req-council:council:qwen",
@@ -90,7 +91,7 @@ def test_council_reserves_each_provider_before_dispatch_and_settles() -> None:
     assert reservations.settled == reservations.reserved
 
 
-def test_council_provider_failure_releases_only_unused_reservation() -> None:
+def test_council_provider_failure_keeps_uncertain_reservation_held() -> None:
     reservations = FakeReservations()
     council = AICouncil(
         {"openai": FakeProvider("openai"), "qwen": FakeProvider("qwen", fail=True)},
@@ -102,8 +103,9 @@ def test_council_provider_failure_releases_only_unused_reservation() -> None:
 
     assert result.providers == ("openai",)
     assert result.failed_providers == ("qwen",)
+    assert result.uncertain_providers == ("qwen",)
     assert reservations.settled == ["req-council:council:openai"]
-    assert reservations.released == ["req-council:council:qwen"]
+    assert reservations.released == []
 
 
 def test_council_accounting_failure_keeps_reservation_active_for_reconciliation() -> None:

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Security
 
 struct DashboardMatter: Codable, Identifiable, Sendable {
     let id: String
@@ -94,7 +95,14 @@ struct RemoteDashboardClient: DashboardClient {
 }
 
 enum JafarAPIConfiguration {
+    private static let baseURLDefaultsKey = "jafar.api.base_url"
+
     static var baseURL: URL? {
+        if let saved = UserDefaults.standard.string(forKey: baseURLDefaultsKey),
+           let url = URL(string: saved),
+           !saved.isEmpty {
+            return url
+        }
         if let environment = ProcessInfo.processInfo.environment["JAFAR_API_BASE_URL"],
            let url = URL(string: environment),
            !environment.isEmpty {
@@ -108,8 +116,96 @@ enum JafarAPIConfiguration {
         return nil
     }
 
+    static var baseURLString: String {
+        UserDefaults.standard.string(forKey: baseURLDefaultsKey) ?? baseURL?.absoluteString ?? ""
+    }
+
     static var authorizationToken: String? {
-        ProcessInfo.processInfo.environment["JAFAR_API_TOKEN"]
+        JafarCredentialStore.readToken()
+            ?? ProcessInfo.processInfo.environment["JAFAR_API_TOKEN"]
+    }
+
+    static func save(baseURLString: String, token: String) throws {
+        let normalized = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            UserDefaults.standard.removeObject(forKey: baseURLDefaultsKey)
+        } else {
+            UserDefaults.standard.set(normalized, forKey: baseURLDefaultsKey)
+        }
+
+        let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedToken.isEmpty {
+            try JafarCredentialStore.deleteToken()
+        } else {
+            try JafarCredentialStore.saveToken(normalizedToken)
+        }
+    }
+
+    static func disableRemoteMode() throws {
+        UserDefaults.standard.removeObject(forKey: baseURLDefaultsKey)
+        try JafarCredentialStore.deleteToken()
+    }
+}
+
+enum JafarCredentialStore {
+    private static let account = "jafar-api-token"
+    private static var service: String {
+        Bundle.main.bundleIdentifier ?? "ru.jafar.legal-ai"
+    }
+
+    static func readToken() -> String? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return nil
+        }
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return value
+    }
+
+    static func saveToken(_ token: String) throws {
+        let data = Data(token.utf8)
+        let update = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(
+            baseQuery as CFDictionary,
+            update as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw JafarAPIError.keychain(updateStatus)
+        }
+
+        var create = baseQuery
+        create[kSecValueData as String] = data
+        let createStatus = SecItemAdd(create as CFDictionary, nil)
+        guard createStatus == errSecSuccess else {
+            throw JafarAPIError.keychain(createStatus)
+        }
+    }
+
+    static func deleteToken() throws {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw JafarAPIError.keychain(status)
+        }
+    }
+
+    private static var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
     }
 }
 
@@ -141,10 +237,16 @@ final class DashboardStore: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
 
-    private let client: any DashboardClient
+    private var client: any DashboardClient
 
     init(client: any DashboardClient) {
         self.client = client
+    }
+
+    func reconfigure(client: any DashboardClient) {
+        self.client = client
+        snapshot = .empty
+        errorMessage = nil
     }
 
     func refresh() async {
@@ -163,4 +265,5 @@ final class DashboardStore: ObservableObject {
 enum JafarAPIError: Error, Sendable {
     case invalidResponse
     case httpStatus(Int)
+    case keychain(OSStatus)
 }

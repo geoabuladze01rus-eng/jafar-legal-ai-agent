@@ -11,6 +11,7 @@ from .model_router import ModelRequest
 class CouncilReview:
     council: CouncilResult
     prompt: str
+    allowed_evidence_ids: tuple[str, ...]
 
 
 class CouncilReviewService:
@@ -24,11 +25,21 @@ class CouncilReviewService:
         *,
         document_text: str,
         analysis: LegalAnalysis,
+        document_name: str = "document",
+        document_fingerprint: str | None = None,
         confidential: bool = True,
         allowed_providers: tuple[str, ...] | None = None,
         minimum_responses: int = 2,
     ) -> CouncilReview:
-        prompt = self._build_prompt(document_text=document_text, analysis=analysis)
+        fingerprint = document_fingerprint or "unidentified"
+        evidence_id = f"document:{fingerprint}"
+        allowed_evidence_ids = (evidence_id,)
+        prompt = self._build_prompt(
+            document_text=document_text,
+            analysis=analysis,
+            document_name=document_name,
+            allowed_evidence_ids=allowed_evidence_ids,
+        )
         result = self.council.run(
             ModelRequest(
                 prompt=prompt,
@@ -38,10 +49,20 @@ class CouncilReviewService:
             ),
             minimum_responses=minimum_responses,
         )
-        return CouncilReview(council=result, prompt=prompt)
+        return CouncilReview(
+            council=result,
+            prompt=prompt,
+            allowed_evidence_ids=allowed_evidence_ids,
+        )
 
     @staticmethod
-    def _build_prompt(*, document_text: str, analysis: LegalAnalysis) -> str:
+    def _build_prompt(
+        *,
+        document_text: str,
+        analysis: LegalAnalysis,
+        document_name: str,
+        allowed_evidence_ids: tuple[str, ...],
+    ) -> str:
         facts = "\n".join(f"- {item}" for item in analysis.key_facts) or "- none extracted"
         issues = "\n".join(
             f"- {item.title}: {item.description} [{item.risk.value}]" for item in analysis.issues
@@ -51,22 +72,23 @@ class CouncilReviewService:
             for item in analysis.deadlines
         ) or "- none extracted"
         missing = "\n".join(f"- {item}" for item in analysis.missing_information) or "- none"
+        evidence_ids = ", ".join(allowed_evidence_ids)
 
         return (
             "You are an independent legal-review model inside Jafar AI Council.\n"
             "Treat the deterministic extraction below as the factual baseline, not as legal truth.\n"
-            "Do not invent facts, citations, dates, court holdings, or evidence.\n"
+            "Do not invent facts, citations, dates, court holdings, evidence, or evidence identifiers.\n"
+            "Return ONLY valid JSON with keys: claims, missing_evidence, lawyer_questions.\n"
+            "Each claim must contain: topic, statement, position, evidence_ids.\n"
+            "For evidence_ids, use ONLY identifiers listed under ALLOWED EVIDENCE IDS. "
+            "If a claim is not supported by the listed source, use an empty evidence_ids list.\n"
             "Identify legal issues, weaknesses, contradictions, missing evidence, alternative interpretations, "
-            "and questions requiring lawyer verification. Clearly distinguish document facts from your inferences.\n"
-            "Return ONLY valid JSON with this shape: "
-            '{"claims":[{"topic":"short stable topic","statement":"specific conclusion",'
-            '"position":"support|oppose|uncertain","evidence_ids":["document"]}],'
-            '"missing_evidence":["item"],"lawyer_questions":["question"]}. '
-            "Use the same topic name for conclusions that address the same issue. "
-            "If the source does not support a conclusion, use position=uncertain.\n\n"
+            "and questions requiring lawyer verification. Clearly distinguish document facts from your inferences.\n\n"
             f"Task: {analysis.task.value}\n"
             f"Matter type: {analysis.matter_type.value}\n"
             f"Deterministic confidence: {analysis.confidence:.2f}\n\n"
+            "ALLOWED EVIDENCE IDS\n"
+            f"- {evidence_ids}\n\n"
             "EXTRACTED FACTS\n"
             f"{facts}\n\n"
             "DETECTED ISSUES\n"
@@ -76,5 +98,6 @@ class CouncilReviewService:
             "MISSING INFORMATION\n"
             f"{missing}\n\n"
             "SOURCE DOCUMENT\n"
+            f"Name: {document_name}\n"
             f"{document_text}"
         )

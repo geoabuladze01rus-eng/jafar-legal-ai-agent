@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from .council_review import CouncilReview, CouncilReviewService
+from .council_review import CouncilEvidenceInput, CouncilReview, CouncilReviewService
 from .document_intake import ExtractedDocument
 from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
@@ -58,11 +58,22 @@ class DocumentWorkflow:
         if run_council_review:
             if self.council_review_service is None:
                 raise RuntimeError("AI Council review requested but no CouncilReviewService is configured")
+            fragments = extracted.fragments()
+            evidence_inputs = tuple(
+                CouncilEvidenceInput(
+                    evidence_id=extracted.evidence_id(fragment),
+                    text=fragment.text,
+                    page=fragment.page,
+                    chunk_index=fragment.chunk_index,
+                )
+                for fragment in fragments
+            )
             council_review = self.council_review_service.review(
                 document_text=extracted.text,
                 analysis=analysis,
                 document_name=document_name,
                 document_fingerprint=extracted.fingerprint,
+                evidence_inputs=evidence_inputs,
                 confidential=confidential,
                 allowed_providers=allowed_providers,
                 minimum_responses=council_minimum_responses,

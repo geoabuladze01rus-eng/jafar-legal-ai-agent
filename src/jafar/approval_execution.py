@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .action_approval import ActionApprovalStore, ActionState
+from .action_approval import ActionApprovalRepository, ActionState
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,12 +26,12 @@ class ExecutionResult:
 class ApprovalExecutionService:
     """Approval-first execution boundary for externally visible side effects.
 
-    When an ``ActionApprovalStore`` is configured, a caller-provided boolean can never grant
-    permission. The service reads the auditable approval state and marks the action executed
+    When an auditable approval repository is configured, a caller-provided boolean can never
+    grant permission. The service reads persisted lawyer state and marks the action executed
     only after the registered handler completes successfully.
     """
 
-    def __init__(self, store: ActionApprovalStore | None = None) -> None:
+    def __init__(self, store: ActionApprovalRepository | None = None) -> None:
         self.store = store
         self._handlers: dict[str, Callable[[dict[str, Any]], Any]] = {}
 
@@ -114,11 +114,11 @@ class ApprovalExecutionService:
         *,
         approved: bool,
     ) -> ExecutionResult:
-        """Compatibility path for pre-store callers.
+        """Compatibility path for pre-repository callers.
 
-        New production integrations must configure ``ActionApprovalStore`` and use
-        ``execute_approved``. If a store is present, this method delegates to that state and
-        ignores the caller-provided ``approved`` flag.
+        New production integrations must configure an approval repository and use
+        ``execute_approved``. If a repository is present, this method delegates to persisted
+        state and ignores the caller-provided ``approved`` flag.
         """
         if self.store is not None:
             return self.execute_approved(request.approval_id, payload)

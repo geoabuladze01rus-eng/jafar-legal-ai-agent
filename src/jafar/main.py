@@ -92,13 +92,20 @@ try:
     legal_position_service = LegalPositionReadService(matter_store, SupabaseAnalysisRepository(supabase_client), SupabaseDocumentRepository(supabase_client))
 except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
     document_repository = EmptyDocumentRepository()
+    legal_position_service = LegalPositionReadService(matter_store)
 deadline_repository = DeadlineRepository(matter_store)
-legal_position_service = LegalPositionReadService(matter_store)
 command_runtime = JafarCommandRuntime(
     matter_store,
     lawyer_context,
     mail_gateway=make_local_gmail_gateway(),
 )
+
+class DashboardDeadline(BaseModel):
+    matter_id: str
+    matter_title: str
+    title: str
+    due_date: str | None = None
+    source_text: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -333,6 +340,14 @@ def list_matter_deadlines(matter_id: str) -> list[MatterDeadlineSummary]:
     if matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
     return deadline_repository.list_for_matter(matter_id)
+
+@app.get("/v1/deadlines", response_model=list[DashboardDeadline], dependencies=[Depends(require_api_key)])
+def list_dashboard_deadlines() -> list[DashboardDeadline]:
+    rows = []
+    for matter in matter_store.list_matters():
+        for deadline in matter.deadlines:
+            rows.append(DashboardDeadline(matter_id=matter.id, matter_title=matter.title, title=deadline.title, due_date=deadline.due_date.isoformat() if deadline.due_date else None, source_text=deadline.source_text))
+    return sorted(rows, key=lambda item: (item.due_date is None, item.due_date or "9999-12-31", item.matter_id, item.title))
 
 @app.get("/v1/matters/{matter_id}/legal-position", response_model=LegalPositionRead, dependencies=[Depends(require_api_key)])
 def get_legal_position(matter_id: str) -> LegalPositionRead:

@@ -4,7 +4,22 @@ from jafar.action_approval import (
     ActionApprovalStore,
     ActionState,
     LegalActionApprovalEngine,
+    payload_fingerprint,
 )
+
+
+def test_payload_fingerprint_is_stable_for_key_order_and_sensitive_to_changes() -> None:
+    first = payload_fingerprint({"subject": "Ответ", "to": "client@example.com"})
+    reordered = payload_fingerprint({"to": "client@example.com", "subject": "Ответ"})
+    changed = payload_fingerprint({"to": "other@example.com", "subject": "Ответ"})
+
+    assert first == reordered
+    assert first != changed
+
+
+def test_payload_fingerprint_rejects_non_finite_json_values() -> None:
+    with pytest.raises(ValueError):
+        payload_fingerprint({"confidence": float("nan")})
 
 
 def test_legal_action_requires_explicit_approval():

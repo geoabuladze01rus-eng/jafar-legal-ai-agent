@@ -6,6 +6,7 @@ struct ConnectedRootView: View {
     )
     @State private var showingConnectionSettings = false
     @State private var showingLiveDashboard = false
+    @State private var showingMatterNavigator = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +28,9 @@ struct ConnectedRootView: View {
         }
         .sheet(isPresented: $showingLiveDashboard) {
             LiveDashboardView(dashboard: dashboard)
+        }
+        .sheet(isPresented: $showingMatterNavigator) {
+            MatterNavigatorView(dashboard: dashboard)
         }
     }
 
@@ -67,6 +71,16 @@ struct ConnectedRootView: View {
                 .foregroundStyle(JafarPalette.secondaryText)
                 .accessibilityLabel("Обновить данные Джафара")
             }
+
+            Button {
+                showingMatterNavigator = true
+            } label: {
+                Image(systemName: "briefcase.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(JafarPalette.secondaryText)
+            .accessibilityLabel("Открыть дела")
 
             Button {
                 showingLiveDashboard = true

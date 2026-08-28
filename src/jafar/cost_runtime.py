@@ -11,12 +11,7 @@ from .supabase_cost_ledger import SupabaseCostLedger
 
 
 def validate_production_ai_scale(settings: Settings) -> None:
-    """Require explicit commercial safety controls before production startup.
-
-    Development remains lightweight, but a production deployment must not be able to silently
-    run an unmetered or single-process AI workload. This guard intentionally checks configuration
-    only; network/database availability is validated by the concrete Supabase runtime builders.
-    """
+    """Require explicit commercial safety controls before production startup."""
 
     if settings.environment.strip().casefold() != "production":
         return
@@ -28,6 +23,10 @@ def validate_production_ai_scale(settings: Settings) -> None:
         raise RuntimeError("Production requires durable Supabase AI queue")
     if not (settings.ai_pricing_json or "").strip():
         raise RuntimeError("Production requires reviewed AI_PRICING_JSON")
+    if not (settings.ai_pricing_version or "").strip():
+        raise RuntimeError("Production requires AI_PRICING_VERSION")
+    if len(settings.ai_pricing_version.strip()) > 80:
+        raise RuntimeError("AI_PRICING_VERSION must be at most 80 characters")
 
     ceilings = {
         "AI_COST_PER_REQUEST_USD": settings.ai_cost_per_request_usd,
@@ -51,7 +50,6 @@ def validate_production_ai_scale(settings: Settings) -> None:
     if settings.ai_queue_worker_claim_limit <= 0 or settings.ai_queue_worker_claim_limit > 50:
         raise RuntimeError("Production AI queue worker claim limit must be between 1 and 50")
 
-    # Parse now so malformed or negative pricing cannot reach the first live request.
     parse_pricing_catalog(settings.ai_pricing_json)
 
 
@@ -82,20 +80,12 @@ def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
         ledger=ledger,
         limits=limits,
         fail_closed_on_missing_pricing=True,
+        pricing_version=(settings.ai_pricing_version or "local-unversioned").strip(),
     )
 
 
 def parse_pricing_catalog(raw: str | None) -> dict[tuple[str, str], ProviderPricing]:
-    """Parse reviewed runtime pricing without hard-coding volatile vendor prices.
-
-    Expected JSON shape:
-    {
-      "openai": {
-        "model-name": {"input": "1.00", "cached_input": "0.10", "output": "4.00"},
-        "*": {"input": "1.00", "output": "4.00"}
-      }
-    }
-    """
+    """Parse reviewed runtime pricing without hard-coding volatile vendor prices."""
 
     if not raw or not raw.strip():
         raise RuntimeError("AI_PRICING_JSON is required when AI cost control is enabled")
@@ -110,14 +100,21 @@ def parse_pricing_catalog(raw: str | None) -> dict[tuple[str, str], ProviderPric
     for provider, models in data.items():
         if not isinstance(provider, str) or not provider.strip() or not isinstance(models, dict):
             raise RuntimeError("AI_PRICING_JSON provider entries are invalid")
+        provider_key = provider.strip().casefold()
         for model, rates in models.items():
             if not isinstance(model, str) or not model.strip() or not isinstance(rates, dict):
                 raise RuntimeError("AI_PRICING_JSON model entries are invalid")
-            result[(provider.strip(), model.strip())] = _parse_rates(rates)
+            key = (provider_key, model.strip())
+            if key in result:
+                raise RuntimeError("AI_PRICING_JSON contains duplicate normalized pricing keys")
+            result[key] = _parse_rates(rates)
     return result
 
 
 def _parse_rates(rates: dict[str, Any]) -> ProviderPricing:
+    unknown = set(rates) - {"input", "cached_input", "output"}
+    if unknown:
+        raise RuntimeError("AI_PRICING_JSON contains unknown rate fields")
     try:
         input_rate = Decimal(str(rates["input"]))
         output_rate = Decimal(str(rates["output"]))

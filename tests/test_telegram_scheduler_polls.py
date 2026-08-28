@@ -186,29 +186,40 @@ def test_restart_fails_closed_for_uncertain_sending_job(tmp_path) -> None:
     assert recovered.error == "interrupted_before_delivery_confirmation"
 
 
-def test_poll_validation_regular_quiz_and_bad_options() -> None:
-    poll = validate_poll(
-        question="Next?",
-        options=["A", "B"],
+def test_poll_validation_matches_bot_api_10_contract() -> None:
+    # Telegram Bot API 10 permits 1-12 options and multiple correct quiz answers.
+    single = validate_poll(question="Only?", options=["A"])
+    assert single["options"] == ["A"]
+
+    quiz = validate_poll(
+        question="Select correct",
+        options=["A", "B", "C"],
         poll_type="quiz",
-        correct_option_id=1,
+        correct_option_ids=[2, 0, 2],
+        allows_multiple_answers=True,
         explanation="Because",
     )
-    assert poll["correct_option_id"] == 1
-    with pytest.raises(ValueError, match="2 to 10"):
-        validate_poll(question="Next?", options=["only"])
-    with pytest.raises(ValueError, match="cannot allow multiple"):
+    assert quiz["correct_option_ids"] == [0, 2]
+
+    with pytest.raises(ValueError, match="1 to 12"):
+        validate_poll(question="Too many", options=[str(i) for i in range(13)])
+    with pytest.raises(ValueError, match="multiple correct"):
         validate_poll(
             question="Next?",
             options=["A", "B"],
             poll_type="quiz",
-            correct_option_id=0,
-            allows_multiple_answers=True,
+            correct_option_ids=[0, 1],
+            allows_multiple_answers=False,
         )
 
 
 def test_poll_store_normalizes_results_and_answers(tmp_path) -> None:
     store = TelegramPollStore(tmp_path / "telegram.sqlite3")
+    store.record_sent(
+        poll={"id": "poll-1", "question": "Q", "options": []},
+        chat_id="-1001",
+        message_id=1,
+    )
     assert store.ingest_update(
         {
             "poll": {
@@ -225,3 +236,10 @@ def test_poll_store_normalizes_results_and_answers(tmp_path) -> None:
     result = store.results("poll-1")
     assert result["poll"]["total_voter_count"] == 1
     assert result["answers"] == [{"user_id": "7", "option_ids": [0]}]
+
+
+def test_poll_store_ignores_answers_for_unknown_poll(tmp_path) -> None:
+    store = TelegramPollStore(tmp_path / "telegram.sqlite3")
+    assert not store.ingest_update(
+        {"poll_answer": {"poll_id": "unknown", "user": {"id": 7}, "option_ids": [0]}}
+    )

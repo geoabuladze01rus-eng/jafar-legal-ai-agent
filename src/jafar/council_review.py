@@ -57,7 +57,13 @@ class CouncilReviewService:
             "Treat the deterministic extraction below as the factual baseline, not as legal truth.\n"
             "Do not invent facts, citations, dates, court holdings, or evidence.\n"
             "Identify legal issues, weaknesses, contradictions, missing evidence, alternative interpretations, "
-            "and questions requiring lawyer verification. Clearly distinguish document facts from your inferences.\n\n"
+            "and questions requiring lawyer verification. Clearly distinguish document facts from your inferences.\n"
+            "Return ONLY valid JSON with this shape: "
+            '{"claims":[{"topic":"short stable topic","statement":"specific conclusion",'
+            '"position":"support|oppose|uncertain","evidence_ids":["document"]}],'
+            '"missing_evidence":["item"],"lawyer_questions":["question"]}. '
+            "Use the same topic name for conclusions that address the same issue. "
+            "If the source does not support a conclusion, use position=uncertain.\n\n"
             f"Task: {analysis.task.value}\n"
             f"Matter type: {analysis.matter_type.value}\n"
             f"Deterministic confidence: {analysis.confidence:.2f}\n\n"

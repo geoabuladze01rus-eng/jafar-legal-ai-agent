@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .ai_job_payload_policy import validate_durable_ai_job_payload
+
 
 @dataclass(frozen=True, slots=True)
 class AIJob:
@@ -38,8 +40,7 @@ class SupabaseAIJobQueue:
             raise ValueError("ai_job_identity_required")
         if owner_id.strip() != self.owner_id:
             raise PermissionError("ai_job_owner_mismatch")
-        if not isinstance(payload, dict):
-            raise ValueError("ai_job_payload_must_be_object")
+        validate_durable_ai_job_payload(payload)
         if not 1 <= max_attempts <= 20:
             raise ValueError("ai_job_max_attempts_invalid")
 

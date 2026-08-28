@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_key: str | None = None
     storage_backend: str = "memory"
+    lawyer_approver_id: str | None = None
     openai_api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"

@@ -5,7 +5,13 @@ import base64
 import pytest
 
 from jafar.config import settings
-from jafar.telegram_mcp import _allowed_chat_ids, _decode_photo_base64, _require_allowed_chat
+from jafar.telegram_mcp import (
+    _allowed_chat_ids,
+    _decode_photo_base64,
+    _key,
+    _require_allowed_chat,
+    validate_mcp_transport_security,
+)
 
 
 def test_allowed_chat_ids_parses_csv(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,3 +51,54 @@ def test_decode_photo_base64_rejects_invalid_input() -> None:
 def test_decode_photo_base64_rejects_empty_file() -> None:
     with pytest.raises(ValueError, match="empty file"):
         _decode_photo_base64("")
+
+
+def test_streamable_http_requires_strong_bearer_even_on_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jafar_mcp_auth_token", None)
+    monkeypatch.setattr(settings, "jafar_mcp_public_url", "https://mcp.example/mcp")
+
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        validate_mcp_transport_security(transport="streamable-http", host="127.0.0.1")
+
+
+def test_streamable_http_requires_https_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "jafar_mcp_auth_token", "x" * 40)
+    monkeypatch.setattr(settings, "jafar_mcp_public_url", "http://mcp.example/mcp")
+
+    with pytest.raises(RuntimeError, match="HTTPS"):
+        validate_mcp_transport_security(transport="streamable-http", host="127.0.0.1")
+
+
+def test_streamable_http_refuses_direct_non_loopback_bind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jafar_mcp_auth_token", "x" * 40)
+    monkeypatch.setattr(settings, "jafar_mcp_public_url", "https://mcp.example/mcp")
+
+    with pytest.raises(RuntimeError, match="loopback"):
+        validate_mcp_transport_security(transport="streamable-http", host="0.0.0.0")
+
+
+def test_streamable_http_accepts_hardened_proxy_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jafar_mcp_auth_token", "x" * 40)
+    monkeypatch.setattr(settings, "jafar_mcp_public_url", "https://mcp.example/mcp")
+
+    assert validate_mcp_transport_security(
+        transport="streamable-http", host="127.0.0.1"
+    ) == ("x" * 40, "https://mcp.example/mcp")
+
+
+def test_stdio_does_not_require_remote_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "jafar_mcp_auth_token", None)
+    monkeypatch.setattr(settings, "jafar_mcp_public_url", None)
+
+    assert validate_mcp_transport_security(transport="stdio") is None
+
+
+def test_idempotency_key_rejects_whitespace_only_value() -> None:
+    with pytest.raises(ValueError, match="non-whitespace"):
+        _key("post", "123", {"text": "hello"}, "2026-08-30T09:00:00+00:00", "   ")

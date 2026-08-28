@@ -26,7 +26,7 @@ def test_live_dashboard_requires_explicit_human_decision() -> None:
     assert "Одобрить действие" in source
     assert "ApprovalRejectionSheet" in source
     assert "Причина сохраняется в журнале решения" in source
-    assert "по себе не отправит" in source
+    assert "само по себе не выполнит действие" in source
     assert "задаётся на backend" in source
     assert "JafarApprovalIdentity" not in source
     assert source.count(".disabled(decisionDisabled)") == 2
@@ -40,6 +40,19 @@ def test_live_dashboard_distinguishes_approval_from_execution() -> None:
     assert "Одобрение и фактическое выполнение намеренно разделены" in source
     assert "НЕ ВЫПОЛНЕНО" in source
     assert "execution step" in source
+
+
+def test_apple_approval_requires_local_device_authentication() -> None:
+    dashboard = (APP / "UI" / "LiveDashboardView.swift").read_text(encoding="utf-8")
+    authenticator = (APP / "Security" / "LawyerLocalAuthenticator.swift").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LawyerLocalAuthenticator" in dashboard
+    assert dashboard.count("localAuthenticator.authenticate") == 2
+    assert "Face ID, Touch ID" in dashboard
+    assert "deviceOwnerAuthentication" in authenticator
+    assert "evaluatePolicy" in authenticator
 
 
 def test_connection_settings_explain_server_controlled_audit_identity() -> None:

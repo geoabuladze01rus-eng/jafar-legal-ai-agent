@@ -57,6 +57,8 @@ class DashboardService:
     not perform legal actions, approve requests, or mutate matters.
     """
 
+    MAX_SIGNALS = 100
+
     def __init__(self, matters: MatterRepository) -> None:
         self.matters = matters
 
@@ -82,18 +84,31 @@ class DashboardService:
         upcoming_total = 0
 
         for matter in matters:
+            is_active = matter.status.strip().casefold() == "active"
             dated = [deadline for deadline in matter.deadlines if deadline.due_date is not None]
             dated.sort(key=lambda item: item.due_date or date.max)
-            overdue = [item for item in dated if item.due_date and item.due_date < today]
-            upcoming = [
-                item
-                for item in dated
-                if item.due_date and today <= item.due_date <= today + timedelta(days=7)
-            ]
+            overdue = (
+                [item for item in dated if item.due_date and item.due_date < today]
+                if is_active
+                else []
+            )
+            upcoming = (
+                [
+                    item
+                    for item in dated
+                    if item.due_date and today <= item.due_date <= today + timedelta(days=7)
+                ]
+                if is_active
+                else []
+            )
             overdue_total += len(overdue)
             upcoming_total += len(upcoming)
 
-            future = [item for item in dated if item.due_date and item.due_date >= today]
+            future = (
+                [item for item in dated if item.due_date and item.due_date >= today]
+                if is_active
+                else []
+            )
             next_deadline = future[0] if future else None
             summaries.append(
                 DashboardMatterSummary(
@@ -110,17 +125,7 @@ class DashboardService:
                 )
             )
 
-            for deadline in overdue:
-                signals.append(
-                    self._deadline_signal(
-                        matter_id=matter.id,
-                        matter_title=matter.title,
-                        deadline_title=deadline.title,
-                        due_date=deadline.due_date,
-                        today=today,
-                    )
-                )
-            for deadline in upcoming:
+            for deadline in (*overdue, *upcoming):
                 signals.append(
                     self._deadline_signal(
                         matter_id=matter.id,
@@ -133,6 +138,7 @@ class DashboardService:
 
         summaries.sort(
             key=lambda item: (
+                item.status.strip().casefold() != "active",
                 item.next_deadline_date or date.max,
                 item.title.casefold(),
             )
@@ -141,12 +147,15 @@ class DashboardService:
         return DashboardSnapshot(
             generated_at=generated_at,
             total_matters=len(matters),
-            active_matters=sum(item.status.casefold() == "active" for item in matters),
+            active_matters=sum(
+                item.status.strip().casefold() == "active"
+                for item in matters
+            ),
             overdue_deadlines=overdue_total,
             deadlines_next_7_days=upcoming_total,
             pending_approvals=pending_approvals,
             matters=summaries,
-            signals=signals,
+            signals=signals[: self.MAX_SIGNALS],
         )
 
     @staticmethod

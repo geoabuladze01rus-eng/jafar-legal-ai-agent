@@ -62,6 +62,35 @@ class SupabaseAIJobQueue:
         ).execute()
         return [self._hydrate(row) for row in (response.data or [])]
 
+    def mark_dispatched(self, *, job_id: str, worker_id: str) -> AIJob:
+        """Record the point after which automatic replay is unsafe.
+
+        Workers must call this immediately before invoking an external model provider. If the
+        worker disappears afterwards, the job intentionally remains held for reconciliation.
+        """
+        if not job_id.strip() or not worker_id.strip():
+            raise ValueError("ai_job_and_worker_required")
+        response = self.client.rpc(
+            "mark_ai_job_dispatched",
+            {"p_id": job_id, "p_worker_id": worker_id.strip()},
+        ).execute()
+        return self._hydrate_single(response.data, "ai_job_dispatch_response_invalid")
+
+    def reclaim_stale_undispatched(self, *, stale_seconds: int = 300, limit: int = 50) -> int:
+        """Recover only claims for which provider dispatch provably never began."""
+        stale = max(60, min(int(stale_seconds), 86400))
+        bounded_limit = max(1, min(int(limit), 500))
+        response = self.client.rpc(
+            "reclaim_stale_undispatched_ai_jobs",
+            {"p_stale_seconds": stale, "p_limit": bounded_limit},
+        ).execute()
+        value = response.data
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError("ai_job_reclaim_response_invalid")
+        return value
+
     def finish(
         self,
         *,
@@ -84,12 +113,16 @@ class SupabaseAIJobQueue:
                 "p_retry_after_seconds": max(0, min(int(retry_after_seconds), 86400)),
             },
         ).execute()
-        row = response.data
+        return self._hydrate_single(response.data, "ai_job_finish_response_invalid")
+
+    @classmethod
+    def _hydrate_single(cls, data: Any, error_code: str) -> AIJob:
+        row = data
         if isinstance(row, list):
             row = row[0] if row else None
         if not isinstance(row, dict):
-            raise RuntimeError("ai_job_finish_response_invalid")
-        return self._hydrate(row)
+            raise RuntimeError(error_code)
+        return cls._hydrate(row)
 
     @staticmethod
     def _hydrate(row: dict[str, Any]) -> AIJob:

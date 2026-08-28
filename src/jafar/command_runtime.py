@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from .command_bus import JafarCommandBus
-from .matters import MatterStore
+from .matter_repository import MatterRepository
 from .tool_router import JafarToolRouter
 
 
@@ -18,9 +18,14 @@ class CommandRuntimeResult:
 
 
 class JafarCommandRuntime:
-    """Single command facade shared by HTTP, voice and future chat clients."""
+    """Read-only command facade shared by HTTP, voice and future chat clients.
 
-    def __init__(self, matter_store: MatterStore) -> None:
+    Mutating actions must not be registered here. They are proposed into the dedicated human
+    approval queue and executed only through ``ApprovalExecutionService`` after a persisted
+    lawyer decision.
+    """
+
+    def __init__(self, matter_store: MatterRepository) -> None:
         self.matter_store = matter_store
         self.bus = JafarCommandBus()
         self.router = JafarToolRouter(self.bus)
@@ -48,10 +53,9 @@ class JafarCommandRuntime:
         intent: str,
         *,
         request_id: str | None = None,
-        approved: bool = False,
     ) -> CommandRuntimeResult:
         request_id = request_id or str(uuid4())
-        result = self.router.route(intent, {}, request_id, approved=approved)
+        result = self.router.route(intent, {}, request_id, approved=False)
         if result.status == "approval_required":
             return CommandRuntimeResult(
                 intent=intent,

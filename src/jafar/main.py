@@ -34,7 +34,18 @@ def validate_runtime_security() -> None:
         raise RuntimeError(
             "Production requires a non-placeholder API_KEY of at least 24 characters"
         )
+    if not (settings.lawyer_approver_id or "").strip():
+        raise RuntimeError("Production requires LAWYER_APPROVER_ID for auditable decisions")
     validate_storage_security(settings)
+
+
+def _approval_identity(client_value: str) -> str:
+    configured = (settings.lawyer_approver_id or "").strip()
+    if configured:
+        return configured
+    if settings.environment.strip().casefold() == "production":
+        raise RuntimeError("Production lawyer approval identity is not configured")
+    return client_value.strip()
 
 
 @asynccontextmanager
@@ -55,7 +66,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.1", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.2", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -217,7 +228,10 @@ def approve_action(
     if action is None:
         raise HTTPException(status_code=404, detail="Approval action not found")
     try:
-        result = action_approval_engine.approve(action, request.approver)
+        result = action_approval_engine.approve(
+            action,
+            _approval_identity(request.approver),
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:
@@ -245,7 +259,11 @@ def reject_action(
     if not reason:
         raise HTTPException(status_code=422, detail="Rejection reason is required")
     try:
-        result = action_approval_engine.reject(action, request.approver, reason)
+        result = action_approval_engine.reject(
+            action,
+            _approval_identity(request.approver),
+            reason,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:

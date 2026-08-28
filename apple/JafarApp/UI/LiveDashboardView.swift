@@ -20,6 +20,7 @@ struct LiveDashboardView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         metrics
                         approvalCenter
+                        approvedAwaitingExecutionCenter
                         urgentSignals
                         matters
 
@@ -138,6 +139,54 @@ struct LiveDashboardView: View {
 
                 ForEach(approvals.pending) { item in
                     approvalCard(item)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var approvedAwaitingExecutionCenter: some View {
+        if !approvals.approvedAwaitingExecution.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(
+                    "Одобрено — ожидает выполнения",
+                    subtitle: "Одобрение и фактическое выполнение намеренно разделены"
+                )
+
+                ForEach(approvals.approvedAwaitingExecution) { item in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Label(item.actionType, systemImage: "checkmark.shield.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(JafarPalette.success)
+                            Spacer()
+                            Text("НЕ ВЫПОЛНЕНО")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(JafarPalette.warning)
+                        }
+
+                        Text(item.description)
+                            .font(.subheadline.weight(.semibold))
+                            .textSelection(.enabled)
+
+                        if let decidedBy = item.decidedBy, !decidedBy.isEmpty {
+                            Label(
+                                "Одобрено: \(decidedBy)",
+                                systemImage: "person.badge.shield.checkmark.fill"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(JafarPalette.secondaryText)
+                        }
+
+                        Label(
+                            "Джафар не считает это действие выполненным до отдельного "
+                                + "execution step.",
+                            systemImage: "hand.raised.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(JafarPalette.warning)
+                    }
+                    .jafarCard()
                 }
             }
         }

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"
     telegram_bot_token: str | None = None
+    telegram_allowed_chat_ids: str = ""
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False
     telegram_dry_run: bool = True

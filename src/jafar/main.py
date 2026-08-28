@@ -11,7 +11,11 @@ from .action_approval import ActionRequest, ActionState, LegalActionApprovalEngi
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
-from .cost_runtime import validate_production_ai_scale
+from .cost_runtime import (
+    build_cost_reservations,
+    build_cost_scale_control,
+    validate_production_ai_scale,
+)
 from .dashboard import DashboardService, DashboardSnapshot
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
@@ -20,9 +24,11 @@ from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
 from .storage import build_runtime_repositories, validate_storage_security
+from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
+metered_openai_analyzer: MeteredStructuredLegalAnalyzer | None = None
 
 
 def production_api_key_is_secure() -> bool:
@@ -51,10 +57,32 @@ def _approval_identity() -> str:
     return configured
 
 
+def _ensure_metered_openai_runtime() -> MeteredStructuredLegalAnalyzer | None:
+    global metered_openai_analyzer
+    if openai_analyzer is None or not settings.ai_cost_control_enabled:
+        return None
+    if metered_openai_analyzer is not None:
+        return metered_openai_analyzer
+
+    control = build_cost_scale_control(settings)
+    if control is None:
+        raise RuntimeError("AI cost control unexpectedly unavailable")
+    user_id = (settings.lawyer_approver_id or "local-development-user").strip()
+    metered_openai_analyzer = MeteredStructuredLegalAnalyzer(
+        analyzer=openai_analyzer,
+        cost_control=control,
+        user_id=user_id,
+        reservations=build_cost_reservations(settings),
+    )
+    return metered_openai_analyzer
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_runtime
     validate_runtime_security()
+    if settings.ai_cost_control_enabled and openai_analyzer is not None:
+        _ensure_metered_openai_runtime()
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
@@ -69,11 +97,15 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.10", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.11", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
-    OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.openai_api_key else None
+    OpenAILegalAnalyzer(
+        config=AIProviderConfig(max_retries=0 if settings.ai_cost_control_enabled else 2)
+    )
+    if settings.openai_api_key
+    else None
 )
 runtime_repositories = build_runtime_repositories(settings)
 matter_store = runtime_repositories.matters
@@ -87,6 +119,13 @@ action_approval_engine = LegalActionApprovalEngine(action_approval_store)
 
 def _analyze(request: AnalysisRequest) -> LegalAnalysis:
     if openai_analyzer is not None:
+        if settings.ai_cost_control_enabled:
+            runtime = _ensure_metered_openai_runtime()
+            if runtime is None:
+                raise RuntimeError("Metered OpenAI runtime is required when cost control is enabled")
+            return runtime.analyze(request)
+        if settings.environment.strip().casefold() == "production":
+            raise RuntimeError("Production OpenAI analysis cannot bypass AI cost control")
         return openai_analyzer.analyze(
             text=request.text,
             task=request.task,

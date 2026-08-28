@@ -9,6 +9,9 @@ from jafar.legal_entity_adapters import (
 from jafar.legal_entity_intelligence import EntityQuery
 
 
+VALID_INN = "7707083893"
+
+
 def test_registry_runs_all_public_adapters_and_preserves_failures():
     registry = LegalEntitySourceRegistry(
         [
@@ -17,7 +20,7 @@ def test_registry_runs_all_public_adapters_and_preserves_failures():
         ]
     )
 
-    results = registry.search_all(EntityQuery("7701234567", "inn"))
+    results = registry.search_all(EntityQuery(VALID_INN, "inn"))
 
     assert [item.source_key for item in results] == ["kad", "fssp"]
     assert all(item.status == "no_data" for item in results)
@@ -71,7 +74,7 @@ def test_registry_marks_adapter_source_identity_mismatch_as_error():
             return SourceResult(source_key="fssp", status="found", data={})
 
     result = LegalEntitySourceRegistry([WrongIdentityAdapter()]).search_all(
-        EntityQuery("7701234567", "inn")
+        EntityQuery(VALID_INN, "inn")
     )[0]
 
     assert result.source_key == "kad"
@@ -87,7 +90,7 @@ def test_registry_rejects_unknown_adapter_status():
             return SourceResult(source_key="kad", status="definitely_true", data={})
 
     result = LegalEntitySourceRegistry([BadStatusAdapter()]).search_all(
-        EntityQuery("7701234567", "inn")
+        EntityQuery(VALID_INN, "inn")
     )[0]
 
     assert result.status == "error"
@@ -107,7 +110,7 @@ def test_registry_rejects_private_source_url_returned_by_custom_adapter():
             )
 
     result = LegalEntitySourceRegistry([PrivateURLAdapter()]).search_all(
-        EntityQuery("7701234567", "inn")
+        EntityQuery(VALID_INN, "inn")
     )[0]
 
     assert result.status == "error"
@@ -122,7 +125,7 @@ def test_registry_does_not_leak_raw_source_exception_text():
             raise RuntimeError("Authorization: Bearer super-secret-token")
 
     result = LegalEntitySourceRegistry([SecretLeakingAdapter()]).search_all(
-        EntityQuery("7701234567", "inn")
+        EntityQuery(VALID_INN, "inn")
     )[0]
 
     assert result.status == "error"

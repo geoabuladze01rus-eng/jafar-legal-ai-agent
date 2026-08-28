@@ -87,7 +87,7 @@ struct ConnectedRootView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(JafarPalette.surface)
+        .background(JafarPalette.card)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.white.opacity(0.05))

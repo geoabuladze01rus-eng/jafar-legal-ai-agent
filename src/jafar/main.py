@@ -11,6 +11,7 @@ from .action_approval import ActionRequest, ActionState, LegalActionApprovalEngi
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
+from .cost_runtime import validate_production_ai_scale
 from .dashboard import DashboardService, DashboardSnapshot
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
@@ -30,26 +31,6 @@ def production_api_key_is_secure() -> bool:
     return len(api_key) >= 24 and api_key.casefold() not in placeholders
 
 
-def _validate_production_scale_security() -> None:
-    if not settings.ai_cost_control_enabled:
-        raise RuntimeError("Production requires AI cost control")
-    if not (settings.ai_pricing_json or "").strip():
-        raise RuntimeError("Production AI cost control requires AI_PRICING_JSON")
-    limits = {
-        "AI_COST_PER_REQUEST_USD": settings.ai_cost_per_request_usd,
-        "AI_COST_USER_DAILY_USD": settings.ai_cost_user_daily_usd,
-        "AI_COST_USER_MONTHLY_USD": settings.ai_cost_user_monthly_usd,
-        "AI_COST_GLOBAL_DAILY_USD": settings.ai_cost_global_daily_usd,
-    }
-    for name, value in limits.items():
-        if value is None or value <= 0:
-            raise RuntimeError(f"Production requires positive {name}")
-    if settings.ai_queue_backend.strip().casefold() != "supabase":
-        raise RuntimeError("Production requires durable Supabase AI queue")
-    if not 1 <= settings.ai_queue_worker_claim_limit <= 50:
-        raise RuntimeError("Production AI_QUEUE_WORKER_CLAIM_LIMIT must be between 1 and 50")
-
-
 def validate_runtime_security() -> None:
     if settings.environment.strip().casefold() != "production":
         return
@@ -60,7 +41,7 @@ def validate_runtime_security() -> None:
     if not (settings.lawyer_approver_id or "").strip():
         raise RuntimeError("Production requires LAWYER_APPROVER_ID for auditable decisions")
     validate_storage_security(settings)
-    _validate_production_scale_security()
+    validate_production_ai_scale(settings)
 
 
 def _approval_identity() -> str:
@@ -88,7 +69,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.8", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.9", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (

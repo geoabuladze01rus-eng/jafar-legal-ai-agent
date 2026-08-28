@@ -8,6 +8,11 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from .model_router import ModelProvider, ModelRequest, ModelResponse
+from .provider_transport_safety import (
+    read_json_response_limited,
+    validate_prompt_transport,
+    validate_provider_endpoint,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +38,9 @@ class GeminiProvider(ModelProvider):
         if not api_key:
             raise RuntimeError("Provider gemini is not configured")
 
-        url = f"{self.config.base_url}/{quote(self.config.model)}:generateContent"
+        validate_prompt_transport(request.prompt)
+        base_url = validate_provider_endpoint(self.config.base_url).rstrip("/")
+        url = f"{base_url}/{quote(self.config.model)}:generateContent"
         payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": request.prompt}]}],
         }
@@ -47,7 +54,7 @@ class GeminiProvider(ModelProvider):
             method="POST",
         )
         with urlopen(req, timeout=60) as response:
-            data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+            data = read_json_response_limited(response)
 
         text = self._extract_text(data)
         return ModelResponse(

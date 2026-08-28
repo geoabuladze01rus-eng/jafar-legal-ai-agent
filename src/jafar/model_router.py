@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Protocol
 
+from .cost_scale_control import CostScaleControl, UsageContext
 from .domains import DocumentTask
 from .privacy_policy import ProviderPrivacyPolicy
 
@@ -16,6 +18,8 @@ class ModelRequest:
     verification: bool = False
     confidential: bool = True
     allowed_providers: tuple[str, ...] | None = None
+    usage_context: UsageContext | None = None
+    estimated_cost_usd: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +46,7 @@ class RoutingDecision:
 
 
 class ModelRouter:
-    """Provider-agnostic routing guarded by the central privacy policy."""
+    """Provider-agnostic routing guarded by privacy, budget and provider safety controls."""
 
     PROVIDER_ORDER = ("openai", "gemini", "deepseek", "qwen", "kimi", "nano_banana")
     VERIFIER_ORDER = ("qwen", "kimi", "deepseek", "gemini", "openai")
@@ -51,9 +55,11 @@ class ModelRouter:
         self,
         providers: dict[str, ModelProvider],
         privacy_policy: ProviderPrivacyPolicy | None = None,
+        cost_control: CostScaleControl | None = None,
     ) -> None:
         self.providers = providers
         self.privacy_policy = privacy_policy or ProviderPrivacyPolicy()
+        self.cost_control = cost_control
 
     def decide(self, request: ModelRequest) -> RoutingDecision:
         allowed = set(
@@ -95,7 +101,13 @@ class ModelRouter:
         responses = [primary]
         if decision.verifier:
             try:
-                responses.append(self.providers[decision.verifier].complete(request))
+                responses.append(
+                    self._complete_provider(
+                        request,
+                        decision.verifier,
+                        meter_role="verifier",
+                    )
+                )
             except Exception as exc:
                 raise RuntimeError(
                     f"Independent verification provider {decision.verifier!r} failed"
@@ -129,8 +141,10 @@ class ModelRouter:
         )
         last_error: Exception | None = None
         for key in candidates:
+            if not self._available(key):
+                continue
             try:
-                response = self.providers[key].complete(request)
+                response = self._complete_provider(request, key, meter_role="primary")
                 if key != primary:
                     metadata = dict(response.metadata)
                     metadata["routing_fallback_from"] = primary
@@ -140,9 +154,55 @@ class ModelRouter:
                 last_error = exc
         raise RuntimeError("All permitted AI providers failed during completion") from last_error
 
+    def _complete_provider(
+        self,
+        request: ModelRequest,
+        provider_key: str,
+        *,
+        meter_role: str,
+    ) -> ModelResponse:
+        if self.cost_control is not None and not self.cost_control.provider_enabled(provider_key):
+            raise RuntimeError(f"Provider {provider_key!r} is disabled by scale control")
+
+        context = self._meter_context(request, role=meter_role, provider=provider_key)
+        if self.cost_control is not None and context is not None:
+            estimate = request.estimated_cost_usd
+            if estimate is None:
+                raise RuntimeError("cost_estimate_required")
+            self.cost_control.preflight(context, estimated_cost_usd=estimate)
+
+        response = self.providers[provider_key].complete(request)
+        if self.cost_control is not None and context is not None:
+            self.cost_control.meter_response(
+                context=context,
+                provider=response.provider,
+                model=response.model,
+                metadata=response.metadata,
+            )
+        return response
+
+    @staticmethod
+    def _meter_context(
+        request: ModelRequest,
+        *,
+        role: str,
+        provider: str,
+    ) -> UsageContext | None:
+        base = request.usage_context
+        if base is None:
+            return None
+        return UsageContext(
+            request_id=f"{base.request_id}:{role}:{provider}",
+            user_id=base.user_id,
+            operation=base.operation,
+            matter_id=base.matter_id,
+        )
+
     def _available(self, key: str) -> bool:
         provider = self.providers.get(key)
-        return provider is not None and provider.available()
+        if provider is None or not provider.available():
+            return False
+        return self.cost_control is None or self.cost_control.provider_enabled(key)
 
     def _first_available(self, keys: tuple[str, ...]) -> str | None:
         return next((key for key in keys if self._available(key)), None)

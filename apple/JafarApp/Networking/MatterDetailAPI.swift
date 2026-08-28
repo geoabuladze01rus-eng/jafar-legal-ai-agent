@@ -65,20 +65,19 @@ struct RemoteMatterDetailClient: MatterDetailClient {
     }
 
     func fetchMatter(_ matterId: String) async throws -> MatterWorkspaceSnapshot {
-        let encodedId = matterId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-            ?? matterId
         let matterURL = baseURL
             .appendingPathComponent("v1/matters")
-            .appendingPathComponent(encodedId)
+            .appendingPathComponent(matterId)
         let eventsURL = matterURL.appendingPathComponent("events")
 
         async let matterData = perform(url: matterURL)
         async let eventData = perform(url: eventsURL)
+        let (matterPayload, eventPayload) = try await (matterData, eventData)
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let matter = try decoder.decode(MatterDetail.self, from: await matterData)
-        let events = try decoder.decode([MatterTimelineEvent].self, from: await eventData)
+        let matter = try decoder.decode(MatterDetail.self, from: matterPayload)
+        let events = try decoder.decode([MatterTimelineEvent].self, from: eventPayload)
         return MatterWorkspaceSnapshot(matter: matter, events: events)
     }
 

@@ -90,6 +90,20 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
         reason: str | None = None,
     ) -> ActionRequest:
         _validate_decision(state=state, decided_by=decided_by, reason=reason)
+        current = self.get(action_id)
+        if current is None:
+            raise KeyError(action_id)
+        if current.state is not ActionState.PROPOSED:
+            if (
+                current.state is state
+                and current.decided_by == decided_by.strip()
+                and current.decision_reason == ((reason or "").strip() or None)
+            ):
+                return current
+            raise ValueError("action_not_pending")
+        if state is ActionState.APPROVED and not current.payload_hash:
+            raise ValueError("payload_binding_required")
+
         decided_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "state": state.value,

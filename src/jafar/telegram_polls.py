@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,8 +28,6 @@ def validate_poll(
     open_period: int | None = None,
     close_date: int | None = None,
 ) -> dict[str, Any]:
-    """Normalize the Bot API 10 poll contract while accepting the legacy singular quiz field."""
-
     question = question.strip()
     options = [option.strip() for option in options]
     if not 1 <= len(question) <= 300:
@@ -95,8 +94,11 @@ def validate_poll(
 
 class TelegramPollStore:
     def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        db_path = Path(path).expanduser()
+        if db_path.is_symlink():
+            raise RuntimeError("telegram_poll_db_must_not_be_symlink")
+        self.path = str(db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.execute("PRAGMA journal_mode=WAL")
             con.execute("""CREATE TABLE IF NOT EXISTS telegram_polls (
@@ -107,12 +109,23 @@ class TelegramPollStore:
                 poll_id TEXT NOT NULL, user_id TEXT NOT NULL, option_ids_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL, PRIMARY KEY(poll_id, user_id)
             )""")
+        self._harden_permissions()
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=5.0)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA busy_timeout=5000")
         return con
+
+    def _harden_permissions(self) -> None:
+        if os.name != "posix":
+            return
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(f"{self.path}{suffix}")
+            if candidate.is_symlink():
+                raise RuntimeError("telegram_poll_sidecar_must_not_be_symlink")
+            if candidate.exists():
+                candidate.chmod(0o600)
 
     def record_sent(self, *, poll: dict[str, Any], chat_id: str, message_id: int | None) -> None:
         poll_id = str(poll["id"]).strip()
@@ -131,6 +144,7 @@ class TelegramPollStore:
                     _now(),
                 ),
             )
+        self._harden_permissions()
 
     def ingest_update(self, update: dict[str, Any]) -> bool:
         poll = update.get("poll")
@@ -160,6 +174,7 @@ class TelegramPollStore:
                     _now(),
                 ),
             )
+        self._harden_permissions()
         return True
 
     @staticmethod
@@ -190,6 +205,7 @@ class TelegramPollStore:
                     _now(),
                 ),
             )
+        self._harden_permissions()
 
     def results(self, poll_id: str) -> dict[str, Any]:
         key = poll_id.strip()
@@ -206,14 +222,21 @@ class TelegramPollStore:
         poll = json.loads(row["poll_json"])
         if not isinstance(poll, dict):
             raise RuntimeError("telegram_poll_payload_invalid")
+        normalized_answers: list[dict[str, Any]] = []
+        for answer in answers:
+            option_ids = json.loads(answer["option_ids_json"])
+            if not isinstance(option_ids, list) or any(
+                isinstance(value, bool) or not isinstance(value, int) for value in option_ids
+            ):
+                raise RuntimeError("telegram_poll_answer_payload_invalid")
+            normalized_answers.append(
+                {"user_id": answer["user_id"], "option_ids": option_ids}
+            )
         return {
             "poll_id": key,
             "chat_id": row["chat_id"],
             "message_id": row["message_id"],
             "poll": poll,
-            "answers": [
-                {"user_id": answer["user_id"], "option_ids": json.loads(answer["option_ids_json"])}
-                for answer in answers
-            ],
-            "answer_count": len(answers),
+            "answers": normalized_answers,
+            "answer_count": len(normalized_answers),
         }

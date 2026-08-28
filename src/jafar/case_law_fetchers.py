@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date
-from urllib.parse import urlencode
 
 from .case_law_parsers import LinkBasedCaseLawParser, ParsedCaseLawPage
 from .case_law_sources import CaseLawSourceItem, SourceTrust
@@ -13,6 +12,8 @@ class SupremeCourtHttpFetcher:
 
     The official site's electronic reference contains texts of Supreme Court judicial acts.
     Parsing remains conservative: discovery of links is separated from legal enrichment.
+    Unknown site-side query parameters are deliberately not guessed; ``since`` is applied
+    locally until the official request contract is verified.
     """
 
     BASE_URL = "https://www.vsrf.ru/lk/practice/acts"
@@ -27,13 +28,7 @@ class SupremeCourtHttpFetcher:
         self.last_page: ParsedCaseLawPage | None = None
 
     def fetch_since(self, since: date | None = None) -> tuple[CaseLawSourceItem, ...]:
-        params: dict[str, str] = {}
-        if since is not None:
-            # Kept as a transparent query hint. Site-side filtering may evolve; the raw
-            # resolved URL and body fingerprint remain stored for audit.
-            params["date_from"] = since.isoformat()
-        url = self.BASE_URL if not params else f"{self.BASE_URL}?{urlencode(params)}"
-        fetched = self.transport.get(url)
+        fetched = self.transport.get(self.BASE_URL)
         self.last_page = self.parser.parse(fetched)
         return tuple(
             item

@@ -44,7 +44,7 @@ class RoutingDecision:
 class ModelRouter:
     """Provider-agnostic routing guarded by the central privacy policy."""
 
-    PROVIDER_ORDER = ("openai", "qwen", "kimi", "deepseek", "gemini", "nano_banana")
+    PROVIDER_ORDER = ("openai", "gemini", "deepseek", "qwen", "kimi", "nano_banana")
     VERIFIER_ORDER = ("qwen", "kimi", "deepseek", "gemini", "openai")
 
     def __init__(

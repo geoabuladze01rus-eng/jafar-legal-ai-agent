@@ -2,6 +2,7 @@ import pytest
 
 from jafar.action_approval import (
     ActionApprovalStore,
+    ActionRequest,
     ActionState,
     LegalActionApprovalEngine,
     payload_fingerprint,
@@ -22,19 +23,32 @@ def test_payload_fingerprint_rejects_non_finite_json_values() -> None:
         payload_fingerprint({"confidence": float("nan")})
 
 
-def test_legal_action_requires_explicit_approval():
+def test_legal_action_requires_explicit_payload_bound_approval():
     engine = LegalActionApprovalEngine()
     request = engine.propose(
         action_id="a1",
         action_type="send_email",
         description="Отправить проект ответа",
         evidence_ids=["e1"],
+        payload={"to": "client@example.com", "subject": "Проект ответа"},
     )
     assert request.state is ActionState.PROPOSED
     approval = engine.approve(request, "Артур")
     assert approval["state"] == "approved"
     assert approval["approved_by"] == "Артур"
     assert approval["decided_at"]
+
+
+def test_unbound_action_cannot_be_approved():
+    engine = LegalActionApprovalEngine()
+    request = engine.propose(
+        action_id="unbound",
+        action_type="send_email",
+        description="Запрос без точного содержимого",
+    )
+
+    with pytest.raises(ValueError, match="payload_binding_required"):
+        engine.approve(request, "Артур")
 
 
 def test_rejection_requires_reason():
@@ -104,6 +118,7 @@ def test_store_rejects_duplicate_action_ids_even_after_decision() -> None:
         action_id="duplicate",
         action_type="send_email",
         description="Первый запрос",
+        payload={"to": "client@example.com"},
     )
     engine.approve(request, "lawyer")
 
@@ -112,6 +127,7 @@ def test_store_rejects_duplicate_action_ids_even_after_decision() -> None:
             action_id="duplicate",
             action_type="send_email",
             description="Второй запрос",
+            payload={"to": "other@example.com"},
         )
 
 
@@ -122,21 +138,26 @@ def test_only_approved_action_can_be_marked_executed() -> None:
         action_id="still-pending",
         action_type="send_email",
         description="Не выполнять без решения",
+        payload={"to": "client@example.com"},
     )
 
     with pytest.raises(ValueError, match="only_approved_action_can_be_executed"):
         store.mark_executed("still-pending")
 
 
-def test_approved_but_unbound_action_cannot_be_marked_executed() -> None:
+def test_legacy_unbound_approved_record_cannot_be_marked_executed() -> None:
     store = ActionApprovalStore()
-    engine = LegalActionApprovalEngine(store)
-    request = engine.propose(
+    legacy = ActionRequest(
         action_id="approved-unbound",
         action_type="send_email",
         description="Старый запрос без зафиксированного payload",
+        state=ActionState.APPROVED,
+        decided_at="2026-08-28T12:00:00+00:00",
+        decided_by="lawyer",
     )
-    engine.approve(request, "lawyer")
+    # Simulate a pre-hardening record. Public store.add intentionally rejects non-proposed
+    # records, so inject only inside this regression test to verify the execution gate.
+    store._actions[legacy.action_id] = legacy
 
     with pytest.raises(ValueError, match="payload_binding_required"):
         store.mark_executed("approved-unbound")

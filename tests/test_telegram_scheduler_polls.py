@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 from datetime import timedelta
 
 import pytest
@@ -105,6 +107,25 @@ def test_schedule_persists_cancel_and_idempotency(tmp_path) -> None:
     assert reloaded.cancel(first.id).status == "cancelled"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file mode test")
+def test_scheduler_database_is_owner_only_on_posix(tmp_path) -> None:
+    path = tmp_path / "telegram.sqlite3"
+    TelegramScheduleStore(path)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    assert mode == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink semantics")
+def test_scheduler_rejects_symlink_database_path(tmp_path) -> None:
+    target = tmp_path / "real.sqlite3"
+    TelegramScheduleStore(target)
+    link = tmp_path / "alias.sqlite3"
+    link.symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="must_not_be_symlink"):
+        TelegramScheduleStore(link)
+
+
 def test_idempotency_key_cannot_alias_different_delivery(tmp_path) -> None:
     store = TelegramScheduleStore(tmp_path / "telegram.sqlite3")
     when = utc_now() + timedelta(minutes=1)
@@ -187,7 +208,6 @@ def test_restart_fails_closed_for_uncertain_sending_job(tmp_path) -> None:
 
 
 def test_poll_validation_matches_bot_api_10_contract() -> None:
-    # Telegram Bot API 10 permits 1-12 options and multiple correct quiz answers.
     single = validate_poll(question="Only?", options=["A"])
     assert single["options"] == ["A"]
 

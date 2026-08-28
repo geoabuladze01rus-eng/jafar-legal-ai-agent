@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .action_approval import (
     ActionApprovalStore,
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.8.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.8.1", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -96,6 +96,8 @@ class HealthResponse(BaseModel):
 
 
 class CreateMatterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=500)
     matter_type: MatterType = MatterType.GENERAL
     client_name: str | None = None
@@ -105,10 +107,18 @@ class CreateMatterRequest(BaseModel):
 
 
 class CommandRequest(BaseModel):
+    """Untrusted client command envelope.
+
+    Approval is deliberately absent: a client cannot promote its own request across the
+    human-approval boundary. Mutating actions must enter ``ActionApprovalStore`` and be
+    decided through the dedicated approval endpoints.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     text: str = Field(min_length=1, max_length=4000)
     user_id: str = Field(min_length=1, max_length=200)
     source_device: str = Field(min_length=1, max_length=100)
-    approved: bool = False
 
 
 class CommandResponse(BaseModel):
@@ -134,6 +144,8 @@ class ApprovalItemResponse(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     approver: str = Field(min_length=1, max_length=200)
     reason: str | None = Field(default=None, max_length=2000)
 
@@ -267,7 +279,8 @@ def command(request: CommandRequest) -> CommandResponse:
             request_id=str(uuid4()),
         )
 
-    result = command_runtime.execute(intent, approved=request.approved)
+    # Public clients can invoke read-only routes only. No request field can grant approval.
+    result = command_runtime.execute(intent)
     return CommandResponse(
         message=result.message,
         intent=result.intent,

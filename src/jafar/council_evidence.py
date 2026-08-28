@@ -15,6 +15,7 @@ class CouncilEvidenceReport:
     evidence_gaps: tuple[str, ...]
     lawyer_questions: tuple[str, ...]
     malformed_providers: tuple[str, ...]
+    invalid_evidence_references: tuple[str, ...]
     requires_human_review: bool
 
 
@@ -29,6 +30,8 @@ class CouncilEvidenceService:
         missing_evidence: list[str] = []
         lawyer_questions: list[str] = []
         malformed: list[str] = []
+        invalid_refs: list[str] = []
+        allowed_evidence_ids = set(review.allowed_evidence_ids)
 
         for response in review.council.responses:
             payload = self._parse_payload(response.text)
@@ -47,13 +50,19 @@ class CouncilEvidenceService:
                     continue
                 if not isinstance(evidence_ids, list):
                     evidence_ids = []
+                normalized_ids = [str(item).strip() for item in evidence_ids if str(item).strip()]
+                bad_ids = [item for item in normalized_ids if item not in allowed_evidence_ids]
+                if bad_ids:
+                    invalid_refs.extend(f"{response.provider}:{item}" for item in bad_ids)
+                valid_ids = [item for item in normalized_ids if item in allowed_evidence_ids]
                 claims.append(
                     {
                         "topic": topic,
                         "statement": statement,
                         "position": position,
-                        "evidence_ids": [str(item) for item in evidence_ids],
+                        "evidence_ids": valid_ids,
                         "provider": response.provider,
+                        "supported": bool(valid_ids),
                     }
                 )
 
@@ -65,7 +74,16 @@ class CouncilEvidenceService:
         gaps = tuple(dict.fromkeys(item for item in missing_evidence if item))
         questions = tuple(dict.fromkeys(item for item in lawyer_questions if item))
         malformed_providers = tuple(dict.fromkeys(malformed))
-        requires_human_review = bool(serialized or gaps or questions or malformed_providers)
+        invalid_evidence_references = tuple(dict.fromkeys(invalid_refs))
+        unsupported = any(not bool(claim.get("supported")) for claim in claims)
+        requires_human_review = bool(
+            serialized
+            or gaps
+            or questions
+            or malformed_providers
+            or invalid_evidence_references
+            or unsupported
+        )
 
         return CouncilEvidenceReport(
             claims=tuple(claims),
@@ -73,6 +91,7 @@ class CouncilEvidenceService:
             evidence_gaps=gaps,
             lawyer_questions=questions,
             malformed_providers=malformed_providers,
+            invalid_evidence_references=invalid_evidence_references,
             requires_human_review=requires_human_review,
         )
 

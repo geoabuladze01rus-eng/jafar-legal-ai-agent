@@ -23,12 +23,15 @@ from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
+from .rate_limit_runtime import RateLimiter, build_ai_rate_limiter
 from .storage import build_runtime_repositories, validate_storage_security
 from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
 metered_openai_analyzer: MeteredStructuredLegalAnalyzer | None = None
+ai_rate_limiter: RateLimiter | None = None
+AI_RATE_LIMIT_PATHS = frozenset({"/v1/analyze", "/v1/documents/analyze"})
 
 
 def production_api_key_is_secure() -> bool:
@@ -79,8 +82,9 @@ def _ensure_metered_openai_runtime() -> MeteredStructuredLegalAnalyzer | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global telegram_runtime
+    global ai_rate_limiter, telegram_runtime
     validate_runtime_security()
+    ai_rate_limiter = build_ai_rate_limiter(settings)
     if settings.ai_cost_control_enabled and openai_analyzer is not None:
         _ensure_metered_openai_runtime()
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
@@ -92,12 +96,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        ai_rate_limiter = None
         if telegram_runtime is not None:
             await telegram_runtime.stop()
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.11", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.12", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -152,6 +157,30 @@ async def protect_v1_api(request: Request, call_next):
             expected = f"Bearer {settings.api_key}"
             if not hmac.compare_digest(supplied, expected):
                 return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        if request.url.path in AI_RATE_LIMIT_PATHS:
+            limiter = ai_rate_limiter
+            if production and limiter is None:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Production AI rate limiting is unavailable"},
+                )
+            if limiter is not None:
+                try:
+                    allowed = limiter.allow(request.url.path)
+                except Exception:
+                    # A broken distributed limiter must fail closed rather than silently allowing
+                    # an unbounded model-spend path during a Supabase/network incident.
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": "AI rate-limit safety service unavailable"},
+                    )
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "AI request rate limit exceeded"},
+                        headers={"Retry-After": str(settings.ai_rate_limit_window_seconds)},
+                    )
     return await call_next(request)
 
 

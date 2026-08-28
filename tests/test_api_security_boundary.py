@@ -4,6 +4,12 @@ from jafar import main
 from jafar.main import app
 
 
+def _development_without_api_key(monkeypatch) -> TestClient:
+    monkeypatch.setattr(main.settings, "environment", "development")
+    monkeypatch.setattr(main.settings, "api_key", None)
+    return TestClient(app)
+
+
 def test_legal_entity_routes_share_v1_bearer_boundary(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", "test-api-key")
@@ -38,9 +44,7 @@ def test_production_middleware_rejects_weak_key_even_if_lifespan_is_bypassed(mon
 
 
 def test_legal_entity_requests_fail_closed_on_unknown_fields(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "environment", "development")
-    monkeypatch.setattr(main.settings, "api_key", None)
-    client = TestClient(app)
+    client = _development_without_api_key(monkeypatch)
 
     response = client.post(
         "/v1/legal-entities/research-plan",
@@ -55,9 +59,7 @@ def test_legal_entity_requests_fail_closed_on_unknown_fields(monkeypatch) -> Non
 
 
 def test_legal_entity_profile_bounds_findings(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "environment", "development")
-    monkeypatch.setattr(main.settings, "api_key", None)
-    client = TestClient(app)
+    client = _development_without_api_key(monkeypatch)
     finding = {
         "source_key": "registry",
         "status": "found",
@@ -78,9 +80,7 @@ def test_legal_entity_profile_bounds_findings(monkeypatch) -> None:
 
 
 def test_client_supplied_entity_findings_cannot_fabricate_scored_risk(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "environment", "development")
-    monkeypatch.setattr(main.settings, "api_key", None)
-    client = TestClient(app)
+    client = _development_without_api_key(monkeypatch)
 
     response = client.post(
         "/v1/legal-entities/profile",
@@ -115,9 +115,7 @@ def test_client_supplied_entity_findings_cannot_fabricate_scored_risk(monkeypatc
 
 
 def test_legal_entity_profile_bounds_detail_keys(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "environment", "development")
-    monkeypatch.setattr(main.settings, "api_key", None)
-    client = TestClient(app)
+    client = _development_without_api_key(monkeypatch)
 
     response = client.post(
         "/v1/legal-entities/profile",
@@ -136,3 +134,48 @@ def test_legal_entity_profile_bounds_detail_keys(monkeypatch) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_entity_query_auto_detects_inn_ogrn_and_kpp(monkeypatch) -> None:
+    client = _development_without_api_key(monkeypatch)
+
+    cases = (
+        ("7707083893", "inn"),
+        ("770708389312", "inn"),
+        ("1027700132195", "ogrn"),
+        ("304500116000157", "ogrn"),
+        ("770701001", "kpp"),
+    )
+    for value, expected_type in cases:
+        response = client.post(
+            "/v1/legal-entities/research-plan",
+            json={"query": value, "query_type": "auto"},
+        )
+        assert response.status_code == 200
+        assert response.json()["query"] == value
+        assert response.json()["query_type"] == expected_type
+
+
+def test_explicit_invalid_entity_identifier_returns_422_not_500(monkeypatch) -> None:
+    client = _development_without_api_key(monkeypatch)
+
+    response = client.post(
+        "/v1/legal-entities/research-plan",
+        json={"query": "123", "query_type": "inn"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid_inn"
+
+
+def test_entity_profile_returns_normalized_auto_query_type(monkeypatch) -> None:
+    client = _development_without_api_key(monkeypatch)
+
+    response = client.post(
+        "/v1/legal-entities/profile",
+        json={"query": "770701001", "query_type": "auto", "findings": []},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["query"] == "770701001"
+    assert response.json()["query_type"] == "kpp"

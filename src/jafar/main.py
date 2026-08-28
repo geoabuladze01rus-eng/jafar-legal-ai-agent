@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.5", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.6", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -141,6 +141,7 @@ class ApprovalItemResponse(BaseModel):
     requested_by: str
     state: ActionState
     evidence_ids: list[str] = Field(default_factory=list)
+    payload_bound: bool = False
     created_at: str
     decided_at: str | None = None
     decided_by: str | None = None
@@ -170,6 +171,7 @@ def _approval_item(request: ActionRequest) -> ApprovalItemResponse:
         requested_by=request.requested_by,
         state=request.state,
         evidence_ids=list(request.evidence_ids),
+        payload_bound=bool(request.payload_hash),
         created_at=request.created_at,
         decided_at=request.decided_at,
         decided_by=request.decided_by,

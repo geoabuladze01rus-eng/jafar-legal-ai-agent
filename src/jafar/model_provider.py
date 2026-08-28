@@ -202,6 +202,59 @@ class GeminiProvider:
 
 
 @dataclass(frozen=True)
+class QwenProvider:
+    """Alibaba Model Studio OpenAI-compatible chat provider (synthetic-only gate)."""
+    api_key: str = ""
+    model: str = ""
+    base_url: str = ""
+    enabled: bool = False
+    transport: Any = None
+    timeout_seconds: float = 30.0
+
+    def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> dict[str, Any] | None:
+        result, _, _ = self.analyze_with_diagnostics(text, task, matter_type)
+        return result
+
+    def analyze_with_diagnostics(self, text: str, task: DocumentTask, matter_type: MatterType) -> tuple[dict[str, Any] | None, str | None, int | None]:
+        if not self.enabled or not self.api_key or not self.model or not self.base_url:
+            return None, "INVALID_REQUEST", None
+        payload = {"model": self.model, "messages": [{"role": "system", "content": "Return only JSON; require lawyer review."}, {"role": "user", "content": self._prompt(text, task, matter_type)}]}
+        try:
+            if self.transport:
+                response = self.transport(payload)
+            else:
+                request = urllib.request.Request(f"{self.base_url.rstrip('/')}/chat/completions", data=json.dumps(payload, ensure_ascii=False).encode(), headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as raw:
+                    response = json.loads(raw.read().decode())
+        except urllib.error.HTTPError as exc:
+            return None, classify_http_error(exc.code), exc.code
+        except TimeoutError:
+            return None, "TIMEOUT", None
+        except (urllib.error.URLError, ConnectionError):
+            return None, "NETWORK", None
+        if not isinstance(response, dict):
+            return None, "INVALID_RESPONSE", None
+        try:
+            content = response["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            return None, "INVALID_RESPONSE", None
+        parsed = self._parse_json(content) if isinstance(content, str) else None
+        return (parsed, None, None) if parsed is not None else (None, "INVALID_RESPONSE", None)
+
+    @staticmethod
+    def _prompt(text: str, task: DocumentTask, matter_type: MatterType) -> str:
+        return f"Task: {task.value}; matter_type: {matter_type.value}\n{text}"
+
+    @staticmethod
+    def _parse_json(content: str) -> dict[str, Any] | None:
+        try:
+            value = json.loads(content.strip().strip('`').removeprefix("json"))
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+
+@dataclass(frozen=True)
 class DeepSeekProvider:
     """Disabled-by-default provider contract with injected transport."""
     api_key: str = ""

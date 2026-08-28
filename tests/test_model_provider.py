@@ -4,7 +4,7 @@ import urllib.error
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import RiskLevel
-from jafar.model_provider import GeminiProvider, OpenAICompatibleProvider
+from jafar.model_provider import GeminiProvider, OpenAICompatibleProvider, QwenProvider
 
 
 class StubProvider:
@@ -122,3 +122,10 @@ def test_gemini_generate_content_contract_is_synthetic_and_configured():
     assert result == {"summary": "ok"} and category is None
     assert seen["contents"][0]["parts"][0]["text"]
     assert GeminiProvider(api_key="synthetic", model="", enabled=True, transport=transport).analyze("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL) is None
+
+
+def test_qwen_chat_contract_is_configured_and_normalized():
+    seen = []
+    provider = QwenProvider("synthetic", "qwen-test", "https://example/v1", True, lambda payload: seen.append(payload) or {"choices": [{"message": {"content": '{"summary":"ok"}'}}]})
+    assert provider.analyze("synthetic", DocumentTask.LEGAL_ANALYSIS, MatterType.GENERAL) == {"summary": "ok"}
+    assert seen[0]["model"] == "qwen-test" and "messages" in seen[0]

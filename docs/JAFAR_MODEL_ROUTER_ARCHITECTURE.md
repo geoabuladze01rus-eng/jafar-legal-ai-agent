@@ -8,6 +8,13 @@ GEMINI ADAPTER = NOT IMPLEMENTED
 DEEPSEEK ADAPTER = NOT IMPLEMENTED  
 REALTIME VOICE ADAPTER = NOT IMPLEMENTED
 
+NETWORK EXECUTION POLICY: synthetic-only by default; live calls require explicit
+opt-in, enabled provider, credential reference and synthetic data classification.
+Private-client data is rejected by the smoke gate. `scripts/openai_live_smoke.py`
+exits with `LIVE_AI_NETWORK=DISABLED` and `SMOKE=NOT_RUN` unless explicitly opted in.
+DeepSeek has a disabled-by-default contract skeleton; it is not added to fallback
+priority automatically.
+
 The domain uses provider-neutral `ModelTier`, `ModelRequest`, `ModelResponse` and
 `ModelRouter` contracts. Routing is deterministic: classification/extraction use
 FAST, ordinary analysis/drafting STANDARD, complex legal position EXPERT, and an

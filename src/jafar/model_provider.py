@@ -136,3 +136,18 @@ class GeminiProvider:
         except json.JSONDecodeError:
             return None
         return value if isinstance(value, dict) else None
+
+
+@dataclass(frozen=True)
+class DeepSeekProvider:
+    """Disabled-by-default provider contract with injected transport."""
+    api_key: str = ""
+    model: str = ""
+    enabled: bool = False
+    transport: Any = None
+
+    def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> dict[str, Any] | None:
+        if not self.enabled or self.transport is None:
+            return None
+        response = self.transport({"model": self.model, "prompt": text, "task": task.value})
+        return response if isinstance(response, dict) else None

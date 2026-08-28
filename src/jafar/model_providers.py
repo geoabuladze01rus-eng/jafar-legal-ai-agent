@@ -18,6 +18,36 @@ class HTTPProviderConfig:
     endpoint: str
 
 
+def safe_provider_metadata(data: dict[str, Any]) -> dict[str, Any]:
+    """Keep operational metadata only; never persist raw model output payloads."""
+
+    metadata: dict[str, Any] = {}
+    for key in ("id", "model", "created", "system_fingerprint", "object"):
+        value = data.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            if key in data:
+                metadata[key] = value
+
+    usage = data.get("usage")
+    if isinstance(usage, dict):
+        sanitized_usage = _numeric_metadata_tree(usage)
+        if sanitized_usage:
+            metadata["usage"] = sanitized_usage
+    return metadata
+
+
+def _numeric_metadata_tree(value: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, (int, float, bool)) or item is None:
+            result[key] = item
+        elif isinstance(item, dict):
+            nested = _numeric_metadata_tree(item)
+            if nested:
+                result[key] = nested
+    return result
+
+
 class HTTPModelProvider(ModelProvider):
     """OpenAI-compatible adapter for providers exposing chat-completions semantics."""
 
@@ -52,19 +82,21 @@ class HTTPModelProvider(ModelProvider):
             provider=self.key,
             model=self.config.model,
             text=self._extract_text(data),
-            metadata=data,
+            metadata=safe_provider_metadata(data),
         )
 
     @staticmethod
     def _extract_text(data: dict[str, Any]) -> str:
         choices = data.get("choices")
         if isinstance(choices, list) and choices:
-            message = choices[0].get("message", {})
-            if isinstance(message, dict) and isinstance(message.get("content"), str):
-                return message["content"]
+            choice = choices[0]
+            if isinstance(choice, dict):
+                message = choice.get("message", {})
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    return message["content"]
         if isinstance(data.get("text"), str):
             return data["text"]
-        return json.dumps(data, ensure_ascii=False)
+        raise RuntimeError("Provider response contained no recognizable assistant text")
 
 
 class OpenAIResponsesProvider(ModelProvider):
@@ -95,19 +127,42 @@ class OpenAIResponsesProvider(ModelProvider):
         )
         with urlopen(req, timeout=60) as response:
             data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
-        text = data.get("output_text")
-        if not isinstance(text, str):
-            text = json.dumps(data, ensure_ascii=False)
-        return ModelResponse(provider=self.key, model=self.model, text=text, metadata=data)
+        text = self._extract_text(data)
+        return ModelResponse(
+            provider=self.key,
+            model=self.model,
+            text=text,
+            metadata=safe_provider_metadata(data),
+        )
+
+    @staticmethod
+    def _extract_text(data: dict[str, Any]) -> str:
+        output_text = data.get("output_text")
+        if isinstance(output_text, str) and output_text:
+            return output_text
+
+        output = data.get("output")
+        if isinstance(output, list):
+            texts: list[str] = []
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if not isinstance(content, list):
+                    continue
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    text = part.get("text")
+                    if isinstance(text, str) and text:
+                        texts.append(text)
+            if texts:
+                return "".join(texts)
+        raise RuntimeError("OpenAI response contained no recognizable output text")
 
 
 def _alibaba_chat_url() -> str:
-    """Return the deployment-specific Model Studio chat-completions endpoint.
-
-    New Model Studio workspaces use region/workspace-specific endpoints. The US DashScope
-    compatibility endpoint remains a practical fallback for deployments that support it,
-    while production should set ALIBABA_MODEL_STUDIO_CHAT_URL explicitly.
-    """
+    """Return the deployment-specific Model Studio chat-completions endpoint."""
 
     return os.getenv(
         "ALIBABA_MODEL_STUDIO_CHAT_URL",

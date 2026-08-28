@@ -1,21 +1,51 @@
-# Structured model provider
+# Structured model providers and AI Council
 
-Jafar keeps a deterministic local legal analyzer as the safe fallback and can optionally enrich it with an OpenAI-compatible model provider.
+Jafar uses provider-agnostic routing for model calls. OpenAI remains the default legal-analysis provider, while Gemini, DeepSeek, Qwen and Kimi can be selected for specialized tasks or independent verification.
+
+## Provider roles
+
+- `openai` — primary legal analysis and final orchestration.
+- `qwen` — second-opinion analysis and alternative reasoning.
+- `kimi` — long-context, case timeline and cross-document analysis.
+- `deepseek` — coding and technical analysis.
+- `gemini` — vision and Google-context workloads.
+
+## AI Council
+
+`AICouncil` can run the same request through several independent providers and returns every response. It does not silently average conflicting conclusions. If providers disagree, the result contains an explicit disagreement marker so the application can surface the conflict for human review.
+
+The council defaults to the order `openai`, `qwen`, `kimi`, `deepseek`, `gemini` and requires at least two successful independent responses unless configured otherwise.
 
 ## Configuration
 
-Set these environment variables outside Git:
+Keep credentials outside Git.
 
-- `API_KEY` — provider credential.
-- `MODEL_PROVIDER` — `openai` or `openai-compatible`.
-- `MODEL_NAME` — provider model identifier.
-- `MODEL_BASE_URL` — API base URL, defaulting to `https://api.openai.com/v1`.
-- `MODEL_TIMEOUT_SECONDS` — network timeout, default `30`.
+### OpenAI
 
-When `API_KEY` is absent, Jafar never makes a model network call and uses the deterministic analyzer.
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 
-## Safety contract
+### DeepSeek
 
-The model receives the document text and task/matter type and must return structured JSON. The response is validated against Jafar's Pydantic models. Malformed, unavailable, or timed-out model responses are discarded and the deterministic result is returned.
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_MODEL`
+- `DEEPSEEK_BASE_URL`
 
-This is an analysis/enrichment layer, not an authorization layer: consequential actions such as sending messages, changing matters, creating deadlines, or publishing content remain behind explicit application controls.
+### Alibaba Cloud Model Studio (Qwen and Kimi)
+
+- `DASHSCOPE_API_KEY`
+- `ALIBABA_MODEL_STUDIO_CHAT_URL` — full OpenAI-compatible `/chat/completions` endpoint for the selected Alibaba region/workspace.
+- `QWEN_MODEL`
+- `KIMI_MODEL`
+
+Alibaba Cloud Model Studio exposes Qwen and third-party models through an OpenAI-compatible API, so Jafar reuses the generic HTTP provider adapter instead of introducing provider-specific networking code.
+
+## Confidentiality contract
+
+Confidential legal requests fail closed. The default `ProviderPrivacyPolicy` permits only OpenAI for confidential material. Qwen, Kimi, DeepSeek and Gemini are enabled for non-confidential or sanitized workloads by default.
+
+A deployment may explicitly construct a trusted `ProviderPrivacyPolicy` that opts additional providers into confidential processing after data-residency, retention, professional-secrecy and contractual requirements have been reviewed.
+
+## Authorization boundary
+
+Model analysis is not an authorization layer. Consequential actions such as sending messages, changing matters, creating deadlines or publishing content remain behind explicit application controls.

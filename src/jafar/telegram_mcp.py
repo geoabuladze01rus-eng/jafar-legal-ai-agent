@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-from os import getenv
 from typing import Any
 
 from mcp.server import MCPServer
 
+from .config import settings
 from .telegram_runtime import TelegramBotHttpClient
 
 mcp = MCPServer("Jafar Telegram")
 
 
 def _allowed_chat_ids() -> set[str]:
-    raw = getenv("TELEGRAM_ALLOWED_CHAT_IDS", "")
+    raw = settings.telegram_allowed_chat_ids
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 
 def _require_token() -> str:
-    token = getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    token = (settings.telegram_bot_token or "").strip()
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
     return token
@@ -36,7 +36,7 @@ def _require_allowed_chat(chat_id: int | str) -> str:
 async def telegram_status() -> dict[str, Any]:
     """Return Jafar Telegram MCP configuration status without exposing secrets."""
     return {
-        "configured": bool(getenv("TELEGRAM_BOT_TOKEN", "").strip()),
+        "configured": bool((settings.telegram_bot_token or "").strip()),
         "allowed_chat_ids_count": len(_allowed_chat_ids()),
         "outbound_enabled": bool(_allowed_chat_ids()),
     }

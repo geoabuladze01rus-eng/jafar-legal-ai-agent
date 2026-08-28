@@ -10,6 +10,7 @@ struct ApprovalItem: Codable, Identifiable, Sendable {
     let requestedBy: String
     let state: String
     let evidenceIds: [String]
+    let payloadBound: Bool
     let createdAt: String
     let decidedAt: String?
     let decidedBy: String?

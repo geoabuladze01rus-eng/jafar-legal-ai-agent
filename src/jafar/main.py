@@ -87,7 +87,7 @@ document_workflow = DocumentWorkflow(matter_store, analyzer)
 try:
     document_repository = SupabaseDocumentRepository(build_supabase_client(SupabaseSettings()))
 except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
-document_repository = EmptyDocumentRepository()
+    document_repository = EmptyDocumentRepository()
 deadline_repository = DeadlineRepository(matter_store)
 command_runtime = JafarCommandRuntime(
     matter_store,

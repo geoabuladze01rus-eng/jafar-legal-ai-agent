@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from threading import RLock
+from typing import Protocol
 
 from .action_approval import ActionApprovalRepository, ActionRequest, ActionState
 
@@ -23,12 +25,46 @@ class ReconciliationCandidate:
     execution_error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ReconciliationAuditRecord:
+    action_id: str
+    decision: ReconciliationDecision
+    operator_id: str
+    evidence_note: str
+    recorded_at: str
+
+
+class ReconciliationAuditRepository(Protocol):
+    def append(self, record: ReconciliationAuditRecord) -> None: ...
+
+    def for_action(self, action_id: str) -> tuple[ReconciliationAuditRecord, ...]: ...
+
+
+class ReconciliationAuditStore:
+    """Append-only local audit trail used by tests and local development."""
+
+    def __init__(self) -> None:
+        self._records: list[ReconciliationAuditRecord] = []
+        self._lock = RLock()
+
+    def append(self, record: ReconciliationAuditRecord) -> None:
+        if not record.action_id.strip() or not record.operator_id.strip() or not record.evidence_note.strip():
+            raise ValueError("invalid_reconciliation_audit_record")
+        with self._lock:
+            self._records.append(record)
+
+    def for_action(self, action_id: str) -> tuple[ReconciliationAuditRecord, ...]:
+        with self._lock:
+            return tuple(record for record in self._records if record.action_id == action_id)
+
+
 class ActionReconciliationService:
     """Manual recovery boundary for actions left in ``executing`` state.
 
     A stale execution claim is never released automatically because the external side effect
     may already have happened even when the application failed before persisting ``executed``.
     Recovery therefore requires an explicit operator conclusion based on external evidence.
+    Every successful conclusion is retained in an append-only audit trail.
     """
 
     def __init__(
@@ -36,11 +72,13 @@ class ActionReconciliationService:
         repository: ActionApprovalRepository,
         *,
         stale_after: timedelta = timedelta(minutes=10),
+        audit_repository: ReconciliationAuditRepository | None = None,
     ) -> None:
         if stale_after <= timedelta(0):
             raise ValueError("stale_after_must_be_positive")
         self.repository = repository
         self.stale_after = stale_after
+        self.audit_repository = audit_repository or ReconciliationAuditStore()
 
     def candidates(self, *, now: datetime | None = None) -> tuple[ReconciliationCandidate, ...]:
         current = now or datetime.now(timezone.utc)
@@ -92,14 +130,29 @@ class ActionReconciliationService:
 
         audit_reason = f"reconciliation by {operator}: {note}"
         if decision is ReconciliationDecision.CONFIRMED_NOT_EXECUTED:
-            return self.repository.release_execution_claim(
+            updated = self.repository.release_execution_claim(
                 action_id,
                 executor_id=executor,
                 error=audit_reason,
             )
-        if decision is ReconciliationDecision.CONFIRMED_EXECUTED:
-            return self.repository.mark_executed(action_id, executor_id=executor)
-        raise ValueError("unsupported_reconciliation_decision")
+        elif decision is ReconciliationDecision.CONFIRMED_EXECUTED:
+            updated = self.repository.mark_executed(action_id, executor_id=executor)
+        else:
+            raise ValueError("unsupported_reconciliation_decision")
+
+        self.audit_repository.append(
+            ReconciliationAuditRecord(
+                action_id=action_id,
+                decision=decision,
+                operator_id=operator,
+                evidence_note=note,
+                recorded_at=datetime.now(timezone.utc).isoformat(),
+            )
+        )
+        return updated
+
+    def audit_for_action(self, action_id: str) -> tuple[ReconciliationAuditRecord, ...]:
+        return self.audit_repository.for_action(action_id)
 
     @staticmethod
     def _parse_claimed_at(action: ActionRequest) -> datetime:

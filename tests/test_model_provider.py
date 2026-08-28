@@ -4,7 +4,7 @@ import urllib.error
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import RiskLevel
-from jafar.model_provider import OpenAICompatibleProvider
+from jafar.model_provider import GeminiProvider, OpenAICompatibleProvider
 
 
 class StubProvider:
@@ -110,3 +110,15 @@ def test_provider_classifies_http_and_transport_failures():
 
     def network(request, timeout): raise urllib.error.URLError("offline")
     assert OpenAICompatibleProvider("k", "m", transport=network).analyze_with_diagnostics("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL)[1] == "NETWORK"
+
+
+def test_gemini_generate_content_contract_is_synthetic_and_configured():
+    seen = {}
+    def transport(payload):
+        seen.update(payload)
+        return {"candidates": [{"content": {"parts": [{"text": '{"summary":"ok"}'}]}}]}
+    provider = GeminiProvider(api_key="synthetic", model="configured-model", enabled=True, transport=transport)
+    result, category, _ = provider.analyze_with_diagnostics("synthetic", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL)
+    assert result == {"summary": "ok"} and category is None
+    assert seen["contents"][0]["parts"][0]["text"]
+    assert GeminiProvider(api_key="synthetic", model="", enabled=True, transport=transport).analyze("x", DocumentTask.LEGAL_ANALYSIS, MatterType.CIVIL) is None

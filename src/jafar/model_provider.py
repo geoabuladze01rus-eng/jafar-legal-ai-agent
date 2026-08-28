@@ -140,22 +140,53 @@ class OpenAICompatibleProvider:
 
 @dataclass(frozen=True)
 class GeminiProvider:
-    """Configuration-only Gemini boundary; transport is injected for tests."""
+    """Gemini generateContent boundary; network is opt-in and transport injectable."""
 
     api_key: str = ""
     model: str = ""
     enabled: bool = False
     transport: Any = None
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    timeout_seconds: float = 30.0
 
     def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> dict[str, Any] | None:
-        if not self.enabled or self.transport is None:
-            return None
-        request = {"model": self.model, "contents": [{"role": "user", "parts": [{"text": self._prompt(text, task, matter_type)}]}]}
-        response = self.transport(request)
+        result, _category, _status = self.analyze_with_diagnostics(text, task, matter_type)
+        return result
+
+    def analyze_with_diagnostics(self, text: str, task: DocumentTask, matter_type: MatterType) -> tuple[dict[str, Any] | None, str | None, int | None]:
+        if not self.enabled or not self.model or (self.transport is None and not self.api_key):
+            return None, "INVALID_REQUEST", None
+        payload = {"model": self.model, "contents": [{"role": "user", "parts": [{"text": self._prompt(text, task, matter_type)}]}]}
+        if self.transport is not None:
+            try:
+                response = self.transport(payload)
+            except TimeoutError:
+                return None, "TIMEOUT", None
+            except (urllib.error.URLError, ConnectionError):
+                return None, "NETWORK", None
+        else:
+            url = f"{self.base_url.rstrip('/')}/models/{self.model}:generateContent"
+            request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                    response = json.loads(response.read().decode())
+            except urllib.error.HTTPError as exc:
+                return None, classify_http_error(exc.code), exc.code
+            except TimeoutError:
+                return None, "TIMEOUT", None
+            except urllib.error.URLError:
+                return None, "NETWORK", None
         if not isinstance(response, dict):
-            return None
+            return None, "INVALID_RESPONSE", None
+        candidates = response.get("candidates")
         candidate = response.get("text") or response.get("content")
-        return self._parse_json(candidate) if isinstance(candidate, str) else None
+        if not isinstance(candidate, str) and isinstance(candidates, list) and candidates:
+            parts = candidates[0].get("content", {}).get("parts", []) if isinstance(candidates[0], dict) else []
+            candidate = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+        if not isinstance(candidate, str):
+            return None, "INVALID_RESPONSE", None
+        parsed = self._parse_json(candidate)
+        return (parsed, None, None) if parsed is not None else (None, "INVALID_RESPONSE", None)
 
     @staticmethod
     def _prompt(text: str, task: DocumentTask, matter_type: MatterType) -> str:

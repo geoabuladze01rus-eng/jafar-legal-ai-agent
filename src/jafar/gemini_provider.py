@@ -33,14 +33,17 @@ class GeminiProvider(ModelProvider):
         if not api_key:
             raise RuntimeError("Provider gemini is not configured")
 
-        url = f"{self.config.base_url}/{quote(self.config.model)}:generateContent?key={quote(api_key)}"
+        url = f"{self.config.base_url}/{quote(self.config.model)}:generateContent"
         payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": request.prompt}]}],
         }
         req = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
             method="POST",
         )
         with urlopen(req, timeout=60) as response:
@@ -58,17 +61,19 @@ class GeminiProvider(ModelProvider):
     def _extract_text(data: dict[str, Any]) -> str:
         candidates = data.get("candidates")
         if isinstance(candidates, list) and candidates:
-            content = candidates[0].get("content", {})
-            if isinstance(content, dict):
-                parts = content.get("parts", [])
-                if isinstance(parts, list):
-                    texts = [
-                        part.get("text")
-                        for part in parts
-                        if isinstance(part, dict) and isinstance(part.get("text"), str)
-                    ]
-                    if texts:
-                        return "".join(texts)
+            first = candidates[0]
+            if isinstance(first, dict):
+                content = first.get("content", {})
+                if isinstance(content, dict):
+                    parts = content.get("parts", [])
+                    if isinstance(parts, list):
+                        texts = [
+                            part.get("text")
+                            for part in parts
+                            if isinstance(part, dict) and isinstance(part.get("text"), str)
+                        ]
+                        if texts:
+                            return "".join(texts)
         raise RuntimeError("Gemini response contained no recognizable assistant text")
 
     @staticmethod

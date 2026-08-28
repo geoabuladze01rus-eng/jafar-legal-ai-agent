@@ -47,12 +47,16 @@ def test_apple_approval_requires_local_device_authentication() -> None:
     authenticator = (APP / "Security" / "LawyerLocalAuthenticator.swift").read_text(
         encoding="utf-8"
     )
+    plist = (APP / "Info.plist").read_text(encoding="utf-8")
+    project = (ROOT / "apple" / "project.yml").read_text(encoding="utf-8")
 
     assert "LawyerLocalAuthenticator" in dashboard
     assert dashboard.count("localAuthenticator.authenticate") == 2
     assert "Face ID, Touch ID" in dashboard
     assert "deviceOwnerAuthentication" in authenticator
     assert "evaluatePolicy" in authenticator
+    assert "NSFaceIDUsageDescription" in plist
+    assert "INFOPLIST_KEY_NSFaceIDUsageDescription" in project
 
 
 def test_connection_settings_explain_server_controlled_audit_identity() -> None:

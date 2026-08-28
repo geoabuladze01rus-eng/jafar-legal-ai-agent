@@ -36,6 +36,11 @@ struct ConnectedRootView: View {
 
     private var liveStatusStrip: some View {
         HStack(spacing: 10) {
+            JusticePresenceView(
+                state: dashboard.errorMessage == nil ? .calm : .control,
+                compact: true
+            )
+
             Circle()
                 .fill(connectionColor)
                 .frame(width: 8, height: 8)
@@ -69,7 +74,7 @@ struct ConnectedRootView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(JafarPalette.secondaryText)
-                .accessibilityLabel("Обновить данные Джафара")
+                .accessibilityLabel("Обновить данные ЮСТИЦИЯ AI")
             }
 
             Button {
@@ -147,12 +152,12 @@ struct ConnectedRootView: View {
 
     private var connectionTitle: String {
         if JafarAPIConfiguration.baseURL == nil {
-            return "Локальный режим"
+            return "ЮСТИЦИЯ AI · локальный режим"
         }
         if dashboard.errorMessage != nil {
-            return "Backend недоступен"
+            return "ЮСТИЦИЯ AI · backend недоступен"
         }
-        return "Backend подключён"
+        return "ЮСТИЦИЯ AI · подключено"
     }
 
     private var connectionColor: Color {

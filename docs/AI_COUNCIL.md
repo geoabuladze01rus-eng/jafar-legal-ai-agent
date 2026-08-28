@@ -24,13 +24,15 @@ AI Council is Jafar's multi-model review layer. It is designed for legal work wh
 8. Divergent conclusions are surfaced for human review instead of being averaged away.
 9. No external action is authorized by model consensus alone.
 
-## Evidence graph
+## Evidence graph and provenance
 
-Jafar owns source identifiers. For a document review it creates a stable evidence identifier from the document fingerprint, for example `document:<sha256>`, and exposes only those identifiers to council models.
+Jafar owns source identifiers. PDF extraction preserves page boundaries while the legacy full-text field remains available for existing workflows. Documents are divided into bounded fragments and each fragment receives a stable evidence identifier derived from the document fingerprint, page and chunk index, for example `document:<sha256>:page:14:chunk:3`.
 
-A model claim is never treated as a fact. A claim may reference only evidence IDs supplied by Jafar. Invented evidence IDs are rejected, recorded as invalid references and force human review. A claim with no valid source reference remains unsupported even if multiple models agree with it.
+For non-page-based inputs the identifier still carries a stable chunk index. The AI Council receives both the allowed identifier and the corresponding fragment text. Models are instructed to cite the most specific fragment that directly supports a claim and may use only IDs supplied by Jafar.
 
-`CaseEvidenceGraph` links review claims to concrete sources. A source can carry the document name, fingerprint, excerpt, page, actor, event ID and metadata. This provides the foundation for later page-level and cross-document evidence tracing.
+A model claim is never treated as a fact. Invented evidence IDs are rejected, recorded as invalid references and force human review. A claim with no valid source reference remains unsupported even if multiple models agree with it.
+
+`CaseEvidenceGraph` links review claims to concrete sources. A source can carry the document name, fingerprint, excerpt, page, chunk index, actor and event ID. This allows later cross-document tracing such as a witness statement on one page against an investigator's assertion in another document.
 
 ## Confidentiality
 
@@ -43,5 +45,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Qwen/Kimi must not receive confidential requests under the default privacy policy.
 - Disagreements must remain visible to the calling application.
 - Model output must not invent evidence identifiers or promote unsupported claims to facts.
+- PDF page boundaries and fragment-level source IDs must survive extraction into Council review.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

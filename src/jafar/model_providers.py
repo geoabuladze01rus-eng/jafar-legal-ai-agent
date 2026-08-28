@@ -102,6 +102,13 @@ class OpenAIResponsesProvider(ModelProvider):
 
 
 def _alibaba_chat_url() -> str:
+    """Return the deployment-specific Model Studio chat-completions endpoint.
+
+    New Model Studio workspaces use region/workspace-specific endpoints. The US DashScope
+    compatibility endpoint remains a practical fallback for deployments that support it,
+    while production should set ALIBABA_MODEL_STUDIO_CHAT_URL explicitly.
+    """
+
     return os.getenv(
         "ALIBABA_MODEL_STUDIO_CHAT_URL",
         "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
@@ -123,7 +130,7 @@ def default_providers() -> dict[str, ModelProvider]:
         "qwen": HTTPModelProvider(
             HTTPProviderConfig(
                 "qwen",
-                os.getenv("QWEN_MODEL", "qwen3.7-max"),
+                os.getenv("QWEN_MODEL", "qwen3.8-max"),
                 "DASHSCOPE_API_KEY",
                 alibaba_endpoint,
             )

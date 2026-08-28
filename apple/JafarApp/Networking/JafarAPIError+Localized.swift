@@ -12,7 +12,7 @@ extension JafarAPIError: LocalizedError {
             }
             return "Backend ответил HTTP \(status)."
         case let .keychain(status):
-            if let message = SecCopyErrorMessageString(status, nil) as String? {
+            if let message = SecCopyErrorMessageString(status, nil) {
                 return "Keychain: \(message)"
             }
             return "Ошибка Keychain (\(status))."

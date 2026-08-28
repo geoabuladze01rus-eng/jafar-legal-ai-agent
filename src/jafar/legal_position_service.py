@@ -15,10 +15,17 @@ class LegalPositionRead(BaseModel):
     items: list[LegalPositionItem] = Field(default_factory=list)
 
 class LegalPositionReadService:
-    def __init__(self, matter_store): self.matter_store = matter_store
+    def __init__(self, matter_store, analysis_repository=None): self.matter_store = matter_store; self.analysis_repository = analysis_repository
     def get(self, matter_id: str) -> LegalPositionRead:
         if self.matter_store.get(matter_id) is None: raise KeyError(matter_id)
-        return LegalPositionRead(matter_id=matter_id)
+        if self.analysis_repository is None: return LegalPositionRead(matter_id=matter_id)
+        items = []
+        for row in self.analysis_repository.list_for_matter(matter_id):
+            result = row.get("result") or {}
+            gaps = result.get("missing_information", [])
+            if not isinstance(gaps, list) or not all(isinstance(g, str) for g in gaps): raise ValueError("invalid missing_information")
+            items.extend(LegalPositionItem(kind="evidence_gap", text=g) for g in gaps)
+        return LegalPositionRead(matter_id=matter_id, items=items)
 
 class SupabaseAnalysisRepository:
     """Read-only persisted analysis metadata adapter."""

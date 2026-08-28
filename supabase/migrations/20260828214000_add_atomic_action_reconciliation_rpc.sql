@@ -1,7 +1,7 @@
 -- Reconcile ambiguous executing actions atomically with the append-only evidence ledger.
 
 create or replace function public.reconcile_action_for_owner(
-  p_owner_user_id uuid,
+  p_owner_user_id text,
   p_action_id text,
   p_decision text,
   p_operator_id text,
@@ -16,8 +16,11 @@ declare
   v_action public.action_approvals;
   v_audit_reason text;
 begin
-  if p_owner_user_id is null then
+  if p_owner_user_id is null or btrim(p_owner_user_id) = '' then
     raise exception 'owner_user_id_required';
+  end if;
+  if char_length(btrim(p_owner_user_id)) > 200 then
+    raise exception 'owner_user_id_too_long';
   end if;
   if p_action_id is null or btrim(p_action_id) = '' then
     raise exception 'action_id_required';
@@ -43,7 +46,7 @@ begin
 
   select * into v_action
   from public.action_approvals
-  where owner_user_id = p_owner_user_id
+  where owner_user_id = btrim(p_owner_user_id)
     and action_id = btrim(p_action_id)
   for update;
 
@@ -65,7 +68,7 @@ begin
         execution_claimed_at = null,
         execution_claimed_by = null,
         execution_error = v_audit_reason
-    where owner_user_id = p_owner_user_id
+    where owner_user_id = btrim(p_owner_user_id)
       and action_id = btrim(p_action_id)
       and state = 'executing'
     returning * into v_action;
@@ -74,7 +77,7 @@ begin
     set state = 'executed',
         executed_at = now(),
         execution_error = null
-    where owner_user_id = p_owner_user_id
+    where owner_user_id = btrim(p_owner_user_id)
       and action_id = btrim(p_action_id)
       and state = 'executing'
     returning * into v_action;
@@ -92,7 +95,7 @@ begin
     evidence_note,
     recorded_at
   ) values (
-    p_owner_user_id,
+    btrim(p_owner_user_id),
     btrim(p_action_id),
     p_decision,
     btrim(p_operator_id),
@@ -104,7 +107,7 @@ begin
 end;
 $$;
 
-revoke all on function public.reconcile_action_for_owner(uuid, text, text, text, text)
+revoke all on function public.reconcile_action_for_owner(text, text, text, text, text)
 from public, anon, authenticated;
-grant execute on function public.reconcile_action_for_owner(uuid, text, text, text, text)
+grant execute on function public.reconcile_action_for_owner(text, text, text, text, text)
 to service_role;

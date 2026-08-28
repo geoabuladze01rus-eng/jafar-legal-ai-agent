@@ -24,9 +24,21 @@ from .telegram_runtime import TelegramRuntime
 telegram_runtime: TelegramRuntime | None = None
 
 
+def validate_runtime_security() -> None:
+    if settings.environment.strip().casefold() != "production":
+        return
+    api_key = (settings.api_key or "").strip()
+    placeholders = {"replace-me", "changeme", "change-me", "secret"}
+    if len(api_key) < 24 or api_key.casefold() in placeholders:
+        raise RuntimeError(
+            "Production requires a non-placeholder API_KEY of at least 24 characters"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_runtime
+    validate_runtime_security()
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
@@ -56,11 +68,17 @@ dashboard_service = DashboardService(matter_store)
 
 @app.middleware("http")
 async def protect_v1_api(request: Request, call_next):
-    if request.url.path.startswith("/v1") and settings.api_key:
-        supplied = request.headers.get("Authorization", "")
-        expected = f"Bearer {settings.api_key}"
-        if not hmac.compare_digest(supplied, expected):
-            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    if request.url.path.startswith("/v1"):
+        if settings.environment.strip().casefold() == "production" and not settings.api_key:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Production API authentication is not configured"},
+            )
+        if settings.api_key:
+            supplied = request.headers.get("Authorization", "")
+            expected = f"Bearer {settings.api_key}"
+            if not hmac.compare_digest(supplied, expected):
+                return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     return await call_next(request)
 
 

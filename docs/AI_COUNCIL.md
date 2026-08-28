@@ -50,6 +50,17 @@ Every timeline signal preserves the concrete source trail, including document, p
 
 Unreferenced timeline assertions are ignored and cannot create a contradiction signal.
 
+## Case theory engine
+
+`CaseTheoryEngine` combines source-backed claims, cross-document contradictions and timeline contradictions into one auditable theory map. Each claim receives one of four statuses:
+
+- `supported` — source-backed and not currently contradicted by the available graph;
+- `contradicted` — a supported opposing claim exists on the same topic;
+- `unsupported` — the claim has no valid evidence trail and is not promoted into the factual theory;
+- `review_required` — the claim's source participates in a temporal contradiction or another unresolved chronology signal.
+
+The engine preserves the source references for every issue and exposes status counts for lawyer triage. Status is a workflow classification, not a judicial finding. `supported` does not mean proven, `contradicted` does not mean false, and the engine never chooses prosecution or defense theory as true by itself.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -66,5 +77,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Unsupported claims must not produce cross-document contradiction signals.
 - Timeline contradictions must include concrete evidence references.
 - Unreferenced timeline assertions must not produce contradiction signals.
+- Case-theory statuses must preserve source references and must never be presented as truth findings.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

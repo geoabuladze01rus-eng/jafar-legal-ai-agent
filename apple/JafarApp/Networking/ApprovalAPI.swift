@@ -194,14 +194,24 @@ final class ApprovalStore: ObservableObject {
             async let approvedRequest = client.fetchApprovedAwaitingExecution()
             pending = try await pendingRequest
             approvedAwaitingExecution = try await approvedRequest
-            errorMessage = nil
+            if pending.contains(where: { !$0.payloadBound }) {
+                errorMessage = "Есть старый запрос без зафиксированного payload. Его нельзя одобрить безопасно."
+            } else if approvedAwaitingExecution.contains(where: { !$0.payloadBound }) {
+                errorMessage = "Есть старое одобрение без payload binding. Его выполнение заблокировано."
+            } else {
+                errorMessage = nil
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func approve(_ item: ApprovalItem) async -> Bool {
-        await decide(item: item) {
+        guard item.payloadBound else {
+            errorMessage = "Одобрение заблокировано: точное содержимое действия не зафиксировано."
+            return false
+        }
+        return await decide(item: item) {
             try await client.approve(actionId: item.actionId)
         }
     }

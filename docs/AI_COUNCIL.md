@@ -61,6 +61,14 @@ Unreferenced timeline assertions are ignored and cannot create a contradiction s
 
 The engine preserves the source references for every issue and exposes status counts for lawyer triage. Status is a workflow classification, not a judicial finding. `supported` does not mean proven, `contradicted` does not mean false, and the engine never chooses prosecution or defense theory as true by itself.
 
+## Prosecution and defense theory views
+
+`ProsecutionDefenseTheoryView` projects the shared `CaseTheoryReport` into separate prosecution, defense and neutral views without creating separate factual universes. Both sides continue to reference the same evidence graph and the same source IDs.
+
+When prosecution and defense items share a topic, Jafar creates a `TheoryConflictPoint` that preserves both source trails. This allows the interface to show the prosecution proposition beside the defense counter-proposition with the exact documents, pages, chunks and excerpts supporting each side.
+
+A defense counter-position can be marked as challenging a prosecution proposition when it is source-backed, but the view never declares a winner and never treats a side label as proof. Neutral or uncertain issues remain outside both advocacy views until a lawyer classifies them.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -78,5 +86,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Timeline contradictions must include concrete evidence references.
 - Unreferenced timeline assertions must not produce contradiction signals.
 - Case-theory statuses must preserve source references and must never be presented as truth findings.
+- Prosecution/defense views must use the same evidence graph, preserve both source trails and never declare an automatic winner.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

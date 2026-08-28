@@ -89,7 +89,7 @@ try:
     supabase_client = build_supabase_client(SupabaseSettings())
     document_repository = SupabaseDocumentRepository(supabase_client)
     from .legal_position_service import SupabaseAnalysisRepository
-    legal_position_service = LegalPositionReadService(matter_store, SupabaseAnalysisRepository(supabase_client))
+    legal_position_service = LegalPositionReadService(matter_store, SupabaseAnalysisRepository(supabase_client), SupabaseDocumentRepository(supabase_client))
 except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
     document_repository = EmptyDocumentRepository()
 deadline_repository = DeadlineRepository(matter_store)

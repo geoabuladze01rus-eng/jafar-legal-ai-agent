@@ -38,6 +38,12 @@ class SupabaseDocumentRepository:
             processing_status=row["processing_status"],
         ) for row in (response.data or [])]
 
+    def get(self, document_id: str) -> MatterDocumentSummary | None:
+        response = (self.client.table("documents").select("id,matter_id,filename,content_type,source,created_at,processing_status").eq("id", document_id).maybe_single().execute())
+        row = response.data
+        if not row: return None
+        return MatterDocumentSummary(id=row["id"], matter_id=row["matter_id"], filename=row["filename"], content_type=row.get("content_type"), source=row.get("source"), created_at=self._timestamp(row["created_at"]), processing_status=row["processing_status"])
+
     @staticmethod
     def _timestamp(value) -> str:
         if isinstance(value, datetime):

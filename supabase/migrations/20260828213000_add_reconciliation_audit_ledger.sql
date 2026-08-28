@@ -2,7 +2,7 @@
 
 create table if not exists public.action_reconciliation_audit (
   id bigint generated always as identity primary key,
-  owner_user_id uuid not null,
+  owner_user_id text not null check (btrim(owner_user_id) <> '' and char_length(owner_user_id) <= 200),
   action_id text not null check (btrim(action_id) <> '' and char_length(action_id) <= 200),
   decision text not null check (decision in ('confirmed_not_executed', 'confirmed_executed')),
   operator_id text not null check (btrim(operator_id) <> '' and char_length(operator_id) <= 200),

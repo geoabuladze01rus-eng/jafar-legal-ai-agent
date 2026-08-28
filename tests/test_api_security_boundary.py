@@ -141,7 +141,7 @@ def test_entity_query_auto_detects_inn_ogrn_and_kpp(monkeypatch) -> None:
 
     cases = (
         ("7707083893", "inn"),
-        ("770708389312", "inn"),
+        ("500100732259", "inn"),
         ("1027700132195", "ogrn"),
         ("304500116000157", "ogrn"),
         ("770701001", "kpp"),
@@ -179,3 +179,49 @@ def test_entity_profile_returns_normalized_auto_query_type(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["query"] == "770701001"
     assert response.json()["query_type"] == "kpp"
+
+
+def test_entity_profile_rejects_unsafe_client_source_url(monkeypatch) -> None:
+    client = _development_without_api_key(monkeypatch)
+
+    response = client.post(
+        "/v1/legal-entities/profile",
+        json={
+            "query": "ООО Ромашка",
+            "query_type": "name",
+            "findings": [
+                {
+                    "source_key": "open_web",
+                    "status": "found",
+                    "title": "Unsafe URL",
+                    "source_url": "http://127.0.0.1/internal",
+                    "details": {},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_entity_profile_normalizes_source_key(monkeypatch) -> None:
+    client = _development_without_api_key(monkeypatch)
+
+    response = client.post(
+        "/v1/legal-entities/profile",
+        json={
+            "query": "ООО Ромашка",
+            "query_type": "name",
+            "findings": [
+                {
+                    "source_key": "  FSSP  ",
+                    "status": "no_data",
+                    "title": "ФССП",
+                    "details": {},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["findings"][0]["source_key"] == "fssp"

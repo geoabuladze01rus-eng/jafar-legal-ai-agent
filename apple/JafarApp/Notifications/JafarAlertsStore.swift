@@ -13,9 +13,34 @@ struct JafarAlert: Identifiable, Sendable {
 @MainActor
 final class JafarAlertsStore: ObservableObject {
     static let shared = JafarAlertsStore()
+    private static let replacementNotification = Notification.Name(
+        "ru.jafar.dashboard.alerts.replaced"
+    )
 
     @Published private(set) var alerts: [JafarAlert] = []
     private var dismissedIDs: Set<String> = []
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(
+            forName: Self.replacementNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let newAlerts = notification.userInfo?["alerts"] as? [JafarAlert] else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                self?.apply(newAlerts)
+            }
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     var urgentCount: Int {
         alerts.count { $0.priority >= 80 }
@@ -26,9 +51,12 @@ final class JafarAlertsStore: ObservableObject {
     }
 
     func replace(with newAlerts: [JafarAlert]) {
-        alerts = newAlerts
-            .filter { !dismissedIDs.contains($0.id) }
-            .sorted(by: Self.order)
+        apply(newAlerts)
+        NotificationCenter.default.post(
+            name: Self.replacementNotification,
+            object: nil,
+            userInfo: ["alerts": newAlerts]
+        )
     }
 
     func replace(with signals: [DashboardSignal], generatedAt: String) {
@@ -57,6 +85,12 @@ final class JafarAlertsStore: ObservableObject {
     func dismiss(_ id: String) {
         dismissedIDs.insert(id)
         alerts.removeAll { $0.id == id }
+    }
+
+    private func apply(_ newAlerts: [JafarAlert]) {
+        alerts = newAlerts
+            .filter { !dismissedIDs.contains($0.id) }
+            .sorted(by: Self.order)
     }
 
     private static func order(_ left: JafarAlert, _ right: JafarAlert) -> Bool {

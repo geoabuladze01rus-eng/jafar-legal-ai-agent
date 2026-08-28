@@ -1,0 +1,3 @@
+# Persisted Legal Analysis semantics
+
+The persisted analysis table stores `result` JSONB, `source_chunks`, `confidence`, `requires_lawyer_review`, and `review_status`. Current producers serialize `LegalAnalysis` (summary, issues, deadlines, key facts, missing information) as a transient result. `missing_information` is the only slice exposed in Legal Position and is rendered as an evidence gap requiring review. `LegalIssue` risk values are AI-generated advisory output, not verified facts or lawyer-approved conclusions. Item-level provenance is not established; source chunks remain analysis-level only.

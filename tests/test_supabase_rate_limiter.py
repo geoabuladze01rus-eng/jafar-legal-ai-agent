@@ -36,17 +36,19 @@ class _Client:
         return _Action(self, name, payload)
 
 
-def test_rate_limiter_hashes_raw_identity_before_database_call() -> None:
+def test_rate_limiter_hashes_raw_identity_and_scopes_counter_to_owner() -> None:
     client = _Client()
     limiter = SupabaseRateLimiter(
         client,
         RateLimitPolicy(max_requests=20, window_seconds=60),
+        owner_user_id="owner-1",
         namespace="analysis",
     )
 
     assert limiter.allow("lawyer-secret-id") is True
     name, payload = client.calls[-1]
     assert name == "consume_ai_rate_limit"
+    assert payload["p_owner_user_id"] == "owner-1"
     assert payload["p_key_hash"] == hashlib.sha256(
         b"analysis:lawyer-secret-id"
     ).hexdigest()
@@ -55,22 +57,44 @@ def test_rate_limiter_hashes_raw_identity_before_database_call() -> None:
     assert payload["p_window_seconds"] == 60
 
 
-def test_rate_limiter_rejects_non_integral_or_extreme_policy() -> None:
+def test_rate_limiter_requires_owner_and_rejects_non_integral_or_extreme_policy() -> None:
     client = _Client()
+    with pytest.raises(ValueError, match="rate_limit_owner_required"):
+        SupabaseRateLimiter(
+            client,
+            RateLimitPolicy(max_requests=1, window_seconds=60),
+            owner_user_id="",
+        )
     with pytest.raises(ValueError, match="whole_seconds"):
-        SupabaseRateLimiter(client, RateLimitPolicy(max_requests=1, window_seconds=0.5))
+        SupabaseRateLimiter(
+            client,
+            RateLimitPolicy(max_requests=1, window_seconds=0.5),
+            owner_user_id="owner-1",
+        )
     with pytest.raises(ValueError, match="too_large"):
-        SupabaseRateLimiter(client, RateLimitPolicy(max_requests=1, window_seconds=86401))
+        SupabaseRateLimiter(
+            client,
+            RateLimitPolicy(max_requests=1, window_seconds=86401),
+            owner_user_id="owner-1",
+        )
     with pytest.raises(ValueError, match="max_requests_too_large"):
-        SupabaseRateLimiter(client, RateLimitPolicy(max_requests=1000001, window_seconds=60))
+        SupabaseRateLimiter(
+            client,
+            RateLimitPolicy(max_requests=1000001, window_seconds=60),
+            owner_user_id="owner-1",
+        )
 
 
-def test_cleanup_retention_is_bounded() -> None:
+def test_cleanup_retention_is_bounded_and_owner_scoped() -> None:
     client = _Client()
-    limiter = SupabaseRateLimiter(client, RateLimitPolicy(max_requests=5, window_seconds=60))
+    limiter = SupabaseRateLimiter(
+        client,
+        RateLimitPolicy(max_requests=5, window_seconds=60),
+        owner_user_id="owner-1",
+    )
 
     assert limiter.cleanup(retention_seconds=1) == 7
     assert client.calls[-1] == (
         "cleanup_ai_rate_limit_buckets",
-        {"p_retention_seconds": 86400},
+        {"p_owner_user_id": "owner-1", "p_retention_seconds": 86400},
     )

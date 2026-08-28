@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .legal_entity_intelligence import LegalEntityIntelligence, SourceFinding
 from .legal_entity_research import EntityQuery, LegalEntityResearchService
@@ -12,20 +12,24 @@ intelligence = LegalEntityIntelligence()
 
 
 class EntityResearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(min_length=1, max_length=500)
     query_type: str = Field(default="auto", pattern="^(auto|name|inn|ogrn|kpp)$")
 
 
 class SourceFindingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_key: str = Field(min_length=1, max_length=100)
     status: str = Field(pattern="^(found|negative|no_data|error)$")
     title: str = Field(min_length=1, max_length=500)
     details: dict = Field(default_factory=dict)
-    source_url: str | None = None
+    source_url: str | None = Field(default=None, max_length=2048)
 
 
 class EntityProfileRequest(EntityResearchRequest):
-    findings: list[SourceFindingRequest] = Field(default_factory=list)
+    findings: list[SourceFindingRequest] = Field(default_factory=list, max_length=100)
 
 
 @router.post("/research-plan")

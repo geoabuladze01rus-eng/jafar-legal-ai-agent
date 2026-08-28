@@ -145,7 +145,10 @@ struct LiveDashboardView: View {
     }
 
     private func approvalCard(_ item: ApprovalItem) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
+        let decisionDisabled = JafarApprovalIdentity.value.isEmpty
+            || approvals.processingIDs.contains(item.id)
+
+        return VStack(alignment: .leading, spacing: 11) {
             HStack(alignment: .firstTextBaseline) {
                 Label(item.actionType, systemImage: "checkmark.seal.fill")
                     .font(.caption.weight(.bold))
@@ -177,6 +180,7 @@ struct LiveDashboardView: View {
                     rejectionTarget = item
                 }
                 .buttonStyle(.bordered)
+                .disabled(decisionDisabled)
 
                 Spacer()
 
@@ -186,10 +190,7 @@ struct LiveDashboardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(JafarPalette.accent)
-                .disabled(
-                    JafarApprovalIdentity.value.isEmpty
-                        || approvals.processingIDs.contains(item.id)
-                )
+                .disabled(decisionDisabled)
             }
         }
         .jafarCard()

@@ -5,7 +5,11 @@ from enum import StrEnum
 from typing import Any
 
 from .action_approval import ActionApprovalRepository, ActionApprovalStore
-from .action_reconciliation import ReconciliationAuditRepository, ReconciliationAuditStore
+from .action_reconciliation import (
+    ActionReconciliationService,
+    ReconciliationAuditRepository,
+    ReconciliationAuditStore,
+)
 from .config import Settings
 from .matter_repository import MatterRepository
 from .matters import MatterStore
@@ -25,6 +29,12 @@ class RuntimeRepositories:
     matters: MatterRepository
     approvals: ActionApprovalRepository
     reconciliation_audit: ReconciliationAuditRepository
+
+    def reconciliation_service(self) -> ActionReconciliationService:
+        return ActionReconciliationService(
+            self.approvals,
+            audit_repository=self.reconciliation_audit,
+        )
 
 
 def storage_backend(settings: Settings) -> StorageBackend:

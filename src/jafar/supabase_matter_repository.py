@@ -21,7 +21,7 @@ class SupabaseMatterRepository(MatterRepository):
 
     Matter rows and deadline rows are hydrated together. Server mode is intended for the
     backend-only service-role client; every table operation remains explicitly scoped to one
-    owner and atomic document events use a service-role-only RPC.
+    owner and atomic write paths use service-role-only RPCs.
     """
 
     def __init__(
@@ -38,6 +38,24 @@ class SupabaseMatterRepository(MatterRepository):
         self.server_mode = server_mode
 
     def create(self, matter: Matter) -> Matter:
+        if self.server_mode:
+            params = {
+                "p_owner_user_id": self.owner_user_id,
+                "p_matter_id": matter.id,
+                "p_title": matter.title,
+                "p_matter_type": matter.matter_type.value,
+                "p_client_name": matter.client_name,
+                "p_opposing_party": matter.opposing_party,
+                "p_court_or_authority": matter.court_or_authority,
+                "p_case_number": matter.case_number,
+                "p_status": matter.status,
+                "p_created_at": matter.created_at.isoformat(),
+                "p_updated_at": matter.updated_at.isoformat(),
+                "p_deadlines": [self._deadline_payload(item) for item in matter.deadlines],
+            }
+            self.client.rpc("create_matter_for_owner", params).execute()
+            return matter
+
         payload = self._matter_payload(matter)
         payload["owner_user_id"] = self.owner_user_id
         self.client.table("matters").insert(payload).execute()

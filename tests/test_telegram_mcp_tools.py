@@ -28,6 +28,8 @@ def _settings(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setattr(settings, "telegram_allowed_chat_ids", "-1001")
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
     monkeypatch.setattr(settings, "telegram_scheduler_db_path", str(tmp_path / "telegram.sqlite3"))
+    monkeypatch.setattr(settings, "telegram_production_send", True)
+    monkeypatch.setattr(settings, "telegram_dry_run", False)
 
 
 def test_mcp_publish_and_poll_tools(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -39,6 +41,21 @@ def test_mcp_publish_and_poll_tools(monkeypatch: pytest.MonkeyPatch, tmp_path) -
     assert post["message_id"] == 17
     assert poll == {"ok": True, "chat_id": "-1001", "message_id": 19, "poll_id": "poll-19"}
     assert asyncio.run(telegram_mcp.telegram_get_poll_results("poll-19"))["message_id"] == 19
+
+
+def test_live_send_is_disabled_by_default_safety_flags(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "telegram_dry_run", True)
+
+    with pytest.raises(PermissionError, match="DRY_RUN"):
+        telegram_mcp._require_live_send_token()
+
+    monkeypatch.setattr(settings, "telegram_dry_run", False)
+    monkeypatch.setattr(settings, "telegram_production_send", False)
+    with pytest.raises(PermissionError, match="PRODUCTION_SEND"):
+        telegram_mcp._require_live_send_token()
 
 
 def test_poll_results_recheck_current_allowlist(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -79,6 +96,28 @@ def test_mcp_schedule_tools_and_delivery_allowlist_recheck(
         idempotency_key="post-allowlist",
     )
     monkeypatch.setattr(settings, "telegram_allowed_chat_ids", "-1002")
+    asyncio.run(
+        TelegramScheduler(telegram_mcp._store(), telegram_mcp._deliver).run_due(
+            utc_now() + timedelta(seconds=2)
+        )
+    )
+    failed = telegram_mcp._store().get(item.id)
+    assert failed.status == "failed"
+    assert failed.error == "delivery_policy_denied"
+
+
+def test_scheduled_delivery_rechecks_live_send_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _settings(monkeypatch, tmp_path)
+    item = telegram_mcp._store().schedule(
+        kind="post",
+        chat_id="-1001",
+        payload={"text": "do not send"},
+        scheduled_for=utc_now() + timedelta(seconds=1),
+        idempotency_key="post-live-gate",
+    )
+    monkeypatch.setattr(settings, "telegram_dry_run", True)
     asyncio.run(
         TelegramScheduler(telegram_mcp._store(), telegram_mcp._deliver).run_due(
             utc_now() + timedelta(seconds=2)

@@ -117,6 +117,20 @@ def _require_token() -> str:
     return token
 
 
+def _live_send_enabled() -> bool:
+    return bool(settings.telegram_production_send and not settings.telegram_dry_run)
+
+
+def _require_live_send_token() -> str:
+    """Require the same explicit live-send gate used by the rest of Jafar's Telegram runtime."""
+
+    if settings.telegram_dry_run:
+        raise PermissionError("Telegram live publishing is disabled while TELEGRAM_DRY_RUN=true")
+    if not settings.telegram_production_send:
+        raise PermissionError("Telegram live publishing requires TELEGRAM_PRODUCTION_SEND=true")
+    return _require_token()
+
+
 def _require_allowed_chat(chat_id: int | str) -> str:
     chat, allowed = str(chat_id).strip(), _allowed_chat_ids()
     if not allowed:
@@ -150,7 +164,10 @@ def _polls() -> TelegramPollStore:
 
 
 def _publisher() -> TelegramPublisher:
-    return TelegramPublisher(lambda: TelegramBotHttpClient(_require_token()), _require_allowed_chat)
+    return TelegramPublisher(
+        lambda: TelegramBotHttpClient(_require_live_send_token()),
+        _require_allowed_chat,
+    )
 
 
 def _key(
@@ -198,7 +215,7 @@ async def _deliver(item: ScheduledItem) -> int | None:
         return result.message_ids[-1] if result.message_ids else result.photo_message_id
     if item.kind == "poll":
         chat = _require_allowed_chat(item.chat_id)
-        result = await TelegramBotHttpClient(_require_token()).send_poll(
+        result = await TelegramBotHttpClient(_require_live_send_token()).send_poll(
             chat_id=chat, poll=item.payload
         )
         message_id = _message_id(result, operation="sendPoll")
@@ -237,7 +254,8 @@ async def telegram_status() -> dict[str, Any]:
     return {
         "configured": bool((settings.telegram_bot_token or "").strip()),
         "allowed_chat_ids_count": len(_allowed_chat_ids()),
-        "outbound_enabled": bool(_allowed_chat_ids()),
+        "outbound_enabled": bool(_allowed_chat_ids()) and _live_send_enabled(),
+        "live_send_enabled": _live_send_enabled(),
         "scheduler_persistence_configured": bool(settings.telegram_scheduler_db_path.strip()),
         "remote_auth_configured": bool(settings.jafar_mcp_auth_token),
     }
@@ -360,7 +378,9 @@ async def telegram_send_poll(
         open_period=open_period,
         close_date=close_date,
     )
-    result = await TelegramBotHttpClient(_require_token()).send_poll(chat_id=chat, poll=poll)
+    result = await TelegramBotHttpClient(_require_live_send_token()).send_poll(
+        chat_id=chat, poll=poll
+    )
     message_id = _message_id(result, operation="sendPoll")
     poll_id = _poll_id(result)
     returned_poll = result["poll"]

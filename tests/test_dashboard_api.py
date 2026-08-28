@@ -39,6 +39,7 @@ def _patch_approval_services(monkeypatch) -> LegalActionApprovalEngine:
 def _development_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", None)
 
 
 def test_dashboard_endpoint_exposes_matter_backed_counts(monkeypatch) -> None:
@@ -167,8 +168,23 @@ def test_production_v1_api_fails_closed_without_authentication(monkeypatch) -> N
     assert "authentication" in response.json()["detail"].casefold()
 
 
+def test_production_runtime_requires_server_bound_lawyer_identity(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(main.settings, "api_key", "this-is-a-long-random-production-key")
+    monkeypatch.setattr(main.settings, "storage_backend", "supabase")
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", None)
+
+    with pytest.raises(RuntimeError, match="LAWYER_APPROVER_ID"):
+        main.validate_runtime_security()
+
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:server-bound")
+    main.validate_runtime_security()
+    assert main._approval_identity("spoofed-client-name") == "lawyer:server-bound"
+
+
 def test_production_runtime_rejects_placeholder_or_short_keys(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:server-bound")
 
     for value in (None, "replace-me", "short"):
         monkeypatch.setattr(main.settings, "api_key", value)

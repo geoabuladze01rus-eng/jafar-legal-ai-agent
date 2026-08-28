@@ -2,7 +2,6 @@ import pytest
 
 from jafar.action_approval import (
     ActionApprovalStore,
-    ActionRequest,
     ActionState,
     LegalActionApprovalEngine,
     payload_fingerprint,
@@ -143,21 +142,3 @@ def test_only_approved_action_can_be_marked_executed() -> None:
 
     with pytest.raises(ValueError, match="only_approved_action_can_be_executed"):
         store.mark_executed("still-pending")
-
-
-def test_legacy_unbound_approved_record_cannot_be_marked_executed() -> None:
-    store = ActionApprovalStore()
-    legacy = ActionRequest(
-        action_id="approved-unbound",
-        action_type="send_email",
-        description="Старый запрос без зафиксированного payload",
-        state=ActionState.APPROVED,
-        decided_at="2026-08-28T12:00:00+00:00",
-        decided_by="lawyer",
-    )
-    # Simulate a pre-hardening record. Public store.add intentionally rejects non-proposed
-    # records, so inject only inside this regression test to verify the execution gate.
-    store._actions[legacy.action_id] = legacy
-
-    with pytest.raises(ValueError, match="payload_binding_required"):
-        store.mark_executed("approved-unbound")

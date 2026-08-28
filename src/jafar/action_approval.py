@@ -13,6 +13,7 @@ class ActionState(str, Enum):
     PROPOSED = "proposed"
     APPROVED = "approved"
     REJECTED = "rejected"
+    EXECUTING = "executing"
     EXECUTED = "executed"
 
 
@@ -43,6 +44,9 @@ class ActionRequest:
     decided_at: str | None = None
     decided_by: str | None = None
     decision_reason: str | None = None
+    execution_claimed_at: str | None = None
+    execution_claimed_by: str | None = None
+    execution_error: str | None = None
     executed_at: str | None = None
 
 
@@ -59,6 +63,8 @@ class ActionApprovalRepository(Protocol):
 
     def rejected(self) -> tuple[ActionRequest, ...]: ...
 
+    def executing(self) -> tuple[ActionRequest, ...]: ...
+
     def executed(self) -> tuple[ActionRequest, ...]: ...
 
     def all(self) -> tuple[ActionRequest, ...]: ...
@@ -72,7 +78,11 @@ class ActionApprovalRepository(Protocol):
         reason: str | None = None,
     ) -> ActionRequest: ...
 
-    def mark_executed(self, action_id: str) -> ActionRequest: ...
+    def claim_for_execution(self, action_id: str, *, executor_id: str) -> ActionRequest: ...
+
+    def release_execution_claim(self, action_id: str, *, executor_id: str, error: str) -> ActionRequest: ...
+
+    def mark_executed(self, action_id: str, *, executor_id: str | None = None) -> ActionRequest: ...
 
 
 class ActionApprovalStore:
@@ -102,6 +112,9 @@ class ActionApprovalStore:
 
     def rejected(self) -> tuple[ActionRequest, ...]:
         return self._by_state(ActionState.REJECTED)
+
+    def executing(self) -> tuple[ActionRequest, ...]:
+        return self._by_state(ActionState.EXECUTING)
 
     def executed(self) -> tuple[ActionRequest, ...]:
         return self._by_state(ActionState.EXECUTED)
@@ -138,19 +151,69 @@ class ActionApprovalStore:
             self._actions[action_id] = updated
             return updated
 
-    def mark_executed(self, action_id: str) -> ActionRequest:
+    def claim_for_execution(self, action_id: str, *, executor_id: str) -> ActionRequest:
+        executor = executor_id.strip()
+        if not executor:
+            raise ValueError("executor_id_required")
         with self._lock:
             request = self._actions.get(action_id)
             if request is None:
                 raise KeyError(action_id)
             if request.state is not ActionState.APPROVED:
-                raise ValueError("only_approved_action_can_be_executed")
+                raise ValueError("action_not_available_for_execution")
+            if not request.payload_hash:
+                raise ValueError("payload_binding_required")
+            updated = replace(
+                request,
+                state=ActionState.EXECUTING,
+                execution_claimed_at=datetime.now(timezone.utc).isoformat(),
+                execution_claimed_by=executor,
+                execution_error=None,
+            )
+            self._actions[action_id] = updated
+            return updated
+
+    def release_execution_claim(self, action_id: str, *, executor_id: str, error: str) -> ActionRequest:
+        executor = executor_id.strip()
+        reason = error.strip()
+        if not executor:
+            raise ValueError("executor_id_required")
+        if not reason:
+            raise ValueError("execution_error_required")
+        with self._lock:
+            request = self._actions.get(action_id)
+            if request is None:
+                raise KeyError(action_id)
+            if request.state is not ActionState.EXECUTING:
+                raise ValueError("action_not_executing")
+            if request.execution_claimed_by != executor:
+                raise ValueError("execution_claim_owner_mismatch")
+            updated = replace(
+                request,
+                state=ActionState.APPROVED,
+                execution_claimed_at=None,
+                execution_claimed_by=None,
+                execution_error=reason,
+            )
+            self._actions[action_id] = updated
+            return updated
+
+    def mark_executed(self, action_id: str, *, executor_id: str | None = None) -> ActionRequest:
+        with self._lock:
+            request = self._actions.get(action_id)
+            if request is None:
+                raise KeyError(action_id)
+            if request.state is not ActionState.EXECUTING:
+                raise ValueError("only_executing_action_can_be_executed")
+            if executor_id is not None and request.execution_claimed_by != executor_id.strip():
+                raise ValueError("execution_claim_owner_mismatch")
             if not request.payload_hash:
                 raise ValueError("payload_binding_required")
             updated = replace(
                 request,
                 state=ActionState.EXECUTED,
                 executed_at=datetime.now(timezone.utc).isoformat(),
+                execution_error=None,
             )
             self._actions[action_id] = updated
             return updated

@@ -33,6 +33,41 @@ class TelegramBotHttpClient:
             raise RuntimeError(f"Telegram sendMessage failed: {payload}")
         return dict(payload.get("result") or {})
 
+    async def send_photo(
+        self,
+        *,
+        chat_id: int | str,
+        caption: str = "",
+        photo_url: str | None = None,
+        photo_bytes: bytes | None = None,
+        filename: str = "image.png",
+    ) -> dict[str, Any]:
+        """Send a photo by public URL or uploaded bytes."""
+        if bool(photo_url) == bool(photo_bytes):
+            raise ValueError("provide exactly one of photo_url or photo_bytes")
+
+        data: dict[str, Any] = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+
+        files = None
+        if photo_url:
+            data["photo"] = photo_url
+        else:
+            files = {"photo": (filename, photo_bytes, "application/octet-stream")}
+
+        async with httpx.AsyncClient(timeout=self.request_timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/sendPhoto",
+                data=data,
+                files=files,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not payload.get("ok"):
+            raise RuntimeError(f"Telegram sendPhoto failed: {payload}")
+        return dict(payload.get("result") or {})
+
 
 class TelegramRuntime:
     """Connect Telegram polling, the comment pipeline, safety and outbound delivery."""

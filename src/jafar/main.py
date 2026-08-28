@@ -10,6 +10,7 @@ from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .api_security import require_api_key
 from .command_runtime import JafarCommandRuntime
 from .config import settings
+from .deadline_repository import DeadlineRepository, MatterDeadlineSummary
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_repository import (
     EmptyDocumentRepository,
@@ -17,7 +18,6 @@ from .document_repository import (
     SupabaseDocumentRepository,
 )
 from .document_workflow import DocumentWorkflow
-from .deadline_repository import DeadlineRepository, MatterDeadlineSummary
 from .domains import DocumentTask, MatterType
 from .gmail_gateway import make_local_gmail_gateway
 from .lawyer_context import LawyerContext

@@ -115,6 +115,14 @@ def test_scheduler_database_is_owner_only_on_posix(tmp_path) -> None:
     assert mode == 0o600
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file mode test")
+def test_poll_database_is_owner_only_on_posix(tmp_path) -> None:
+    path = tmp_path / "polls.sqlite3"
+    TelegramPollStore(path)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    assert mode == 0o600
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX symlink semantics")
 def test_scheduler_rejects_symlink_database_path(tmp_path) -> None:
     target = tmp_path / "real.sqlite3"
@@ -124,6 +132,17 @@ def test_scheduler_rejects_symlink_database_path(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match="must_not_be_symlink"):
         TelegramScheduleStore(link)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink semantics")
+def test_poll_store_rejects_symlink_database_path(tmp_path) -> None:
+    target = tmp_path / "real-polls.sqlite3"
+    TelegramPollStore(target)
+    link = tmp_path / "alias-polls.sqlite3"
+    link.symlink_to(target)
+
+    with pytest.raises(RuntimeError, match="must_not_be_symlink"):
+        TelegramPollStore(link)
 
 
 def test_idempotency_key_cannot_alias_different_delivery(tmp_path) -> None:

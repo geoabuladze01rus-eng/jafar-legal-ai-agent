@@ -5,17 +5,37 @@ from __future__ import annotations
 import asyncio
 import signal
 
+from .config import settings
 from .telegram_mcp import _deliver, _store
 from .telegram_scheduler import TelegramScheduler
+from .telegram_security import validate_telegram_settings
 
 
 async def main() -> None:
+    validate_telegram_settings(settings)
+    if not settings.telegram_scheduler_enabled:
+        raise RuntimeError(
+            "Standalone Telegram scheduler requires TELEGRAM_SCHEDULER_ENABLED=true"
+        )
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    await TelegramScheduler(_store(), _deliver).serve(stop)
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except (NotImplementedError, RuntimeError):
+            # Some platforms/event loops do not expose POSIX signal handlers.
+            pass
+
+    try:
+        await TelegramScheduler(_store(), _deliver).serve(stop)
+    except asyncio.CancelledError:
+        stop.set()
+        raise
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

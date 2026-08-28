@@ -8,6 +8,11 @@ from urllib.request import Request, urlopen
 
 from .gemini_provider import GeminiProvider
 from .model_router import ModelProvider, ModelRequest, ModelResponse
+from .provider_transport_safety import (
+    read_json_response_limited,
+    validate_prompt_transport,
+    validate_provider_endpoint,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +21,7 @@ class HTTPProviderConfig:
     model: str
     api_key_env: str
     endpoint: str
+
 
 
 def safe_provider_metadata(data: dict[str, Any]) -> dict[str, Any]:
@@ -34,6 +40,7 @@ def safe_provider_metadata(data: dict[str, Any]) -> dict[str, Any]:
         if sanitized_usage:
             metadata["usage"] = sanitized_usage
     return metadata
+
 
 
 def _numeric_metadata_tree(value: dict[str, Any]) -> dict[str, Any]:
@@ -62,13 +69,15 @@ class HTTPModelProvider(ModelProvider):
         api_key = os.getenv(self.config.api_key_env)
         if not api_key:
             raise RuntimeError(f"Provider {self.key} is not configured")
+        validate_prompt_transport(request.prompt)
+        endpoint = validate_provider_endpoint(self.config.endpoint)
         payload = {
             "model": self.config.model,
             "messages": [{"role": "user", "content": request.prompt}],
         }
         body = json.dumps(payload).encode("utf-8")
         req = Request(
-            self.config.endpoint,
+            endpoint,
             data=body,
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -77,7 +86,7 @@ class HTTPModelProvider(ModelProvider):
             method="POST",
         )
         with urlopen(req, timeout=60) as response:
-            data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+            data = read_json_response_limited(response)
         return ModelResponse(
             provider=self.key,
             model=self.config.model,
@@ -115,9 +124,11 @@ class OpenAIResponsesProvider(ModelProvider):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("Provider openai is not configured")
+        validate_prompt_transport(request.prompt)
+        endpoint = validate_provider_endpoint(self.endpoint)
         payload = {"model": self.model, "input": request.prompt}
         req = Request(
-            self.endpoint,
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -126,7 +137,7 @@ class OpenAIResponsesProvider(ModelProvider):
             method="POST",
         )
         with urlopen(req, timeout=60) as response:
-            data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+            data = read_json_response_limited(response)
         text = self._extract_text(data)
         return ModelResponse(
             provider=self.key,

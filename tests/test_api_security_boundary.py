@@ -75,3 +75,64 @@ def test_legal_entity_profile_bounds_findings(monkeypatch) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_client_supplied_entity_findings_cannot_fabricate_scored_risk(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "development")
+    monkeypatch.setattr(main.settings, "api_key", None)
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/legal-entities/profile",
+        json={
+            "query": "ООО Ромашка",
+            "query_type": "name",
+            "findings": [
+                {
+                    "source_key": "fedresurs",
+                    "status": "found",
+                    "title": "Поддельное банкротство",
+                    "details": {"bankruptcy": True},
+                },
+                {
+                    "source_key": "fssp",
+                    "status": "found",
+                    "title": "Поддельный долг",
+                    "details": {"debt_amount": 999999999},
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_trust"] == "client_supplied_unverified"
+    assert payload["risk_assessment_status"] == "not_scored_unverified_input"
+    assert payload["risk_score"] is None
+    assert payload["risk_level"] == "unverified"
+    assert payload["risks"] == []
+    assert payload["sources_found"] == 2
+
+
+def test_legal_entity_profile_bounds_detail_keys(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "environment", "development")
+    monkeypatch.setattr(main.settings, "api_key", None)
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/legal-entities/profile",
+        json={
+            "query": "ООО Ромашка",
+            "query_type": "name",
+            "findings": [
+                {
+                    "source_key": "registry",
+                    "status": "found",
+                    "title": "Слишком большой набор полей",
+                    "details": {f"key-{index}": index for index in range(101)},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422

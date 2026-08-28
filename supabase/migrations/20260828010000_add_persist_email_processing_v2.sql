@@ -5,7 +5,7 @@ create unique index if not exists ai_analyses_analysis_run_id_uidx on public.ai_
 
 create or replace function public.persist_email_processing_v2(p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_doc jsonb; v_document_id uuid; v_analysis_id uuid; v_matter_id uuid; v_out jsonb := '[]'::jsonb;
+declare v_doc jsonb; v_document_id uuid; v_existing_matter uuid; v_analysis_id uuid; v_matter_id uuid; v_out jsonb := '[]'::jsonb;
 begin
   if p_payload->>'message_id' is null then raise exception 'message_id is required'; end if;
   for v_doc in select value from jsonb_array_elements(coalesce(p_payload->'documents','[]'::jsonb)) loop
@@ -15,6 +15,10 @@ begin
       values(v_matter_id, coalesce(v_doc->>'filename','attachment'), v_doc->>'content_type', 'email', v_doc->>'storage_path', coalesce(v_doc->>'processing_status','stored'), v_doc->>'document_processing_key')
       on conflict (document_processing_key) where document_processing_key is not null do update set processing_status=excluded.processing_status
       returning id into v_document_id;
+    select matter_id into v_existing_matter from public.documents where id = v_document_id;
+    if v_existing_matter is distinct from v_matter_id and v_existing_matter is not null and v_matter_id is not null then
+      raise exception 'document processing key is bound to another matter';
+    end if;
     if v_matter_id is not null and v_doc->'analysis' is not null and v_doc->'analysis' <> 'null'::jsonb then
       insert into public.ai_analyses(matter_id,document_id,analysis_type,result,source_chunks,analysis_run_id,requires_lawyer_review,review_status)
         values(v_matter_id,v_document_id,coalesce(v_doc->'analysis'->>'analysis_type','legal_analysis'),coalesce(v_doc->'analysis'->'result',v_doc->'analysis'),'[]'::jsonb,(v_doc->>'analysis_run_id')::uuid,true,'pending')

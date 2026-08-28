@@ -1,6 +1,6 @@
 # Email analysis persistence RPC v2 RFC
 
-Status: READY_FOR_LOCAL_IMPLEMENTATION. Local W1 acceptance is BLOCKED until the Docker/OrbStack daemon is available; no production or remote apply occurred.
+Status: READY_FOR_LOCAL_IMPLEMENTATION. Local fresh reset and schema/ACL checks pass; full DB acceptance remains pending targeted pgTAP execution. Production apply: NO.
 
 ## Problem and verified V1 behavior
 

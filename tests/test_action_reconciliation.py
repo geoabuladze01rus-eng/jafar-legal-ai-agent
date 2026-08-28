@@ -67,6 +67,11 @@ def test_confirmed_not_executed_releases_claim_only_with_evidence_note() -> None
     assert recovered.state is ActionState.APPROVED
     assert recovered.execution_claimed_by is None
     assert "ops:1" in (recovered.execution_error or "")
+    audit = service.audit_for_action("mail-1")
+    assert len(audit) == 1
+    assert audit[0].decision is ReconciliationDecision.CONFIRMED_NOT_EXECUTED
+    assert audit[0].operator_id == "ops:1"
+    assert "SMTP provider" in audit[0].evidence_note
 
 
 def test_confirmed_executed_marks_existing_claim_without_second_handler_call() -> None:
@@ -83,6 +88,26 @@ def test_confirmed_executed_marks_existing_claim_without_second_handler_call() -
     assert reconciled.state is ActionState.EXECUTED
     assert reconciled.executed_at is not None
     assert reconciled.execution_claimed_by == "worker:1"
+    audit = service.audit_for_action("mail-1")
+    assert len(audit) == 1
+    assert audit[0].decision is ReconciliationDecision.CONFIRMED_EXECUTED
+    assert audit[0].operator_id == "ops:1"
+    assert "message id 123" in audit[0].evidence_note
+
+
+def test_failed_reconciliation_does_not_append_audit_record() -> None:
+    store = _executing_store()
+    service = ActionReconciliationService(store)
+
+    with pytest.raises(ValueError, match="operator_id_required"):
+        service.reconcile(
+            "mail-1",
+            decision=ReconciliationDecision.CONFIRMED_EXECUTED,
+            operator_id="",
+            evidence_note="provider confirms delivery",
+        )
+
+    assert service.audit_for_action("mail-1") == ()
 
 
 def test_reconciliation_refuses_non_executing_action() -> None:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from threading import RLock
-from typing import Any
+from typing import Any, Protocol
 
 
 class ActionState(str, Enum):
@@ -30,12 +30,37 @@ class ActionRequest:
     executed_at: str | None = None
 
 
-class ActionApprovalStore:
-    """Thread-safe state store for actions crossing the human approval boundary.
+class ActionApprovalRepository(Protocol):
+    """Persistence boundary for the human-approval lifecycle."""
 
-    Approved actions stay in the store so a separate execution service can consume them.
-    Rejection and execution are retained for audit instead of deleting the action record.
-    """
+    def add(self, request: ActionRequest) -> None: ...
+
+    def get(self, action_id: str) -> ActionRequest | None: ...
+
+    def pending(self) -> tuple[ActionRequest, ...]: ...
+
+    def approved(self) -> tuple[ActionRequest, ...]: ...
+
+    def rejected(self) -> tuple[ActionRequest, ...]: ...
+
+    def executed(self) -> tuple[ActionRequest, ...]: ...
+
+    def all(self) -> tuple[ActionRequest, ...]: ...
+
+    def decide(
+        self,
+        action_id: str,
+        *,
+        state: ActionState,
+        decided_by: str,
+        reason: str | None = None,
+    ) -> ActionRequest: ...
+
+    def mark_executed(self, action_id: str) -> ActionRequest: ...
+
+
+class ActionApprovalStore:
+    """Thread-safe in-memory implementation for tests and local development."""
 
     def __init__(self) -> None:
         self._actions: dict[str, ActionRequest] = {}
@@ -77,12 +102,7 @@ class ActionApprovalStore:
         decided_by: str,
         reason: str | None = None,
     ) -> ActionRequest:
-        if state not in {ActionState.APPROVED, ActionState.REJECTED}:
-            raise ValueError("decision_state_must_be_approved_or_rejected")
-        if not decided_by.strip():
-            raise ValueError("decided_by_required")
-        if state is ActionState.REJECTED and not (reason or "").strip():
-            raise ValueError("rejection_reason_required")
+        _validate_decision(state=state, decided_by=decided_by, reason=reason)
 
         with self._lock:
             request = self._actions.get(action_id)
@@ -116,12 +136,7 @@ class ActionApprovalStore:
             return updated
 
     def resolve(self, action_id: str) -> None:
-        """Deprecated compatibility hook.
-
-        Historical callers removed pending items entirely. New code must use ``decide`` so
-        the decision remains auditable. Keeping this method prevents abrupt breakage while
-        making accidental use explicit.
-        """
+        """Deprecated compatibility hook; deletion would destroy audit history."""
         raise RuntimeError("resolve_is_deprecated_use_decide")
 
     def _by_state(self, state: ActionState) -> tuple[ActionRequest, ...]:
@@ -138,10 +153,24 @@ class ActionApprovalStore:
         return (item.created_at, item.action_id)
 
 
+def _validate_decision(
+    *,
+    state: ActionState,
+    decided_by: str,
+    reason: str | None,
+) -> None:
+    if state not in {ActionState.APPROVED, ActionState.REJECTED}:
+        raise ValueError("decision_state_must_be_approved_or_rejected")
+    if not decided_by.strip():
+        raise ValueError("decided_by_required")
+    if state is ActionState.REJECTED and not (reason or "").strip():
+        raise ValueError("rejection_reason_required")
+
+
 class LegalActionApprovalEngine:
     """Controls externally visible/legal actions; approval is explicit and auditable."""
 
-    def __init__(self, store: ActionApprovalStore | None = None) -> None:
+    def __init__(self, store: ActionApprovalRepository | None = None) -> None:
         self.store = store
 
     def propose(

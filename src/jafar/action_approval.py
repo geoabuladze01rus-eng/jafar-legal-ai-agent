@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
+from hashlib import sha256
+import json
 from threading import RLock
 from typing import Any, Protocol
 
@@ -14,6 +16,19 @@ class ActionState(str, Enum):
     EXECUTED = "executed"
 
 
+def payload_fingerprint(payload: dict[str, Any]) -> str:
+    """Return a deterministic SHA-256 fingerprint for an execution payload."""
+
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class ActionRequest:
     action_id: str
@@ -23,6 +38,7 @@ class ActionRequest:
     state: ActionState = ActionState.PROPOSED
     requires_human_approval: bool = True
     evidence_ids: tuple[str, ...] = ()
+    payload_hash: str | None = None
     created_at: str = ""
     decided_at: str | None = None
     decided_by: str | None = None
@@ -180,6 +196,7 @@ class LegalActionApprovalEngine:
         action_type: str,
         description: str,
         evidence_ids: list[str] | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> ActionRequest:
         if not action_id.strip() or not action_type.strip() or not description.strip():
             raise ValueError("action_id_action_type_and_description_required")
@@ -188,6 +205,7 @@ class LegalActionApprovalEngine:
             action_type=action_type.strip(),
             description=description.strip(),
             evidence_ids=tuple(evidence_ids or ()),
+            payload_hash=payload_fingerprint(payload) if payload is not None else None,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         if self.store is not None:

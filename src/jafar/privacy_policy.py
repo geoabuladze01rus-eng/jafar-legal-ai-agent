@@ -12,12 +12,19 @@ class ProviderPrivacyPolicy:
         "openai",
         "gemini",
         "deepseek",
+        "qwen",
+        "kimi",
     )
 
     def allowed_providers(self, *, confidential: bool) -> tuple[str, ...]:
         return self.confidential_providers if confidential else self.non_confidential_providers
 
-    def validate(self, *, confidential: bool, requested: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    def validate(
+        self,
+        *,
+        confidential: bool,
+        requested: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...]:
         policy_allowed = set(self.allowed_providers(confidential=confidential))
         if requested is None:
             return tuple(policy_allowed)

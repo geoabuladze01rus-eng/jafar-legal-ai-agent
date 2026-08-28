@@ -8,12 +8,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .action_approval import (
-    ActionApprovalStore,
-    ActionRequest,
-    ActionState,
-    LegalActionApprovalEngine,
-)
+from .action_approval import ActionRequest, ActionState, LegalActionApprovalEngine
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
@@ -24,7 +19,7 @@ from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
-from .storage import build_matter_repository, validate_storage_security
+from .storage import build_runtime_repositories, validate_storage_security
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
@@ -60,18 +55,19 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.1", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
     OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 )
-matter_store = build_matter_repository(settings)
+runtime_repositories = build_runtime_repositories(settings)
+matter_store = runtime_repositories.matters
+action_approval_store = runtime_repositories.approvals
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
-action_approval_store = ActionApprovalStore()
 action_approval_engine = LegalActionApprovalEngine(action_approval_store)
 
 
@@ -111,7 +107,7 @@ class CommandRequest(BaseModel):
     """Untrusted client command envelope.
 
     Approval is deliberately absent: a client cannot promote its own request across the
-    human-approval boundary. Mutating actions must enter ``ActionApprovalStore`` and be
+    human-approval boundary. Mutating actions must enter the approval repository and be
     decided through the dedicated approval endpoints.
     """
 
@@ -222,6 +218,8 @@ def approve_action(
         raise HTTPException(status_code=404, detail="Approval action not found")
     try:
         result = action_approval_engine.approve(action, request.approver)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ApprovalDecisionResponse(
@@ -248,6 +246,8 @@ def reject_action(
         raise HTTPException(status_code=422, detail="Rejection reason is required")
     try:
         result = action_approval_engine.reject(action, request.approver, reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Approval action not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ApprovalDecisionResponse(

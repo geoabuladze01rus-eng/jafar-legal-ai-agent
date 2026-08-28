@@ -24,6 +24,7 @@ from .lawyer_context import LawyerContext
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
+from .legal_position_service import LegalPositionRead, LegalPositionReadService
 from .matters import MatterStore
 from .supabase_config import SupabaseSettings, build_supabase_client
 from .telegram_runtime import TelegramRuntime
@@ -89,6 +90,7 @@ try:
 except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
     document_repository = EmptyDocumentRepository()
 deadline_repository = DeadlineRepository(matter_store)
+legal_position_service = LegalPositionReadService(matter_store)
 command_runtime = JafarCommandRuntime(
     matter_store,
     lawyer_context,
@@ -328,6 +330,13 @@ def list_matter_deadlines(matter_id: str) -> list[MatterDeadlineSummary]:
     if matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
     return deadline_repository.list_for_matter(matter_id)
+
+@app.get("/v1/matters/{matter_id}/legal-position", response_model=LegalPositionRead, dependencies=[Depends(require_api_key)])
+def get_legal_position(matter_id: str) -> LegalPositionRead:
+    try:
+        return legal_position_service.get(matter_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Matter not found") from exc
 
 
 @app.get(

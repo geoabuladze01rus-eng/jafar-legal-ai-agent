@@ -20,7 +20,8 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
 
     State transitions use conditional updates (``proposed`` -> decision and ``approved`` ->
     ``executed``) so two concurrent clients cannot both advance the same action from an old
-    state. Records are never deleted by this repository.
+    state. Records are never deleted by this repository. Execution payload fingerprints are
+    stored as immutable action fields so approval cannot be reused for altered side effects.
     """
 
     TABLE = "action_approvals"
@@ -173,6 +174,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             "state": request.state.value,
             "requires_human_approval": request.requires_human_approval,
             "evidence_ids": list(request.evidence_ids),
+            "payload_hash": request.payload_hash,
             "created_at": created_at,
             "decided_at": request.decided_at,
             "decided_by": request.decided_by,
@@ -191,6 +193,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             state=ActionState(row.get("state", ActionState.PROPOSED.value)),
             requires_human_approval=bool(row.get("requires_human_approval", True)),
             evidence_ids=tuple(str(item) for item in evidence),
+            payload_hash=(str(row["payload_hash"]) if row.get("payload_hash") else None),
             created_at=str(row.get("created_at") or ""),
             decided_at=(str(row["decided_at"]) if row.get("decided_at") else None),
             decided_by=(str(row["decided_by"]) if row.get("decided_by") else None),

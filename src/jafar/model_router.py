@@ -10,6 +10,14 @@ from .privacy_policy import ProviderPrivacyPolicy
 from .supabase_cost_reservations import CostReservationRepository
 
 
+class ProviderDispatchUncertainError(RuntimeError):
+    """The external provider may have received/billed the request.
+
+    This error is deliberately non-fallback-safe. Replaying against another provider can create
+    duplicate token spend and two competing legal analyses for one logical request.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class ModelRequest:
     prompt: str
@@ -111,6 +119,8 @@ class ModelRouter:
                         meter_role="verifier",
                     )
                 )
+            except ProviderDispatchUncertainError:
+                raise
             except Exception as exc:
                 raise RuntimeError(
                     f"Independent verification provider {decision.verifier!r} failed"
@@ -153,9 +163,15 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
+            except ProviderDispatchUncertainError:
+                # Once provider dispatch may have started, replaying is not economically or
+                # semantically safe. Keep the reservation held and surface reconciliation.
+                raise
             except Exception as exc:
+                # Only failures that happen before the provider call reaches the dispatch boundary
+                # are eligible for fallback (configuration, budget, disabled provider, etc.).
                 last_error = exc
-        raise RuntimeError("All permitted AI providers failed during completion") from last_error
+        raise RuntimeError("All permitted AI providers failed before dispatch") from last_error
 
     def _complete_provider(
         self,
@@ -184,12 +200,15 @@ class ModelRouter:
                 )
                 reservation_id = reservation.reservation_id
 
+        # From this point forward the request is entering an external provider boundary. An
+        # exception cannot prove that no provider-side work or billing occurred, so reservation
+        # release and automatic provider fallback are unsafe.
         try:
             response = self.providers[provider_key].complete(request)
-        except Exception:
-            if reservation_id is not None:
-                self.cost_reservations.release(reservation_id)
-            raise
+        except Exception as exc:
+            raise ProviderDispatchUncertainError(
+                f"Provider {provider_key!r} dispatch outcome is uncertain"
+            ) from exc
 
         if self.cost_control is not None:
             assert context is not None
@@ -200,10 +219,10 @@ class ModelRouter:
                     model=response.model,
                     metadata=response.metadata,
                 )
-            except Exception:
-                # Provider spend already occurred. Keep the reservation active until expiry rather
-                # than falsely releasing budget when accounting cannot be completed.
-                raise
+            except Exception as exc:
+                raise ProviderDispatchUncertainError(
+                    f"Provider {provider_key!r} completed but accounting outcome is uncertain"
+                ) from exc
             if reservation_id is not None:
                 self.cost_reservations.settle(reservation_id)
         return response

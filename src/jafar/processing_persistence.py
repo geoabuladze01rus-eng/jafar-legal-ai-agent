@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import TYPE_CHECKING, Protocol
 
 from .inbox import InboxMessage
@@ -36,10 +37,14 @@ class SupabaseProcessingResultStore:
                 "storage_path": item.storage_path,
                 "content_type": item.content_type,
                 "fingerprint": item.fingerprint,
+                "provider": item.provider,
+                "attachment_id": item.attachment_id,
+                "document_processing_key": _processing_key(item.provider, message.message_id, item.attachment_id),
                 "processing_status": item.status.value,
                 "processing_error": item.error,
                 "matter_id": item.workflow.match.matter_id if item.workflow and item.workflow.match else None,
                 "analysis": _jsonable(item.workflow.analysis) if item.workflow else None,
+                "analysis_run_id": _analysis_run_id(_processing_key(item.provider, message.message_id, item.attachment_id)),
             })
         payload = {
             "message_id": message.message_id,
@@ -54,7 +59,11 @@ class SupabaseProcessingResultStore:
             "issues": [{"filename": i.filename, "error_type": i.error_type, "message": i.message} for i in result.issues],
             "documents": documents,
         }
-        self.client.rpc("persist_email_processing", {"p_payload": json.dumps(payload, ensure_ascii=False)})
+        response = self.client.rpc("persist_email_processing_v2", {"p_payload": json.dumps(payload, ensure_ascii=False)})
+        if hasattr(response, "execute"):
+            response = response.execute()
+        if response is None:
+            raise RuntimeError("persist_email_processing_v2 returned no response")
 
 
 def _draft_text(draft: object | None) -> str | None:
@@ -79,3 +88,16 @@ def _jsonable(value: object) -> object:
     if hasattr(value, "__dict__"):
         return {k: _jsonable(v) for k, v in vars(value).items()}
     return str(value)
+
+
+def _processing_key(provider: str, message_id: str, attachment_id: str | None) -> str | None:
+    from .source_artifact import source_artifact_identity
+
+    identity = source_artifact_identity(provider, message_id, attachment_id)
+    return identity.processing_key if identity else None
+
+
+def _analysis_run_id(processing_key: str | None) -> str | None:
+    if processing_key is None:
+        return None
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"jafar:initial-analysis:v1:{processing_key}"))

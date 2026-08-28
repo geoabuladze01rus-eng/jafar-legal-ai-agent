@@ -10,7 +10,13 @@ from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .api_security import require_api_key
 from .command_runtime import JafarCommandRuntime
 from .config import settings
+from .deadline_repository import DeadlineRepository, MatterDeadlineSummary
 from .document_intake import DocumentExtractionError, DocumentExtractor
+from .document_repository import (
+    EmptyDocumentRepository,
+    MatterDocumentSummary,
+    SupabaseDocumentRepository,
+)
 from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
 from .gmail_gateway import make_local_gmail_gateway
@@ -18,7 +24,9 @@ from .lawyer_context import LawyerContext
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
+from .legal_position_service import LegalPositionRead, LegalPositionReadService
 from .matters import MatterStore
+from .supabase_config import SupabaseSettings, build_supabase_client
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
@@ -77,11 +85,27 @@ matter_store = MatterStore()
 lawyer_context = LawyerContext()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, analyzer)
+try:
+    supabase_client = build_supabase_client(SupabaseSettings())
+    document_repository = SupabaseDocumentRepository(supabase_client)
+    from .legal_position_service import SupabaseAnalysisRepository
+    legal_position_service = LegalPositionReadService(matter_store, SupabaseAnalysisRepository(supabase_client), SupabaseDocumentRepository(supabase_client))
+except Exception:  # noqa: BLE001 - absent local Supabase configuration uses safe fallback.
+    document_repository = EmptyDocumentRepository()
+    legal_position_service = LegalPositionReadService(matter_store)
+deadline_repository = DeadlineRepository(matter_store)
 command_runtime = JafarCommandRuntime(
     matter_store,
     lawyer_context,
     mail_gateway=make_local_gmail_gateway(),
 )
+
+class DashboardDeadline(BaseModel):
+    matter_id: str
+    matter_title: str
+    title: str
+    due_date: str | None = None
+    source_text: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -304,6 +328,33 @@ def get_matter(matter_id: str) -> Matter:
     if matter is None:
         raise HTTPException(status_code=404, detail="Matter not found")
     return matter
+
+@app.get("/v1/matters/{matter_id}/documents", response_model=list[MatterDocumentSummary], dependencies=[Depends(require_api_key)])
+def list_matter_documents(matter_id: str) -> list[MatterDocumentSummary]:
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    return document_repository.list_for_matter(matter_id)
+
+@app.get("/v1/matters/{matter_id}/deadlines", response_model=list[MatterDeadlineSummary], dependencies=[Depends(require_api_key)])
+def list_matter_deadlines(matter_id: str) -> list[MatterDeadlineSummary]:
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    return deadline_repository.list_for_matter(matter_id)
+
+@app.get("/v1/deadlines", response_model=list[DashboardDeadline], dependencies=[Depends(require_api_key)])
+def list_dashboard_deadlines() -> list[DashboardDeadline]:
+    rows = []
+    for matter in matter_store.list_matters():
+        for deadline in matter.deadlines:
+            rows.append(DashboardDeadline(matter_id=matter.id, matter_title=matter.title, title=deadline.title, due_date=deadline.due_date.isoformat() if deadline.due_date else None, source_text=deadline.source_text))
+    return sorted(rows, key=lambda item: (item.due_date is None, item.due_date or "9999-12-31", item.matter_id, item.title))
+
+@app.get("/v1/matters/{matter_id}/legal-position", response_model=LegalPositionRead, dependencies=[Depends(require_api_key)])
+def get_legal_position(matter_id: str) -> LegalPositionRead:
+    try:
+        return legal_position_service.get(matter_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Matter not found") from exc
 
 
 @app.get(

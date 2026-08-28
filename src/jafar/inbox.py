@@ -11,6 +11,8 @@ class InboxAttachment:
     filename: str
     content: bytes
     media_type: str | None = None
+    attachment_id: str | None = None
+    provider: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class InboxMessage:
     body_text: str
     attachments: tuple[InboxAttachment, ...] = ()
     provider_issues: tuple[AttachmentProcessingIssue, ...] = ()
+    provider: str = "unknown"
 
 
 @dataclass(frozen=True)

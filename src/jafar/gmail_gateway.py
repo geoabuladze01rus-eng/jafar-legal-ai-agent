@@ -30,6 +30,7 @@ class GmailReadError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class GmailAttachment:
+    attachment_id: str | None
     filename: str
     mime_type: str
     size_bytes: int
@@ -180,7 +181,7 @@ class GmailMessageParser:
         body = part.get("body") if isinstance(part.get("body"), dict) else {}
         headers = self._headers(part.get("headers"))
         disposition = headers.get("content-disposition", "").lower()
-        attachment_id = bool(body.get("attachmentId"))
+        attachment_id = str(body.get("attachmentId") or "") or None
         is_attachment = (
             bool(filename)
             or "attachment" in disposition
@@ -190,6 +191,7 @@ class GmailMessageParser:
         if is_attachment:
             attachments.append(
                 GmailAttachment(
+                    attachment_id=attachment_id,
                     filename=filename or "вложение без имени",
                     mime_type=mime_type,
                     size_bytes=self._safe_size(body.get("size")),

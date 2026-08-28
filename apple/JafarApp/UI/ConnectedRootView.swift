@@ -4,6 +4,7 @@ struct ConnectedRootView: View {
     @StateObject private var dashboard = DashboardStore(
         client: JafarClientFactory.dashboardClient()
     )
+    @State private var showingConnectionSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,12 @@ struct ConnectedRootView: View {
         .background(JafarPalette.background)
         .task {
             await dashboard.refresh()
+        }
+        .sheet(isPresented: $showingConnectionSettings) {
+            JafarConnectionSettingsView {
+                dashboard.reconfigure(client: JafarClientFactory.dashboardClient())
+                Task { await dashboard.refresh() }
+            }
         }
     }
 
@@ -56,6 +63,16 @@ struct ConnectedRootView: View {
                 .foregroundStyle(JafarPalette.secondaryText)
                 .accessibilityLabel("Обновить данные Джафара")
             }
+
+            Button {
+                showingConnectionSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(JafarPalette.secondaryText)
+            .accessibilityLabel("Настройки подключения")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -69,8 +86,13 @@ struct ConnectedRootView: View {
 
     private func urgentSignalStrip(_ signal: DashboardSignal) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: signal.requiresApproval ? "checkmark.seal.fill" : "bell.badge.fill")
-                .foregroundStyle(signalColor(signal.priority))
+            Image(
+                systemName: signal.requiresApproval
+                    ? "checkmark.seal.fill"
+                    : "bell.badge.fill"
+            )
+            .foregroundStyle(signalColor(signal.priority))
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(signal.title)
                     .font(.caption.weight(.semibold))

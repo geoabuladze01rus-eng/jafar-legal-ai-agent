@@ -1,14 +1,18 @@
 import pytest
 
+from jafar.action_reconciliation import ReconciliationAuditStore
 from jafar.config import Settings
 from jafar.matters import MatterStore
 from jafar.storage import (
     StorageBackend,
     build_matter_repository,
+    build_reconciliation_audit_repository,
+    build_runtime_repositories,
     storage_backend,
     validate_storage_security,
 )
 from jafar.supabase_matter_repository import SupabaseMatterRepository
+from jafar.supabase_reconciliation_audit import SupabaseReconciliationAuditRepository
 
 
 def config(**overrides) -> Settings:
@@ -26,6 +30,7 @@ def test_development_defaults_to_in_memory_repository() -> None:
 
     assert storage_backend(settings) is StorageBackend.MEMORY
     assert isinstance(build_matter_repository(settings), MatterStore)
+    assert isinstance(build_reconciliation_audit_repository(settings), ReconciliationAuditStore)
 
 
 def test_production_rejects_ephemeral_memory_storage() -> None:
@@ -56,9 +61,12 @@ def test_supabase_factory_uses_server_mode_and_owner_scope(monkeypatch) -> None:
         lambda supplied, server: fake_client if server else None,
     )
 
-    repository = build_matter_repository(settings)
+    repositories = build_runtime_repositories(settings)
 
-    assert isinstance(repository, SupabaseMatterRepository)
-    assert repository.client is fake_client
-    assert repository.owner_user_id == "owner-123"
-    assert repository.server_mode is True
+    assert isinstance(repositories.matters, SupabaseMatterRepository)
+    assert repositories.matters.client is fake_client
+    assert repositories.matters.owner_user_id == "owner-123"
+    assert repositories.matters.server_mode is True
+    assert isinstance(repositories.reconciliation_audit, SupabaseReconciliationAuditRepository)
+    assert repositories.reconciliation_audit.client is fake_client
+    assert repositories.reconciliation_audit.owner_user_id == "owner-123"

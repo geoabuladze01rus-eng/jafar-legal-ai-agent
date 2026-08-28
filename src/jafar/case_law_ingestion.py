@@ -99,7 +99,11 @@ class CaseLawRepository:
         existing = self._by_key.get(record.dedupe_key)
         if existing is not None:
             return IngestionStatus.DUPLICATE
+
         previous = self._by_id.get(record.record_id)
+        if previous is not None and previous.dedupe_key != record.dedupe_key:
+            self._by_key.pop(previous.dedupe_key, None)
+
         self._by_key[record.dedupe_key] = record
         self._by_id[record.record_id] = record
         return IngestionStatus.UPDATED if previous is not None else IngestionStatus.NEW
@@ -143,11 +147,15 @@ class CaseImpactAnalyzer:
             review = False
 
             if applicability.status != ApplicabilityStatus.APPLICABLE:
-                reasons.append("Новый authority относится к теме дела, но пока не прошёл applicability gate.")
+                reasons.append(
+                    "Новый authority относится к теме дела, но пока не прошёл applicability gate."
+                )
                 level = CaseImpactLevel.MEDIUM
                 review = True
             else:
-                reasons.append("Новый verified+applicable authority относится к теме активного дела.")
+                reasons.append(
+                    "Новый verified+applicable authority относится к теме активного дела."
+                )
                 level = CaseImpactLevel.MEDIUM
                 review = True
 
@@ -157,19 +165,24 @@ class CaseImpactAnalyzer:
                     level = CaseImpactLevel.HIGH
                 elif freshness_item.status == FreshnessStatus.OLDER_BUT_CONTROLLING:
                     reasons.append("Позиция остаётся контролирующей несмотря на возраст.")
-                    level = max(level, CaseImpactLevel.HIGH, key=self._rank)
+                    if self._rank(level) < self._rank(CaseImpactLevel.HIGH):
+                        level = CaseImpactLevel.HIGH
                 elif freshness_item.status in {
                     FreshnessStatus.CONFLICTING,
                     FreshnessStatus.SUPERSEDED,
                     FreshnessStatus.LIMITED,
                     FreshnessStatus.REVIEW_REQUIRED,
                 }:
-                    reasons.append("Precedent freshness требует отдельной юридической проверки.")
+                    reasons.append(
+                        "Precedent freshness требует отдельной юридической проверки."
+                    )
                     level = CaseImpactLevel.CRITICAL
                     review = True
 
             if authority_id in case.authority_ids_in_use:
-                reasons.append("Authority уже используется в рабочей позиции этого дела и требует повторной проверки.")
+                reasons.append(
+                    "Authority уже используется в рабочей позиции этого дела и требует повторной проверки."
+                )
                 level = CaseImpactLevel.CRITICAL
                 review = True
 
@@ -251,7 +264,8 @@ class CaseLawIngestionEngine:
         )
         review = (
             applicability.status != ApplicabilityStatus.APPLICABLE
-            or freshness_status in {
+            or freshness_status
+            in {
                 FreshnessStatus.CONFLICTING,
                 FreshnessStatus.SUPERSEDED,
                 FreshnessStatus.LIMITED,
@@ -279,7 +293,9 @@ class CaseLawIngestionEngine:
             "ingestion_status": result.ingestion_status.value,
             "verification_status": result.verification_status.value,
             "applicability_status": result.applicability_status.value,
-            "freshness_status": result.freshness_status.value if result.freshness_status else None,
+            "freshness_status": (
+                result.freshness_status.value if result.freshness_status else None
+            ),
             "case_impacts": [
                 {
                     "case_id": item.case_id,

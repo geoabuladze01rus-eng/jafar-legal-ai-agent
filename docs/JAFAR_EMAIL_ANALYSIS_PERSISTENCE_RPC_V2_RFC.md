@@ -75,3 +75,11 @@ Local disposable DB tests must prove document/analysis IDs, same-matter invarian
 2. Whether V2 should preserve every legacy email-side write byte-for-byte or return a richer per-document result.
 
 Until these are resolved, implementation should remain local-only and the RFC gate is BLOCKED_BY_OPEN_QUESTION.
+
+## Caller and side-effect forensics
+
+Repository-wide search finds one runtime caller: `SupabaseProcessingResultStore.save` in `src/jafar/processing_persistence.py`, which ignores the RPC return value and calls `persist_email_processing` once per processing result. Tests and migrations are non-runtime references. V1 writes an email processing record through the RPC's surrounding contract and inserts one `documents` row per payload document; the function returns no IDs and has no `ON CONFLICT` or document deduplication.
+
+The stable logical input identifier is the inbound `message_id`; attachment fingerprints are metadata used by processing, not database identity. The current `documents` table has no uniqueness constraint on fingerprint/message/attachment, and V1 can create duplicate documents when the same result is replayed. The current RPC does not create `ai_analyses` at all. Therefore idempotency classification is **I4** (no reliable DB-enforced idempotency contract), and the final RFC status is **BLOCKED_BY_OPEN_QUESTION** until an explicit retry key and duplicate policy are approved.
+
+V1 must remain unchanged. V2 may return richer IDs and extend payload semantics, but must preserve V1 side effects and failure behavior. Byte-for-byte payload compatibility is not required for a versioned function; side-effect compatibility is required. Retry and intentional re-analysis must use distinct explicit identities, never timestamps, filenames, storage paths or heuristics.

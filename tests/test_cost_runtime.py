@@ -22,6 +22,7 @@ def valid_production_settings(**overrides) -> Settings:
         "ai_cost_control_enabled": True,
         "ai_queue_backend": "supabase",
         "ai_pricing_json": '{"openai":{"*":{"input":"1","cached_input":"0.1","output":"4"}}}',
+        "ai_pricing_version": "2026-08-28-reviewed",
         "ai_cost_per_request_usd": Decimal("0.50"),
         "ai_cost_user_daily_usd": Decimal("5.00"),
         "ai_cost_user_monthly_usd": Decimal("100.00"),
@@ -32,9 +33,9 @@ def valid_production_settings(**overrides) -> Settings:
     return settings(**values)
 
 
-def test_pricing_catalog_is_configuration_driven() -> None:
+def test_pricing_catalog_is_configuration_driven_and_provider_keys_are_normalized() -> None:
     catalog = parse_pricing_catalog(
-        '{"openai":{"model-a":{"input":"2.5","cached_input":"0.25","output":"10"}}}'
+        '{"OpenAI":{"model-a":{"input":"2.5","cached_input":"0.25","output":"10"}}}'
     )
 
     price = catalog[("openai", "model-a")]
@@ -43,7 +44,7 @@ def test_pricing_catalog_is_configuration_driven() -> None:
     assert price.output_per_million == Decimal("10")
 
 
-def test_pricing_catalog_rejects_missing_or_invalid_configuration() -> None:
+def test_pricing_catalog_rejects_missing_invalid_or_ambiguous_configuration() -> None:
     with pytest.raises(RuntimeError, match="AI_PRICING_JSON is required"):
         parse_pricing_catalog(None)
     with pytest.raises(RuntimeError, match="valid JSON"):
@@ -54,13 +55,22 @@ def test_pricing_catalog_rejects_missing_or_invalid_configuration() -> None:
         parse_pricing_catalog('{"openai":{"*":{"input":"-1","output":"1"}}}')
     with pytest.raises(RuntimeError, match="finite non-negative"):
         parse_pricing_catalog('{"openai":{"*":{"input":"NaN","output":"1"}}}')
+    with pytest.raises(RuntimeError, match="unknown rate fields"):
+        parse_pricing_catalog(
+            '{"openai":{"*":{"input":"1","output":"2","surprise":"9"}}}'
+        )
+    with pytest.raises(RuntimeError, match="duplicate normalized pricing keys"):
+        parse_pricing_catalog(
+            '{"OpenAI":{"m":{"input":"1","output":"2"}},'
+            '"openai":{"m":{"input":"1","output":"2"}}}'
+        )
 
 
 def test_cost_runtime_is_opt_in_for_local_development() -> None:
     assert build_cost_scale_control(settings(ai_cost_control_enabled=False)) is None
 
 
-def test_development_cost_runtime_uses_in_memory_ledger_and_limits() -> None:
+def test_development_cost_runtime_uses_in_memory_ledger_limits_and_local_pricing_version() -> None:
     control = build_cost_scale_control(
         settings(
             ai_cost_control_enabled=True,
@@ -74,24 +84,23 @@ def test_development_cost_runtime_uses_in_memory_ledger_and_limits() -> None:
     assert isinstance(control.ledger, CostLedger)
     assert control.limits.per_request_usd == Decimal("0.25")
     assert control.limits.per_user_daily_usd == Decimal("2.00")
+    assert control.pricing_version == "local-unversioned"
 
 
 def test_production_cost_runtime_requires_persistent_storage() -> None:
     with pytest.raises(RuntimeError, match="persistent Supabase storage"):
-        build_cost_scale_control(
-            valid_production_settings(storage_backend="memory")
-        )
+        build_cost_scale_control(valid_production_settings(storage_backend="memory"))
 
 
-def test_production_requires_cost_control_and_durable_queue() -> None:
+def test_production_requires_cost_control_durable_queue_and_pricing_version() -> None:
     with pytest.raises(RuntimeError, match="requires AI cost control"):
         validate_production_ai_scale(
             valid_production_settings(ai_cost_control_enabled=False)
         )
     with pytest.raises(RuntimeError, match="durable Supabase AI queue"):
-        validate_production_ai_scale(
-            valid_production_settings(ai_queue_backend="memory")
-        )
+        validate_production_ai_scale(valid_production_settings(ai_queue_backend="memory"))
+    with pytest.raises(RuntimeError, match="AI_PRICING_VERSION"):
+        validate_production_ai_scale(valid_production_settings(ai_pricing_version=None))
 
 
 def test_production_requires_every_positive_spend_ceiling() -> None:

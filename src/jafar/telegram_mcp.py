@@ -13,7 +13,13 @@ from mcp.server.auth.settings import AuthSettings
 
 from jafar.config import settings
 from jafar.telegram_polls import TelegramPollStore, validate_poll
-from jafar.telegram_publishing import MAX_PHOTO_BYTES, TelegramPublisher, validate_photo_bytes
+from jafar.telegram_publishing import (
+    MAX_PHOTO_BYTES,
+    TelegramPublisher,
+    validate_filename,
+    validate_photo_bytes,
+    validate_photo_url,
+)
 from jafar.telegram_runtime import TelegramBotHttpClient
 from jafar.telegram_scheduler import (
     ScheduledItem,
@@ -158,6 +164,23 @@ def _key(
     return "auto:" + hashlib.sha256(f"{kind}|{chat}|{scheduled}|{payload}".encode()).hexdigest()
 
 
+def _message_id(result: dict[str, Any], *, operation: str) -> int:
+    value = result.get("message_id")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeError(f"Telegram {operation} returned no valid message_id")
+    return value
+
+
+def _poll_id(result: dict[str, Any]) -> str:
+    poll = result.get("poll")
+    if not isinstance(poll, dict):
+        raise RuntimeError("Telegram sendPoll returned no poll object")
+    value = poll.get("id")
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError("Telegram sendPoll returned no poll identifier")
+    return value
+
+
 async def _deliver(item: ScheduledItem) -> int | None:
     """Delivery-time policy check is intentionally inside every branch."""
     if item.kind == "post":
@@ -178,11 +201,14 @@ async def _deliver(item: ScheduledItem) -> int | None:
         result = await TelegramBotHttpClient(_require_token()).send_poll(
             chat_id=chat, poll=item.payload
         )
-        if isinstance(result.get("poll"), dict):
-            _polls().record_sent(
-                poll=result["poll"], chat_id=chat, message_id=result.get("message_id")
-            )
-        return result.get("message_id")
+        message_id = _message_id(result, operation="sendPoll")
+        poll_id = _poll_id(result)
+        poll = result["poll"]
+        assert isinstance(poll, dict)
+        _polls().record_sent(poll=poll, chat_id=chat, message_id=message_id)
+        if str(poll.get("id")) != poll_id:
+            raise RuntimeError("Telegram poll identifier changed during validation")
+        return message_id
     raise ValueError(f"unsupported scheduled item kind {item.kind}")
 
 
@@ -207,12 +233,12 @@ def _scheduled(item: ScheduledItem, detail: bool = True) -> dict[str, Any]:
 
 @mcp.tool()
 async def telegram_status() -> dict[str, Any]:
-    """Return Telegram MCP configuration status without secrets."""
+    """Return Telegram MCP configuration status without secrets or local filesystem paths."""
     return {
         "configured": bool((settings.telegram_bot_token or "").strip()),
         "allowed_chat_ids_count": len(_allowed_chat_ids()),
         "outbound_enabled": bool(_allowed_chat_ids()),
-        "scheduler_db": settings.telegram_scheduler_db_path,
+        "scheduler_persistence_configured": bool(settings.telegram_scheduler_db_path.strip()),
         "remote_auth_configured": bool(settings.jafar_mcp_auth_token),
     }
 
@@ -269,12 +295,15 @@ async def telegram_schedule_post(
 ) -> dict[str, Any]:
     """Persist an allowlisted text/photo publication for a future timezone-aware time."""
     chat = _require_allowed_chat(chat_id)
-    if not text.strip():
+    if not text or not text.strip():
         raise ValueError("text must not be empty")
     if photo_url and photo_base64:
         raise ValueError("provide only one of photo_url or photo_base64")
     if photo_base64:
         validate_photo_bytes(_decode_photo_base64(photo_base64))
+    if photo_url:
+        photo_url = validate_photo_url(photo_url)
+    filename = validate_filename(filename)
     scheduled = parse_schedule_time(scheduled_for)
     payload = {
         "text": text,
@@ -331,17 +360,17 @@ async def telegram_send_poll(
         open_period=open_period,
         close_date=close_date,
     )
-    result = await TelegramBotHttpClient(_require_token()).send_poll(
-        chat_id=_require_allowed_chat(chat), poll=poll
-    )
-    if not isinstance(result.get("poll"), dict) or not result["poll"].get("id"):
-        raise RuntimeError("Telegram sendPoll returned no poll identifier")
-    _polls().record_sent(poll=result["poll"], chat_id=chat, message_id=result.get("message_id"))
+    result = await TelegramBotHttpClient(_require_token()).send_poll(chat_id=chat, poll=poll)
+    message_id = _message_id(result, operation="sendPoll")
+    poll_id = _poll_id(result)
+    returned_poll = result["poll"]
+    assert isinstance(returned_poll, dict)
+    _polls().record_sent(poll=returned_poll, chat_id=chat, message_id=message_id)
     return {
         "ok": True,
         "chat_id": chat,
-        "message_id": result.get("message_id"),
-        "poll_id": result["poll"]["id"],
+        "message_id": message_id,
+        "poll_id": poll_id,
     }
 
 
@@ -386,8 +415,16 @@ async def telegram_schedule_poll(
 
 @mcp.tool()
 async def telegram_get_poll_results(poll_id: str) -> dict[str, Any]:
-    """Return persisted poll state and available non-anonymous answers."""
-    return _polls().results(poll_id)
+    """Return poll results only while the owning chat remains allowlisted."""
+    poll_key = poll_id.strip()
+    if not poll_key:
+        raise ValueError("poll_id must not be empty")
+    result = _polls().results(poll_key)
+    chat_id = result.get("chat_id")
+    if chat_id is None:
+        raise PermissionError("poll is not bound to an allowlisted Telegram chat")
+    _require_allowed_chat(chat_id)
+    return result
 
 
 async def run_scheduler_once() -> int:

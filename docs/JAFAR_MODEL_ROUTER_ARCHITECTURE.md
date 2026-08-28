@@ -15,6 +15,12 @@ exits with `LIVE_AI_NETWORK=DISABLED` and `SMOKE=NOT_RUN` unless explicitly opte
 DeepSeek has a disabled-by-default contract skeleton; it is not added to fallback
 priority automatically.
 
+Controlled live smoke is a separate acceptance state. `scripts/openai_live_smoke.py`
+never performs a request by default and refuses the opt-in path without a local
+credential reference. A credential being present alone cannot activate network
+access. Smoke input is synthetic-only, one request maximum, no retry/fallback, and
+the response is not persisted.
+
 The domain uses provider-neutral `ModelTier`, `ModelRequest`, `ModelResponse` and
 `ModelRouter` contracts. Routing is deterministic: classification/extraction use
 FAST, ordinary analysis/drafting STANDARD, complex legal position EXPERT, and an

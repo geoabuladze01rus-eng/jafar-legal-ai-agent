@@ -3,10 +3,10 @@
 create table if not exists public.action_reconciliation_audit (
   id bigint generated always as identity primary key,
   owner_user_id uuid not null,
-  action_id text not null,
+  action_id text not null check (btrim(action_id) <> '' and char_length(action_id) <= 200),
   decision text not null check (decision in ('confirmed_not_executed', 'confirmed_executed')),
-  operator_id text not null check (btrim(operator_id) <> ''),
-  evidence_note text not null check (btrim(evidence_note) <> ''),
+  operator_id text not null check (btrim(operator_id) <> '' and char_length(operator_id) <= 200),
+  evidence_note text not null check (btrim(evidence_note) <> '' and char_length(evidence_note) <= 4000),
   recorded_at timestamptz not null default now()
 );
 

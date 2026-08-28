@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 from html.parser import HTMLParser
 from typing import Protocol
@@ -17,6 +18,8 @@ class CaseLawDocument:
     content_type: str | None
     etag: str | None
     last_modified: str | None
+    requested_url: str | None = None
+    retrieved_at: datetime | None = None
 
 
 class DocumentTextExtractor(Protocol):
@@ -74,12 +77,14 @@ class CaseLawDocumentFetcher:
         normalized = self._normalize_text(text)
         return CaseLawDocument(
             url=response.url,
+            requested_url=response.requested_url or url,
             text=normalized,
             raw_fingerprint=response.fingerprint,
             text_fingerprint=sha256(normalized.encode("utf-8")).hexdigest(),
             content_type=response.content_type,
             etag=response.etag,
             last_modified=response.last_modified,
+            retrieved_at=response.retrieved_at,
         )
 
     @staticmethod

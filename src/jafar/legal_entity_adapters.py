@@ -10,6 +10,13 @@ from .legal_entity_intelligence import EntityQuery
 
 
 _SOURCE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,99}$")
+_ALLOWED_STATUSES = {"found", "negative", "no_data", "error"}
+_SAFE_ADAPTER_ERRORS = {
+    "adapter_source_key_mismatch",
+    "adapter_status_invalid",
+    "adapter_data_must_be_object",
+    "adapter_source_url_invalid",
+}
 
 
 @dataclass(slots=True)
@@ -68,6 +75,35 @@ def validate_public_search_template(template: str) -> str:
     rendered = value.format(query="jafar-safe-probe")
     validate_public_url(rendered)
     return value
+
+
+def _safe_adapter_error(exc: Exception) -> str:
+    message = str(exc)
+    if isinstance(exc, ValueError) and message in _SAFE_ADAPTER_ERRORS:
+        return message
+    return f"{type(exc).__name__}:source_lookup_failed"
+
+
+def _validate_adapter_result(result: SourceResult, expected_source_key: str) -> SourceResult:
+    if validate_source_key(result.source_key) != expected_source_key:
+        raise ValueError("adapter_source_key_mismatch")
+    status = result.status.strip().casefold()
+    if status not in _ALLOWED_STATUSES:
+        raise ValueError("adapter_status_invalid")
+    if result.data is not None and not isinstance(result.data, dict):
+        raise ValueError("adapter_data_must_be_object")
+    if result.source_url is not None:
+        try:
+            validate_public_url(result.source_url)
+        except ValueError as exc:
+            raise ValueError("adapter_source_url_invalid") from exc
+    return SourceResult(
+        source_key=expected_source_key,
+        status=status,
+        source_url=result.source_url,
+        data=result.data,
+        error=result.error if status == "error" else None,
+    )
 
 
 class PublicSourceAdapter:
@@ -138,16 +174,13 @@ class LegalEntitySourceRegistry:
         results: list[SourceResult] = []
         for source_key, adapter in self._adapters.items():
             try:
-                result = adapter.search(query)
-                if validate_source_key(result.source_key) != source_key:
-                    raise ValueError("adapter_source_key_mismatch")
-                results.append(result)
+                results.append(_validate_adapter_result(adapter.search(query), source_key))
             except Exception as exc:
                 results.append(
                     SourceResult(
                         source_key=source_key,
                         status="error",
-                        error=str(exc),
+                        error=_safe_adapter_error(exc),
                     )
                 )
         return results

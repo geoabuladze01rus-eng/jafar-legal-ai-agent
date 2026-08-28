@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     model_name: str = "gpt-5.6"
     ai_cost_control_enabled: bool = False
     ai_pricing_json: str | None = None
+    ai_pricing_version: str | None = None
     ai_cost_per_request_usd: Decimal | None = None
     ai_cost_user_daily_usd: Decimal | None = None
     ai_cost_user_monthly_usd: Decimal | None = None

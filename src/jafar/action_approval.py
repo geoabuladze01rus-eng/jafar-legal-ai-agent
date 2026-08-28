@@ -126,6 +126,8 @@ class ActionApprovalStore:
                 raise KeyError(action_id)
             if request.state is not ActionState.PROPOSED:
                 raise ValueError("action_not_pending")
+            if state is ActionState.APPROVED and not request.payload_hash:
+                raise ValueError("payload_binding_required")
             updated = replace(
                 request,
                 state=state,
@@ -219,6 +221,8 @@ class LegalActionApprovalEngine:
             raise ValueError("action_not_pending")
         if not approver.strip():
             raise ValueError("approver_required")
+        if not request.payload_hash:
+            raise ValueError("payload_binding_required")
         updated = (
             self.store.decide(
                 request.action_id,

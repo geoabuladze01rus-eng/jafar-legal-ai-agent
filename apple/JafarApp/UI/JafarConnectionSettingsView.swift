@@ -5,7 +5,6 @@ struct JafarConnectionSettingsView: View {
 
     @State private var baseURL = JafarAPIConfiguration.baseURLString
     @State private var token = JafarCredentialStore.readToken() ?? ""
-    @State private var approvalIdentity = JafarApprovalIdentity.value
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var isTesting = false
@@ -22,13 +21,9 @@ struct JafarConnectionSettingsView: View {
                     SecureField("API token", text: $token)
                         .textFieldStyle(.roundedBorder)
 
-                    TextField("Имя или ID адвоката", text: $approvalIdentity)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.name)
-
                     Text(
-                        "Имя или ID используется только для фиксации того, кто явно "
-                            + "одобрил или отклонил юридически значимое действие."
+                        "Личность адвоката для журнала одобрений задаётся на backend. "
+                            + "Приложение не может подменить её своим текстовым полем."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -65,6 +60,10 @@ struct JafarConnectionSettingsView: View {
                     Label(
                         "Одобрение не означает автоматическую отправку или подачу",
                         systemImage: "hand.raised.fill"
+                    )
+                    Label(
+                        "Audit identity контролируется сервером",
+                        systemImage: "person.badge.shield.checkmark.fill"
                     )
                     Label(
                         "Пустой адрес переводит приложение в локальный режим",
@@ -163,7 +162,6 @@ struct JafarConnectionSettingsView: View {
         }
         do {
             try JafarAPIConfiguration.save(baseURLString: baseURL, token: token)
-            JafarApprovalIdentity.save(approvalIdentity)
             errorMessage = nil
             onSaved()
             dismiss()

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .cost_scale_control import CostScaleControl, UsageContext
 from .model_router import ModelProvider, ModelRequest, ModelResponse
 from .privacy_policy import ProviderPrivacyPolicy
+from .supabase_cost_reservations import CostReservationRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,10 +29,12 @@ class AICouncil:
         providers: dict[str, ModelProvider],
         privacy_policy: ProviderPrivacyPolicy | None = None,
         cost_control: CostScaleControl | None = None,
+        cost_reservations: CostReservationRepository | None = None,
     ) -> None:
         self.providers = providers
         self.privacy_policy = privacy_policy or ProviderPrivacyPolicy()
         self.cost_control = cost_control
+        self.cost_reservations = cost_reservations
 
     def run(
         self,
@@ -83,6 +86,7 @@ class AICouncil:
 
     def _complete_metered(self, request: ModelRequest, provider_key: str) -> ModelResponse:
         context = self._meter_context(request, provider=provider_key)
+        reservation_id: str | None = None
         if self.cost_control is not None:
             assert context is not None
             assert request.estimated_cost_usd is not None
@@ -90,16 +94,36 @@ class AICouncil:
                 context,
                 estimated_cost_usd=request.estimated_cost_usd,
             )
+            if self.cost_reservations is not None:
+                reservation = self.cost_reservations.reserve(
+                    context=context,
+                    estimated_cost_usd=request.estimated_cost_usd,
+                    limits=self.cost_control.limits,
+                )
+                reservation_id = reservation.reservation_id
 
-        response = self.providers[provider_key].complete(request)
+        try:
+            response = self.providers[provider_key].complete(request)
+        except Exception:
+            if reservation_id is not None:
+                self.cost_reservations.release(reservation_id)
+            raise
+
         if self.cost_control is not None:
             assert context is not None
-            self.cost_control.meter_response(
-                context=context,
-                provider=response.provider,
-                model=response.model,
-                metadata=response.metadata,
-            )
+            try:
+                self.cost_control.meter_response(
+                    context=context,
+                    provider=response.provider,
+                    model=response.model,
+                    metadata=response.metadata,
+                )
+            except Exception:
+                # The provider may already have consumed billable tokens. Keep the reservation
+                # active until expiry rather than incorrectly returning that budget to the pool.
+                raise
+            if reservation_id is not None:
+                self.cost_reservations.settle(reservation_id)
         return response
 
     def _provider_enabled(self, provider_key: str) -> bool:

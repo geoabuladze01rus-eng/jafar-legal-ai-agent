@@ -41,9 +41,11 @@ def test_store_retains_approved_action_for_separate_execution() -> None:
         action_id="a3",
         action_type="send_email",
         description="Отправить юридически значимое письмо",
+        payload={"to": "client@example.com", "subject": "Согласованный ответ"},
     )
 
     assert store.pending() == (request,)
+    assert request.payload_hash
 
     engine.approve(request, "lawyer:chernov")
 
@@ -53,6 +55,7 @@ def test_store_retains_approved_action_for_separate_execution() -> None:
     assert approved.action_id == "a3"
     assert approved.decided_by == "lawyer:chernov"
     assert approved.decided_at is not None
+    assert approved.payload_hash == request.payload_hash
 
     executed = store.mark_executed("a3")
 
@@ -108,3 +111,17 @@ def test_only_approved_action_can_be_marked_executed() -> None:
 
     with pytest.raises(ValueError, match="only_approved_action_can_be_executed"):
         store.mark_executed("still-pending")
+
+
+def test_approved_but_unbound_action_cannot_be_marked_executed() -> None:
+    store = ActionApprovalStore()
+    engine = LegalActionApprovalEngine(store)
+    request = engine.propose(
+        action_id="approved-unbound",
+        action_type="send_email",
+        description="Старый запрос без зафиксированного payload",
+    )
+    engine.approve(request, "lawyer")
+
+    with pytest.raises(ValueError, match="payload_binding_required"):
+        store.mark_executed("approved-unbound")

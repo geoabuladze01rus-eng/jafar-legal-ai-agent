@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Iterable
 
 from .case_law_sources import CaseLawSourceAdapter, CaseLawSourceItem, SourceTrust
 

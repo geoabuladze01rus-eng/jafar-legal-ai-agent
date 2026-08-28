@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import hmac
 import os
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
@@ -50,6 +52,16 @@ document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
+
+
+@app.middleware("http")
+async def protect_v1_api(request: Request, call_next):
+    if request.url.path.startswith("/v1") and settings.api_key:
+        supplied = request.headers.get("Authorization", "")
+        expected = f"Bearer {settings.api_key}"
+        if not hmac.compare_digest(supplied, expected):
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
 
 
 class HealthResponse(BaseModel):

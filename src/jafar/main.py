@@ -24,12 +24,16 @@ from .telegram_runtime import TelegramRuntime
 telegram_runtime: TelegramRuntime | None = None
 
 
+def production_api_key_is_secure() -> bool:
+    api_key = (settings.api_key or "").strip()
+    placeholders = {"replace-me", "changeme", "change-me", "secret"}
+    return len(api_key) >= 24 and api_key.casefold() not in placeholders
+
+
 def validate_runtime_security() -> None:
     if settings.environment.strip().casefold() != "production":
         return
-    api_key = (settings.api_key or "").strip()
-    placeholders = {"replace-me", "changeme", "change-me", "secret"}
-    if len(api_key) < 24 or api_key.casefold() in placeholders:
+    if not production_api_key_is_secure():
         raise RuntimeError(
             "Production requires a non-placeholder API_KEY of at least 24 characters"
         )
@@ -63,7 +67,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.6", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.7", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -82,10 +86,11 @@ action_approval_engine = LegalActionApprovalEngine(action_approval_store)
 @app.middleware("http")
 async def protect_v1_api(request: Request, call_next):
     if request.url.path.startswith("/v1"):
-        if settings.environment.strip().casefold() == "production" and not settings.api_key:
+        production = settings.environment.strip().casefold() == "production"
+        if production and not production_api_key_is_secure():
             return JSONResponse(
                 status_code=503,
-                content={"detail": "Production API authentication is not configured"},
+                content={"detail": "Production API authentication is not securely configured"},
             )
         if settings.api_key:
             supplied = request.headers.get("Authorization", "")
@@ -146,6 +151,9 @@ class ApprovalItemResponse(BaseModel):
     decided_at: str | None = None
     decided_by: str | None = None
     decision_reason: str | None = None
+    execution_claimed_at: str | None = None
+    execution_claimed_by: str | None = None
+    execution_error: str | None = None
     executed_at: str | None = None
 
 
@@ -176,6 +184,9 @@ def _approval_item(request: ActionRequest) -> ApprovalItemResponse:
         decided_at=request.decided_at,
         decided_by=request.decided_by,
         decision_reason=request.decision_reason,
+        execution_claimed_at=request.execution_claimed_at,
+        execution_claimed_by=request.execution_claimed_by,
+        execution_error=request.execution_error,
         executed_at=request.executed_at,
     )
 
@@ -314,8 +325,6 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
     analysis = _analyze(request.text, request.task, request.matter_type)
     if request.matter_id and matter_store.get(request.matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
-    # Analysis output is advisory. Candidate deadlines/facts are returned to the lawyer but
-    # never persisted here; record mutation belongs behind the explicit approval/execution gate.
     return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
 
 

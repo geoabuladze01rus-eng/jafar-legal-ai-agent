@@ -30,6 +30,26 @@ def production_api_key_is_secure() -> bool:
     return len(api_key) >= 24 and api_key.casefold() not in placeholders
 
 
+def _validate_production_scale_security() -> None:
+    if not settings.ai_cost_control_enabled:
+        raise RuntimeError("Production requires AI cost control")
+    if not (settings.ai_pricing_json or "").strip():
+        raise RuntimeError("Production AI cost control requires AI_PRICING_JSON")
+    limits = {
+        "AI_COST_PER_REQUEST_USD": settings.ai_cost_per_request_usd,
+        "AI_COST_USER_DAILY_USD": settings.ai_cost_user_daily_usd,
+        "AI_COST_USER_MONTHLY_USD": settings.ai_cost_user_monthly_usd,
+        "AI_COST_GLOBAL_DAILY_USD": settings.ai_cost_global_daily_usd,
+    }
+    for name, value in limits.items():
+        if value is None or value <= 0:
+            raise RuntimeError(f"Production requires positive {name}")
+    if settings.ai_queue_backend.strip().casefold() != "supabase":
+        raise RuntimeError("Production requires durable Supabase AI queue")
+    if not 1 <= settings.ai_queue_worker_claim_limit <= 50:
+        raise RuntimeError("Production AI_QUEUE_WORKER_CLAIM_LIMIT must be between 1 and 50")
+
+
 def validate_runtime_security() -> None:
     if settings.environment.strip().casefold() != "production":
         return
@@ -40,6 +60,7 @@ def validate_runtime_security() -> None:
     if not (settings.lawyer_approver_id or "").strip():
         raise RuntimeError("Production requires LAWYER_APPROVER_ID for auditable decisions")
     validate_storage_security(settings)
+    _validate_production_scale_security()
 
 
 def _approval_identity() -> str:
@@ -67,7 +88,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.7", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.8", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -191,120 +212,38 @@ def _approval_item(request: ActionRequest) -> ApprovalItemResponse:
     )
 
 
-def _dashboard_snapshot() -> DashboardSnapshot:
-    pending = action_approval_store.pending()
-    approval_signals = tuple(
-        dashboard_service.approval_signal(
-            action_id=item.action_id,
-            action_type=item.action_type,
-            description=item.description,
-        )
-        for item in pending
-    )
-    return dashboard_service.snapshot(
-        pending_approvals=len(pending),
-        extra_signals=approval_signals,
-    )
-
-
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
 
 
+@app.post("/v1/matters", response_model=Matter)
+def create_matter(request: CreateMatterRequest) -> Matter:
+    matter = Matter(
+        id=str(uuid4()),
+        title=request.title,
+        matter_type=request.matter_type,
+        client_name=request.client_name,
+        opposing_party=request.opposing_party,
+        court_or_authority=request.court_or_authority,
+        case_number=request.case_number,
+    )
+    return matter_store.create_matter(matter)
+
+
+@app.get("/v1/matters", response_model=list[Matter])
+def list_matters() -> list[Matter]:
+    return matter_store.list_matters()
+
+
 @app.get("/v1/dashboard", response_model=DashboardSnapshot)
 def dashboard() -> DashboardSnapshot:
-    return _dashboard_snapshot()
-
-
-@app.get("/v1/approvals", response_model=list[ApprovalItemResponse])
-def approvals(state: ActionState | None = None) -> list[ApprovalItemResponse]:
-    actions = action_approval_store.all()
-    if state is not None:
-        actions = tuple(item for item in actions if item.state is state)
-    return [_approval_item(item) for item in actions]
-
-
-@app.post(
-    "/v1/approvals/{action_id}/approve",
-    response_model=ApprovalDecisionResponse,
-)
-def approve_action(
-    action_id: str,
-    request: ApprovalDecisionRequest,
-) -> ApprovalDecisionResponse:
-    action = action_approval_store.get(action_id)
-    if action is None:
-        raise HTTPException(status_code=404, detail="Approval action not found")
-    try:
-        result = action_approval_engine.approve(action, _approval_identity())
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Approval action not found") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return ApprovalDecisionResponse(
-        action_id=result["action_id"],
-        state=ActionState(result["state"]),
-        decided_by=str(result["approved_by"]),
-        decided_at=str(result["decided_at"]),
-    )
-
-
-@app.post(
-    "/v1/approvals/{action_id}/reject",
-    response_model=ApprovalDecisionResponse,
-)
-def reject_action(
-    action_id: str,
-    request: ApprovalDecisionRequest,
-) -> ApprovalDecisionResponse:
-    action = action_approval_store.get(action_id)
-    if action is None:
-        raise HTTPException(status_code=404, detail="Approval action not found")
-    reason = (request.reason or "").strip()
-    if not reason:
-        raise HTTPException(status_code=422, detail="Rejection reason is required")
-    try:
-        result = action_approval_engine.reject(action, _approval_identity(), reason)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Approval action not found") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return ApprovalDecisionResponse(
-        action_id=result["action_id"],
-        state=ActionState(result["state"]),
-        decided_by=str(result["rejected_by"]),
-        decided_at=str(result["decided_at"]),
-        reason=str(result["reason"]),
-    )
+    return dashboard_service.snapshot()
 
 
 @app.post("/v1/command", response_model=CommandResponse)
 def command(request: CommandRequest) -> CommandResponse:
-    normalized = " ".join(request.text.lower().split())
-
-    if "здоров" in normalized or "проверка связи" in normalized:
-        intent = "health"
-    elif any(
-        phrase in normalized
-        for phrase in ("покажи мои дела", "список дел", "мои дела")
-    ):
-        intent = "list_matters"
-    else:
-        return CommandResponse(
-            message=(
-                "Команда получена. Для выполнения действия требуется дальнейшая "
-                "маршрутизация intent."
-            ),
-            intent="natural_language_command",
-            request_id=str(uuid4()),
-        )
-
-    result = command_runtime.execute(intent)
+    result = command_runtime.execute(request.text)
     return CommandResponse(
         message=result.message,
         intent=result.intent,
@@ -314,95 +253,87 @@ def command(request: CommandRequest) -> CommandResponse:
     )
 
 
-def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
-    if openai_analyzer is not None:
-        return openai_analyzer.analyze(text=text, task=task, matter_type=matter_type)
-    return heuristic_analyzer.analyze(text, task, matter_type)
+@app.get("/v1/approvals", response_model=list[ApprovalItemResponse])
+def approvals() -> list[ApprovalItemResponse]:
+    return [_approval_item(item) for item in action_approval_store.list_all()]
+
+
+@app.post("/v1/approvals/{action_id}/approve", response_model=ApprovalDecisionResponse)
+def approve_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalDecisionResponse:
+    decided_by = _approval_identity()
+    try:
+        item = action_approval_engine.approve(
+            action_id,
+            decided_by=decided_by,
+            reason=request.reason,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ApprovalDecisionResponse(
+        action_id=item.action_id,
+        state=item.state,
+        decided_by=item.decided_by or decided_by,
+        decided_at=item.decided_at or datetime.now(timezone.utc).isoformat(),
+        reason=item.decision_reason,
+    )
+
+
+@app.post("/v1/approvals/{action_id}/reject", response_model=ApprovalDecisionResponse)
+def reject_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalDecisionResponse:
+    decided_by = _approval_identity()
+    try:
+        item = action_approval_engine.reject(
+            action_id,
+            decided_by=decided_by,
+            reason=request.reason,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ApprovalDecisionResponse(
+        action_id=item.action_id,
+        state=item.state,
+        decided_by=item.decided_by or decided_by,
+        decided_at=item.decided_at or datetime.now(timezone.utc).isoformat(),
+        reason=item.decision_reason,
+    )
 
 
 @app.post("/v1/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
-    analysis = _analyze(request.text, request.task, request.matter_type)
-    if request.matter_id and matter_store.get(request.matter_id) is None:
-        raise HTTPException(status_code=404, detail="Matter not found")
-    return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
+    if request.matter_id:
+        try:
+            matter_store.get_matter(request.matter_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Matter not found") from exc
+    analyzer = openai_analyzer or heuristic_analyzer
+    response = analyzer.analyze(request)
+    return response.model_copy(
+        update={"persisted": False, "requires_approval_to_persist": True}
+    )
 
 
-@app.post("/v1/documents/analyze", response_model=AnalysisResponse)
+@app.post("/v1/documents/analyze")
 async def analyze_document(
     file: UploadFile = File(...),
-    task: str = "legal_analysis",
-    matter_type: MatterType = MatterType.GENERAL,
     matter_id: str | None = None,
-) -> AnalysisResponse:
+    task: DocumentTask = DocumentTask.GENERAL_ANALYSIS,
+):
+    if matter_id:
+        try:
+            matter_store.get_matter(matter_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Matter not found") from exc
+
     try:
-        content = await file.read(document_extractor.MAX_BYTES + 1)
-        extracted = document_extractor.extract(
-            filename=file.filename or "document",
-            content=content,
-            media_type=file.content_type,
-        )
+        document = await document_extractor.extract_upload(file)
+        result = document_workflow.analyze_document(document, matter_id=matter_id, task=task)
     except DocumentExtractionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    try:
-        document_task = DocumentTask(task)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Unsupported analysis task") from exc
-
-    if matter_id and matter_store.get(matter_id) is None:
-        raise HTTPException(status_code=404, detail="Matter not found")
-
-    if openai_analyzer is not None:
-        analysis = openai_analyzer.analyze(
-            text=extracted,
-            task=document_task,
-            matter_type=matter_type,
-        )
-        return AnalysisResponse(analysis=analysis, matter_id=matter_id)
-
-    result = document_workflow.process(
-        file.filename or "document",
-        extracted,
-        document_task,
-        matter_type,
-    )
-    matched_matter_id = result.match.matter_id if result.match else matter_id
-    return AnalysisResponse(analysis=result.analysis, matter_id=matched_matter_id)
-
-
-@app.post("/v1/matters", response_model=Matter, status_code=201)
-def create_matter(request: CreateMatterRequest) -> Matter:
-    now = datetime.now(timezone.utc)
-    matter = Matter(
-        id=str(uuid4()),
-        title=request.title,
-        matter_type=request.matter_type,
-        client_name=request.client_name,
-        opposing_party=request.opposing_party,
-        court_or_authority=request.court_or_authority,
-        case_number=request.case_number,
-        created_at=now,
-        updated_at=now,
-    )
-    return matter_store.create(matter)
-
-
-@app.get("/v1/matters", response_model=list[Matter])
-def list_matters() -> list[Matter]:
-    return matter_store.list_matters()
-
-
-@app.get("/v1/matters/{matter_id}", response_model=Matter)
-def get_matter(matter_id: str) -> Matter:
-    matter = matter_store.get(matter_id)
-    if matter is None:
-        raise HTTPException(status_code=404, detail="Matter not found")
-    return matter
-
-
-@app.get("/v1/matters/{matter_id}/events")
-def get_matter_events(matter_id: str):
-    if matter_store.get(matter_id) is None:
-        raise HTTPException(status_code=404, detail="Matter not found")
-    return matter_store.events(matter_id)
+    return {
+        "document": document.model_dump(),
+        "analysis": result.analysis.model_dump(),
+        "event": None,
+        "persisted": False,
+        "requires_approval_to_persist": True,
+    }

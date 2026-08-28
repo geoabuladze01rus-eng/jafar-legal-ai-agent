@@ -69,6 +69,14 @@ When prosecution and defense items share a topic, Jafar creates a `TheoryConflic
 
 A defense counter-position can be marked as challenging a prosecution proposition when it is source-backed, but the view never declares a winner and never treats a side label as proof. Neutral or uncertain issues remain outside both advocacy views until a lawyer classifies them.
 
+## Prosecution attack surface
+
+`ProsecutionAttackSurfaceEngine` ranks prosecution propositions for lawyer review using transparent, additive vulnerability signals. The score is a triage score only; it is not a probability of acquittal, a finding of inadmissibility or a conclusion that the prosecution thesis is false.
+
+Signals include a supported contradiction, unresolved timeline review, missing provenance, reliance on a single concrete source, lack of independent-document confirmation, dependence on one actor and the presence of a source-backed defense counter-proposition. Each ranked item preserves both prosecution and defense source trails and produces suggested review focus such as checking independent corroboration or reconciling chronology.
+
+High scores identify places where a defense lawyer should spend attention first. They do not authorize Jafar to draft or file a procedural attack without lawyer review.
+
 ## Confidentiality
 
 The default policy is fail-closed: confidential requests are restricted to explicitly trusted providers. Adding a provider to confidential processing is a deployment decision and requires review of data residency, retention, contractual terms and professional-secrecy requirements.
@@ -87,5 +95,6 @@ The default policy is fail-closed: confidential requests are restricted to expli
 - Unreferenced timeline assertions must not produce contradiction signals.
 - Case-theory statuses must preserve source references and must never be presented as truth findings.
 - Prosecution/defense views must use the same evidence graph, preserve both source trails and never declare an automatic winner.
+- Attack-surface ranking must be explainable from explicit vulnerability signals and must not be presented as a legal conclusion or outcome probability.
 - Unsupported claims, malformed output and invalid source references require human review.
 - Sending email, modifying records, publishing, filing or scheduling remains behind Jafar's action-approval layer.

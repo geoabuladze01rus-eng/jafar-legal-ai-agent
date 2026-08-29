@@ -18,6 +18,7 @@ class SupabaseCostLedger(CostLedgerRepository):
 
     TABLE = "ai_usage_costs"
     SPEND_RPC = "ai_spend_for_owner"
+    MATTER_SPEND_RPC = "ai_spend_for_matter_for_owner"
 
     def __init__(self, client: SupabaseClient, owner_user_id: str) -> None:
         owner = owner_user_id.strip()
@@ -52,6 +53,22 @@ class SupabaseCostLedger(CostLedgerRepository):
     def spend_for_user(self, user_id: str, *, since: datetime) -> Decimal:
         return self._spend(since=since, user_id=user_id)
 
+    def spend_for_matter(self, matter_id: str, *, since: datetime) -> Decimal:
+        if since.tzinfo is None:
+            raise ValueError("since_must_be_timezone_aware")
+        normalized_matter = matter_id.strip()
+        if not normalized_matter:
+            raise ValueError("matter_id_required")
+        response = self.client.rpc(
+            self.MATTER_SPEND_RPC,
+            {
+                "p_owner_user_id": self.owner_user_id,
+                "p_matter_id": normalized_matter,
+                "p_since": since.isoformat(),
+            },
+        ).execute()
+        return _decimal_response(response.data, self.MATTER_SPEND_RPC)
+
     def spend_global(self, *, since: datetime) -> Decimal:
         return self._spend(since=since, user_id=None)
 
@@ -66,14 +83,7 @@ class SupabaseCostLedger(CostLedgerRepository):
                 "p_since": since.isoformat(),
             },
         ).execute()
-        value = response.data
-        if isinstance(value, list):
-            value = value[0] if value else 0
-            if isinstance(value, dict):
-                value = value.get("ai_spend_for_owner", 0)
-        if isinstance(value, dict):
-            value = value.get("ai_spend_for_owner", 0)
-        return Decimal(str(value or 0))
+        return _decimal_response(response.data, self.SPEND_RPC)
 
     def _request_exists(self, request_id: str) -> bool:
         response = (
@@ -85,3 +95,13 @@ class SupabaseCostLedger(CostLedgerRepository):
             .execute()
         )
         return bool(response.data)
+
+
+def _decimal_response(value: Any, rpc_name: str) -> Decimal:
+    if isinstance(value, list):
+        value = value[0] if value else 0
+        if isinstance(value, dict):
+            value = value.get(rpc_name, 0)
+    if isinstance(value, dict):
+        value = value.get(rpc_name, 0)
+    return Decimal(str(value or 0))

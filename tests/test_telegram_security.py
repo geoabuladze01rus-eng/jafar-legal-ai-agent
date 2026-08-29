@@ -49,24 +49,26 @@ def test_live_send_requires_token_and_allowlist() -> None:
 
 def test_enabled_polling_and_scheduler_require_bot_token() -> None:
     with pytest.raises(RuntimeError, match="POLLING_ENABLED"):
-        validate_telegram_settings(_settings(telegram_polling_enabled=True))
+        validate_telegram_settings(
+            _settings(telegram_polling_enabled=True, telegram_allowed_chat_ids="-1001")
+        )
     with pytest.raises(RuntimeError, match="SCHEDULER_ENABLED"):
-        validate_telegram_settings(_settings(telegram_scheduler_enabled=True))
+        validate_telegram_settings(
+            _settings(telegram_scheduler_enabled=True, telegram_allowed_chat_ids="-1001")
+        )
 
 
-def test_production_enabled_telegram_workers_require_allowlist() -> None:
-    with pytest.raises(RuntimeError, match="polling requires TELEGRAM_ALLOWED_CHAT_IDS"):
+def test_enabled_telegram_workers_require_allowlist_even_outside_production() -> None:
+    with pytest.raises(RuntimeError, match="POLLING_ENABLED requires TELEGRAM_ALLOWED_CHAT_IDS"):
         validate_telegram_settings(
             _settings(
-                environment="production",
                 telegram_bot_token="token",
                 telegram_polling_enabled=True,
             )
         )
-    with pytest.raises(RuntimeError, match="scheduler requires TELEGRAM_ALLOWED_CHAT_IDS"):
+    with pytest.raises(RuntimeError, match="SCHEDULER_ENABLED requires TELEGRAM_ALLOWED_CHAT_IDS"):
         validate_telegram_settings(
             _settings(
-                environment="production",
                 telegram_bot_token="token",
                 telegram_scheduler_enabled=True,
             )

@@ -15,27 +15,27 @@ class RiskLevel(StrEnum):
 
 
 class Deadline(BaseModel):
-    title: str = Field(min_length=1, max_length=1000)
+    title: str
     due_date: date | None = None
-    source_text: str | None = Field(default=None, max_length=20_000)
+    source_text: str | None = None
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class LegalIssue(BaseModel):
-    title: str = Field(min_length=1, max_length=1000)
-    description: str = Field(max_length=20_000)
+    title: str
+    description: str
     risk: RiskLevel = RiskLevel.UNKNOWN
-    source_text: str | None = Field(default=None, max_length=20_000)
+    source_text: str | None = None
 
 
 class LegalAnalysis(BaseModel):
     task: DocumentTask
     matter_type: MatterType
-    summary: str = Field(max_length=50_000)
-    issues: list[LegalIssue] = Field(default_factory=list, max_length=500)
-    deadlines: list[Deadline] = Field(default_factory=list, max_length=500)
-    key_facts: list[str] = Field(default_factory=list, max_length=1000)
-    missing_information: list[str] = Field(default_factory=list, max_length=1000)
+    summary: str
+    issues: list[LegalIssue] = Field(default_factory=list)
+    deadlines: list[Deadline] = Field(default_factory=list)
+    key_facts: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -49,19 +49,19 @@ class Matter(BaseModel):
     court_or_authority: str | None = Field(default=None, max_length=1000)
     case_number: str | None = Field(default=None, max_length=500)
     status: str = Field(default="active", min_length=1, max_length=100)
-    deadlines: list[Deadline] = Field(default_factory=list, max_length=1000)
+    deadlines: list[Deadline] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
 
 class MatterEvent(BaseModel):
-    id: str = Field(min_length=1, max_length=200)
-    matter_id: str = Field(min_length=1, max_length=200)
-    title: str = Field(min_length=1, max_length=1000)
+    id: str
+    matter_id: str
+    title: str
     event_date: datetime
-    description: str | None = Field(default=None, max_length=20_000)
-    source_document: str | None = Field(default=None, max_length=2000)
-    document_fingerprint: str | None = Field(default=None, max_length=200)
+    description: str | None = None
+    source_document: str | None = None
+    document_fingerprint: str | None = None
     created_at: datetime
 
 

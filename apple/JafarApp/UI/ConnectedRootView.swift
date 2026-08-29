@@ -14,7 +14,7 @@ struct ConnectedRootView: View {
             if let signal = dashboard.snapshot.signals.first {
                 urgentSignalStrip(signal)
             }
-            ContentView()
+            JusticeWorkspaceView(dashboard: dashboard)
         }
         .background(JafarPalette.background)
         .task {

@@ -15,7 +15,7 @@ class FakeWorkflow:
 def test_processor_persists_original_and_exposes_fingerprint():
     storage = InMemoryAttachmentStorage()
     processor = InboxProcessor(InboxDocumentIntake(), FakeWorkflow(), storage)
-    attachment = InboxAttachment("order.pdf", b"legal-original", "application/pdf")
+    attachment = InboxAttachment("order.txt", b"legal-original", "text/plain")
     message = InboxMessage(
         message_id="msg-storage-test",
         sender="client@example.test",
@@ -30,6 +30,6 @@ def test_processor_persists_original_and_exposes_fingerprint():
     assert not result.issues
     assert len(result.documents) == 1
     document = result.documents[0]
-    assert document.storage_path == "msg-storage-test/order.pdf"
+    assert document.storage_path == "msg-storage-test/order.txt"
     assert document.fingerprint
-    assert storage.files[document.storage_path] == (b"legal-original", "application/pdf")
+    assert storage.files[document.storage_path] == (b"legal-original", "text/plain")

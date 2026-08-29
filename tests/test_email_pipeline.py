@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.document_workflow import DocumentWorkflowResult
 from jafar.email_pipeline import EmailPipeline
 from jafar.email_processing import EmailProcessor
@@ -76,7 +77,7 @@ def test_neutral_message_with_docx_attachment_is_legal():
 
 def test_pipeline_processes_multiple_supported_attachments():
     workflow = StubWorkflow()
-    inbox = InboxProcessor(InboxDocumentIntake(), workflow)
+    inbox = InboxProcessor(InboxDocumentIntake(), workflow, InMemoryAttachmentStorage())
     pipeline = EmailPipeline(EmailProcessor(), inbox)
     msg = message(
         attachments=(
@@ -94,7 +95,7 @@ def test_pipeline_processes_multiple_supported_attachments():
 
 def test_pipeline_ignores_unsupported_attachment_without_aborting_message():
     workflow = StubWorkflow()
-    inbox = InboxProcessor(InboxDocumentIntake(), workflow)
+    inbox = InboxProcessor(InboxDocumentIntake(), workflow, InMemoryAttachmentStorage())
     pipeline = EmailPipeline(EmailProcessor(), inbox)
     msg = message(
         attachments=(

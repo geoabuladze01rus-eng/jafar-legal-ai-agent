@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     ai_cost_per_request_usd: Decimal | None = None
     ai_cost_user_daily_usd: Decimal | None = None
     ai_cost_user_monthly_usd: Decimal | None = None
+    ai_cost_matter_daily_usd: Decimal | None = None
+    ai_cost_matter_monthly_usd: Decimal | None = None
     ai_cost_global_daily_usd: Decimal | None = None
     ai_queue_backend: str = "memory"
     ai_queue_max_size: int = 1000

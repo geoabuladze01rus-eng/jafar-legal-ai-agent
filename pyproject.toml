@@ -24,6 +24,12 @@ line-length = 100
 [tool.hatch.build.targets.wheel]
 packages = ["src/jafar"]
 
+[tool.pytest.ini_options]
+markers = [
+  "staging_smoke: opt-in staging contract checks (run with pytest tests/staging -m staging_smoke)",
+]
+norecursedirs = ["tests/staging"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

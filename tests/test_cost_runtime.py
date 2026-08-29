@@ -29,6 +29,8 @@ def valid_production_settings(**overrides) -> Settings:
         "ai_cost_per_request_usd": Decimal("0.50"),
         "ai_cost_user_daily_usd": Decimal("5.00"),
         "ai_cost_user_monthly_usd": Decimal("100.00"),
+        "ai_cost_matter_daily_usd": Decimal("10.00"),
+        "ai_cost_matter_monthly_usd": Decimal("200.00"),
         "ai_cost_global_daily_usd": Decimal("500.00"),
         "ai_queue_worker_claim_limit": 5,
     }
@@ -83,6 +85,7 @@ def test_development_cost_runtime_uses_in_memory_ledger_limits_and_local_pricing
             ai_pricing_json='{"openai":{"*":{"input":"1","output":"4"}}}',
             ai_cost_per_request_usd=Decimal("0.25"),
             ai_cost_user_daily_usd=Decimal("2.00"),
+            ai_cost_matter_daily_usd=Decimal("3.00"),
         )
     )
 
@@ -91,6 +94,7 @@ def test_development_cost_runtime_uses_in_memory_ledger_limits_and_local_pricing
     assert isinstance(control.ledger, CostLedger)
     assert control.limits.per_request_usd == Decimal("0.25")
     assert control.limits.per_user_daily_usd == Decimal("2.00")
+    assert control.limits.per_matter_daily_usd == Decimal("3.00")
     assert control.pricing_version == "local-unversioned"
     assert runtime.reservations is None
 
@@ -110,6 +114,8 @@ def test_production_cost_runtime_shares_one_server_client_for_ledger_and_reserva
     assert runtime.reservations.client is client
     assert runtime.control.ledger.owner_user_id == "owner-1"
     assert runtime.reservations.owner_user_id == "owner-1"
+    assert runtime.control.limits.per_matter_daily_usd == Decimal("10.00")
+    assert runtime.control.limits.per_matter_monthly_usd == Decimal("200.00")
 
 
 def test_production_cost_runtime_requires_persistent_storage() -> None:
@@ -137,6 +143,14 @@ def test_production_requires_every_positive_spend_ceiling() -> None:
         validate_production_ai_scale(
             valid_production_settings(ai_cost_per_request_usd=Decimal("0"))
         )
+    with pytest.raises(RuntimeError, match="AI_COST_MATTER_DAILY_USD"):
+        validate_production_ai_scale(
+            valid_production_settings(ai_cost_matter_daily_usd=None)
+        )
+    with pytest.raises(RuntimeError, match="AI_COST_MATTER_MONTHLY_USD"):
+        validate_production_ai_scale(
+            valid_production_settings(ai_cost_matter_monthly_usd=None)
+        )
 
 
 def test_production_rejects_incoherent_spend_hierarchy() -> None:
@@ -147,11 +161,26 @@ def test_production_rejects_incoherent_spend_hierarchy() -> None:
                 ai_cost_user_daily_usd=Decimal("5"),
             )
         )
-    with pytest.raises(RuntimeError, match="monthly ceiling"):
+    with pytest.raises(RuntimeError, match="per-matter daily"):
+        validate_production_ai_scale(
+            valid_production_settings(
+                ai_cost_per_request_usd=Decimal("11"),
+                ai_cost_user_daily_usd=Decimal("20"),
+                ai_cost_matter_daily_usd=Decimal("10"),
+            )
+        )
+    with pytest.raises(RuntimeError, match="Per-user daily AI ceiling"):
         validate_production_ai_scale(
             valid_production_settings(
                 ai_cost_user_daily_usd=Decimal("5"),
                 ai_cost_user_monthly_usd=Decimal("4"),
+            )
+        )
+    with pytest.raises(RuntimeError, match="Per-matter daily AI ceiling"):
+        validate_production_ai_scale(
+            valid_production_settings(
+                ai_cost_matter_daily_usd=Decimal("10"),
+                ai_cost_matter_monthly_usd=Decimal("9"),
             )
         )
     with pytest.raises(RuntimeError, match="global daily ceiling"):

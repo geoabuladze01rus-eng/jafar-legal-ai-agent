@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import os
 import stat
 from datetime import timedelta
@@ -252,8 +254,9 @@ def test_poll_validation_matches_bot_api_10_contract() -> None:
         )
 
 
-def test_poll_store_normalizes_results_and_answers(tmp_path) -> None:
-    store = TelegramPollStore(tmp_path / "telegram.sqlite3")
+def test_poll_store_pseudonymizes_results_and_answers(tmp_path) -> None:
+    secret = "poll-identity-secret-that-is-long-enough"
+    store = TelegramPollStore(tmp_path / "telegram.sqlite3", identity_secret=secret)
     store.record_sent(
         poll={"id": "poll-1", "question": "Q", "options": []},
         chat_id="-1001",
@@ -273,12 +276,30 @@ def test_poll_store_normalizes_results_and_answers(tmp_path) -> None:
         {"poll_answer": {"poll_id": "poll-1", "user": {"id": 7}, "option_ids": [0]}}
     )
     result = store.results("poll-1")
+    expected = hmac.new(secret.encode(), b"user:7", hashlib.sha256).hexdigest()
     assert result["poll"]["total_voter_count"] == 1
-    assert result["answers"] == [{"user_id": "7", "option_ids": [0]}]
+    assert result["answers"] == [{"voter_key": expected, "option_ids": [0]}]
+    assert "7" not in str(result["answers"])
+
+
+def test_poll_store_drops_individual_identity_without_secret(tmp_path) -> None:
+    store = TelegramPollStore(tmp_path / "telegram.sqlite3")
+    store.record_sent(
+        poll={"id": "poll-1", "question": "Q", "options": []},
+        chat_id="-1001",
+        message_id=1,
+    )
+    assert store.ingest_update(
+        {"poll_answer": {"poll_id": "poll-1", "user": {"id": 7}, "option_ids": [0]}}
+    )
+    assert store.results("poll-1")["answers"] == []
 
 
 def test_poll_store_ignores_answers_for_unknown_poll(tmp_path) -> None:
-    store = TelegramPollStore(tmp_path / "telegram.sqlite3")
+    store = TelegramPollStore(
+        tmp_path / "telegram.sqlite3",
+        identity_secret="poll-identity-secret-that-is-long-enough",
+    )
     assert not store.ingest_update(
         {"poll_answer": {"poll_id": "unknown", "user": {"id": 7}, "option_ids": [0]}}
     )

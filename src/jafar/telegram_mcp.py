@@ -34,7 +34,6 @@ from jafar.telegram_scheduler import (
     parse_schedule_time,
 )
 
-
 _LOCAL_MCP_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _MCP_TOKEN_PLACEHOLDERS = {"replace-me", "changeme", "change-me", "secret"}
 

@@ -71,3 +71,24 @@ def test_production_enabled_telegram_workers_require_allowlist() -> None:
                 telegram_scheduler_enabled=True,
             )
         )
+
+
+def test_production_polling_requires_strong_pseudonym_secret() -> None:
+    base = {
+        "environment": "production",
+        "telegram_bot_token": "token",
+        "telegram_allowed_chat_ids": "-1001",
+        "telegram_polling_enabled": True,
+    }
+    for value in (None, "secret", "short"):
+        with pytest.raises(RuntimeError, match="POLL_IDENTITY_SECRET"):
+            validate_telegram_settings(
+                _settings(**base, telegram_poll_identity_secret=value)
+            )
+
+    validate_telegram_settings(
+        _settings(
+            **base,
+            telegram_poll_identity_secret="random-poll-hmac-key-with-at-least-32-chars",
+        )
+    )

@@ -10,6 +10,10 @@ from .privacy_policy import ProviderPrivacyPolicy
 from .supabase_cost_reservations import CostReservationRepository
 
 
+class ModelControlError(RuntimeError):
+    """A privacy/cost/control decision blocked dispatch and must never trigger provider fallback."""
+
+
 class ProviderDispatchUncertainError(RuntimeError):
     """The external provider may have received/billed the request.
 
@@ -81,8 +85,11 @@ class ModelRouter:
         )
         primary = self._preferred_provider(request)
 
-        if primary not in allowed or not self._available(primary):
-            primary = self._first_available(
+        # Provider availability can select another provider. Cost-control kill switches cannot:
+        # those are explicit policy stops and must fail closed at dispatch instead of silently
+        # changing where confidential legal material is sent.
+        if primary not in allowed or not self._provider_available(primary):
+            primary = self._first_provider_available(
                 tuple(key for key in self.PROVIDER_ORDER if key in allowed)
             )
             if primary is None:
@@ -90,7 +97,7 @@ class ModelRouter:
 
         verifier = None
         if request.verification:
-            verifier = self._first_available(
+            verifier = self._first_provider_available(
                 tuple(
                     key
                     for key in self.VERIFIER_ORDER
@@ -119,7 +126,7 @@ class ModelRouter:
                         meter_role="verifier",
                     )
                 )
-            except ProviderDispatchUncertainError:
+            except (ModelControlError, ProviderDispatchUncertainError):
                 raise
             except Exception as exc:
                 raise RuntimeError(
@@ -150,11 +157,11 @@ class ModelRouter:
         candidates = (primary,) + tuple(
             key
             for key in self.PROVIDER_ORDER
-            if key != primary and key in allowed and self._available(key)
+            if key != primary and key in allowed and self._provider_available(key)
         )
         last_error: Exception | None = None
         for key in candidates:
-            if not self._available(key):
+            if not self._provider_available(key):
                 continue
             try:
                 response = self._complete_provider(request, key, meter_role="primary")
@@ -163,13 +170,12 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
-            except ProviderDispatchUncertainError:
-                # Once provider dispatch may have started, replaying is not economically or
-                # semantically safe. Keep the reservation held and surface reconciliation.
+            except (ModelControlError, ProviderDispatchUncertainError):
+                # Policy/accounting failures are not provider-availability signals. Retrying a
+                # different provider would bypass the lawyer's spend/privacy/control boundary.
                 raise
-            except Exception as exc:
-                # Only failures that happen before the provider call reaches the dispatch boundary
-                # are eligible for fallback (configuration, budget, disabled provider, etc.).
+            except (RuntimeError, OSError) as exc:
+                # Only provider/runtime failures known to be fallback-eligible reach this branch.
                 last_error = exc
         raise RuntimeError("All permitted AI providers failed before dispatch") from last_error
 
@@ -181,24 +187,27 @@ class ModelRouter:
         meter_role: str,
     ) -> ModelResponse:
         if self.cost_control is not None and not self.cost_control.provider_enabled(provider_key):
-            raise RuntimeError(f"Provider {provider_key!r} is disabled by scale control")
+            raise ModelControlError(f"Provider {provider_key!r} is disabled by scale control")
 
         context = self._meter_context(request, role=meter_role, provider=provider_key)
         reservation_id: str | None = None
         if self.cost_control is not None:
             if context is None:
-                raise RuntimeError("usage_context_required")
+                raise ModelControlError("usage_context_required")
             estimate = request.estimated_cost_usd
             if estimate is None:
-                raise RuntimeError("cost_estimate_required")
-            self.cost_control.preflight(context, estimated_cost_usd=estimate)
-            if self.cost_reservations is not None:
-                reservation = self.cost_reservations.reserve(
-                    context=context,
-                    estimated_cost_usd=estimate,
-                    limits=self.cost_control.limits,
-                )
-                reservation_id = reservation.reservation_id
+                raise ModelControlError("cost_estimate_required")
+            try:
+                self.cost_control.preflight(context, estimated_cost_usd=estimate)
+                if self.cost_reservations is not None:
+                    reservation = self.cost_reservations.reserve(
+                        context=context,
+                        estimated_cost_usd=estimate,
+                        limits=self.cost_control.limits,
+                    )
+                    reservation_id = reservation.reservation_id
+            except Exception as exc:
+                raise ModelControlError("model_cost_control_blocked") from exc
 
         # From this point forward the request is entering an external provider boundary. An
         # exception cannot prove that no provider-side work or billing occurred, so reservation
@@ -219,12 +228,13 @@ class ModelRouter:
                     model=response.model,
                     metadata=response.metadata,
                 )
+                if reservation_id is not None:
+                    assert self.cost_reservations is not None
+                    self.cost_reservations.settle(reservation_id)
             except Exception as exc:
                 raise ProviderDispatchUncertainError(
                     f"Provider {provider_key!r} completed but accounting outcome is uncertain"
                 ) from exc
-            if reservation_id is not None:
-                self.cost_reservations.settle(reservation_id)
         return response
 
     @staticmethod
@@ -244,11 +254,9 @@ class ModelRouter:
             matter_id=base.matter_id,
         )
 
-    def _available(self, key: str) -> bool:
+    def _provider_available(self, key: str) -> bool:
         provider = self.providers.get(key)
-        if provider is None or not provider.available():
-            return False
-        return self.cost_control is None or self.cost_control.provider_enabled(key)
+        return provider is not None and provider.available()
 
-    def _first_available(self, keys: tuple[str, ...]) -> str | None:
-        return next((key for key in keys if self._available(key)), None)
+    def _first_provider_available(self, keys: tuple[str, ...]) -> str | None:
+        return next((key for key in keys if self._provider_available(key)), None)

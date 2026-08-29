@@ -50,6 +50,8 @@ def validate_production_ai_scale(settings: Settings) -> None:
         "AI_COST_PER_REQUEST_USD": settings.ai_cost_per_request_usd,
         "AI_COST_USER_DAILY_USD": settings.ai_cost_user_daily_usd,
         "AI_COST_USER_MONTHLY_USD": settings.ai_cost_user_monthly_usd,
+        "AI_COST_MATTER_DAILY_USD": settings.ai_cost_matter_daily_usd,
+        "AI_COST_MATTER_MONTHLY_USD": settings.ai_cost_matter_monthly_usd,
         "AI_COST_GLOBAL_DAILY_USD": settings.ai_cost_global_daily_usd,
     }
     missing = [name for name, value in ceilings.items() if value is None or value <= 0]
@@ -60,10 +62,16 @@ def validate_production_ai_scale(settings: Settings) -> None:
 
     if settings.ai_cost_per_request_usd > settings.ai_cost_user_daily_usd:
         raise RuntimeError("Per-request AI ceiling cannot exceed per-user daily ceiling")
+    if settings.ai_cost_per_request_usd > settings.ai_cost_matter_daily_usd:
+        raise RuntimeError("Per-request AI ceiling cannot exceed per-matter daily ceiling")
     if settings.ai_cost_user_daily_usd > settings.ai_cost_user_monthly_usd:
         raise RuntimeError("Per-user daily AI ceiling cannot exceed per-user monthly ceiling")
+    if settings.ai_cost_matter_daily_usd > settings.ai_cost_matter_monthly_usd:
+        raise RuntimeError("Per-matter daily AI ceiling cannot exceed per-matter monthly ceiling")
     if settings.ai_cost_user_daily_usd > settings.ai_cost_global_daily_usd:
         raise RuntimeError("Per-user daily AI ceiling cannot exceed global daily ceiling")
+    if settings.ai_cost_matter_daily_usd > settings.ai_cost_global_daily_usd:
+        raise RuntimeError("Per-matter daily AI ceiling cannot exceed global daily ceiling")
 
     if settings.ai_queue_worker_claim_limit <= 0 or settings.ai_queue_worker_claim_limit > 50:
         raise RuntimeError("Production AI queue worker claim limit must be between 1 and 50")
@@ -87,6 +95,8 @@ def _limits(settings: Settings) -> BudgetLimits:
         per_request_usd=settings.ai_cost_per_request_usd,
         per_user_daily_usd=settings.ai_cost_user_daily_usd,
         per_user_monthly_usd=settings.ai_cost_user_monthly_usd,
+        per_matter_daily_usd=settings.ai_cost_matter_daily_usd,
+        per_matter_monthly_usd=settings.ai_cost_matter_monthly_usd,
         global_daily_usd=settings.ai_cost_global_daily_usd,
     )
 

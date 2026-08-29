@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -12,6 +13,19 @@ from .supabase_cost_reservations import (
     CostReservationRepository,
     SupabaseCostReservationRepository,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class CostRuntime:
+    """Single composition boundary for metering and atomic spend reservation.
+
+    Production callers should construct this object once and pass both members to every
+    ModelRouter / AI Council instance. This prevents a configuration drift where metering is
+    enabled but the cross-process reservation gate is accidentally omitted.
+    """
+
+    control: CostScaleControl | None
+    reservations: CostReservationRepository | None
 
 
 def validate_production_ai_scale(settings: Settings) -> None:
@@ -68,45 +82,66 @@ def _server_supabase() -> tuple[object, str]:
     return client, owner_user_id
 
 
-def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
-    if settings.environment.strip().casefold() == "production":
-        validate_production_ai_scale(settings)
-    if not settings.ai_cost_control_enabled:
-        return None
-
-    pricing = parse_pricing_catalog(settings.ai_pricing_json)
-    limits = BudgetLimits(
+def _limits(settings: Settings) -> BudgetLimits:
+    return BudgetLimits(
         per_request_usd=settings.ai_cost_per_request_usd,
         per_user_daily_usd=settings.ai_cost_user_daily_usd,
         per_user_monthly_usd=settings.ai_cost_user_monthly_usd,
         global_daily_usd=settings.ai_cost_global_daily_usd,
     )
 
-    if settings.environment.strip().casefold() == "production":
-        client, owner_user_id = _server_supabase()
-        ledger = SupabaseCostLedger(client, owner_user_id)
-    else:
-        ledger = CostLedger()
 
+def _control(
+    settings: Settings,
+    *,
+    ledger: CostLedger | SupabaseCostLedger,
+) -> CostScaleControl:
     return CostScaleControl(
-        pricing=pricing,
+        pricing=parse_pricing_catalog(settings.ai_pricing_json),
         ledger=ledger,
-        limits=limits,
+        limits=_limits(settings),
         fail_closed_on_missing_pricing=True,
         pricing_version=(settings.ai_pricing_version or "local-unversioned").strip(),
     )
 
 
-def build_cost_reservations(settings: Settings) -> CostReservationRepository | None:
-    """Use cross-process atomic reservations in production; local development stays lightweight."""
+def build_cost_runtime(settings: Settings) -> CostRuntime:
+    """Build the complete cost boundary, sharing one Supabase server client in production."""
 
+    production = settings.environment.strip().casefold() == "production"
+    if production:
+        validate_production_ai_scale(settings)
     if not settings.ai_cost_control_enabled:
-        return None
-    if settings.environment.strip().casefold() != "production":
-        return None
-    validate_production_ai_scale(settings)
-    client, owner_user_id = _server_supabase()
-    return SupabaseCostReservationRepository(client, owner_user_id)
+        return CostRuntime(control=None, reservations=None)
+
+    if production:
+        client, owner_user_id = _server_supabase()
+        control = _control(
+            settings,
+            ledger=SupabaseCostLedger(client, owner_user_id),
+        )
+        reservations: CostReservationRepository | None = SupabaseCostReservationRepository(
+            client,
+            owner_user_id,
+        )
+        return CostRuntime(control=control, reservations=reservations)
+
+    return CostRuntime(
+        control=_control(settings, ledger=CostLedger()),
+        reservations=None,
+    )
+
+
+def build_cost_scale_control(settings: Settings) -> CostScaleControl | None:
+    """Compatibility accessor; new composition code should prefer ``build_cost_runtime``."""
+
+    return build_cost_runtime(settings).control
+
+
+def build_cost_reservations(settings: Settings) -> CostReservationRepository | None:
+    """Compatibility accessor; new composition code should prefer ``build_cost_runtime``."""
+
+    return build_cost_runtime(settings).reservations
 
 
 def parse_pricing_catalog(raw: str | None) -> dict[tuple[str, str], ProviderPricing]:

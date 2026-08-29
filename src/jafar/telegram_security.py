@@ -3,6 +3,9 @@ from __future__ import annotations
 from .config import Settings
 
 
+_SECRET_PLACEHOLDERS = {"replace-me", "changeme", "change-me", "secret"}
+
+
 def configured_chat_ids(settings: Settings) -> tuple[str, ...]:
     return tuple(
         sorted({part.strip() for part in settings.telegram_allowed_chat_ids.split(",") if part.strip()})
@@ -11,6 +14,11 @@ def configured_chat_ids(settings: Settings) -> tuple[str, ...]:
 
 def live_send_enabled(settings: Settings) -> bool:
     return bool(settings.telegram_production_send and not settings.telegram_dry_run)
+
+
+def _poll_identity_secret_is_secure(settings: Settings) -> bool:
+    value = (settings.telegram_poll_identity_secret or "").strip()
+    return len(value) >= 32 and value.casefold() not in _SECRET_PLACEHOLDERS
 
 
 def validate_telegram_settings(settings: Settings) -> None:
@@ -39,3 +47,7 @@ def validate_telegram_settings(settings: Settings) -> None:
             raise RuntimeError("Production Telegram polling requires TELEGRAM_ALLOWED_CHAT_IDS")
         if settings.telegram_scheduler_enabled and not allowed:
             raise RuntimeError("Production Telegram scheduler requires TELEGRAM_ALLOWED_CHAT_IDS")
+        if settings.telegram_polling_enabled and not _poll_identity_secret_is_secure(settings):
+            raise RuntimeError(
+                "Production Telegram polling requires TELEGRAM_POLL_IDENTITY_SECRET of at least 32 non-placeholder characters"
+            )

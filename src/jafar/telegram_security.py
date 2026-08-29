@@ -27,10 +27,16 @@ def validate_telegram_settings(settings: Settings) -> None:
     token_present = bool((settings.telegram_bot_token or "").strip())
     allowed = configured_chat_ids(settings)
 
-    if settings.telegram_polling_enabled and not token_present:
-        raise RuntimeError("TELEGRAM_POLLING_ENABLED requires TELEGRAM_BOT_TOKEN")
-    if settings.telegram_scheduler_enabled and not token_present:
-        raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_BOT_TOKEN")
+    if settings.telegram_polling_enabled:
+        if not token_present:
+            raise RuntimeError("TELEGRAM_POLLING_ENABLED requires TELEGRAM_BOT_TOKEN")
+        if not allowed:
+            raise RuntimeError("TELEGRAM_POLLING_ENABLED requires TELEGRAM_ALLOWED_CHAT_IDS")
+    if settings.telegram_scheduler_enabled:
+        if not token_present:
+            raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_BOT_TOKEN")
+        if not allowed:
+            raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_ALLOWED_CHAT_IDS")
 
     if settings.telegram_production_send:
         if settings.telegram_dry_run:
@@ -42,12 +48,11 @@ def validate_telegram_settings(settings: Settings) -> None:
         if not allowed:
             raise RuntimeError("Telegram live send requires TELEGRAM_ALLOWED_CHAT_IDS")
 
-    if settings.environment.strip().casefold() == "production":
-        if settings.telegram_polling_enabled and not allowed:
-            raise RuntimeError("Production Telegram polling requires TELEGRAM_ALLOWED_CHAT_IDS")
-        if settings.telegram_scheduler_enabled and not allowed:
-            raise RuntimeError("Production Telegram scheduler requires TELEGRAM_ALLOWED_CHAT_IDS")
-        if settings.telegram_polling_enabled and not _poll_identity_secret_is_secure(settings):
-            raise RuntimeError(
-                "Production Telegram polling requires TELEGRAM_POLL_IDENTITY_SECRET of at least 32 non-placeholder characters"
-            )
+    if (
+        settings.environment.strip().casefold() == "production"
+        and settings.telegram_polling_enabled
+        and not _poll_identity_secret_is_secure(settings)
+    ):
+        raise RuntimeError(
+            "Production Telegram polling requires TELEGRAM_POLL_IDENTITY_SECRET of at least 32 non-placeholder characters"
+        )

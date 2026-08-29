@@ -12,9 +12,20 @@ from .config import settings
 from .production_guard import ProductionGuard
 from .telegram_outbound import TelegramOutbound
 from .telegram_polls import TelegramPollStore
+from .telegram_security import configured_chat_ids
 from .telegram_update_receiver import TelegramUpdateReceiver, run_polling
 
 logger = logging.getLogger(__name__)
+
+
+def _message_chat_id(update: dict[str, Any]) -> str | None:
+    message = update.get("message")
+    if not isinstance(message, dict):
+        return None
+    chat = message.get("chat")
+    if not isinstance(chat, dict) or chat.get("id") is None:
+        return None
+    return str(chat["id"])
 
 
 class TelegramBotHttpClient:
@@ -139,6 +150,13 @@ class TelegramRuntime:
     async def handle_update(self, update: dict[str, Any]) -> None:
         if self.poll_store.ingest_update(update):
             return
+
+        chat_id = _message_chat_id(update)
+        allowed_chats = set(configured_chat_ids(settings))
+        if chat_id is None or chat_id not in allowed_chats:
+            # Drop unauthorized inbound content before it reaches drafting/classification logic.
+            return
+
         result = process_update(update)
         if result is None or not result.safety.allowed:
             return

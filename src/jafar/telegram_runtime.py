@@ -121,9 +121,14 @@ class TelegramRuntime:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
         self.dry_run = dry_run
+        identity_secret = (
+            poll_identity_secret
+            if poll_identity_secret is not None
+            else settings.telegram_poll_identity_secret
+        )
         self.poll_store = TelegramPollStore(
             settings.telegram_scheduler_db_path,
-            identity_secret=poll_identity_secret,
+            identity_secret=identity_secret,
         )
         self.outbound = TelegramOutbound(
             guard=ProductionGuard(production_send=production_send and not dry_run),

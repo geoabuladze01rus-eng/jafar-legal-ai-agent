@@ -21,6 +21,8 @@ def _secure_production(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "ai_cost_per_request_usd", Decimal(1))
     monkeypatch.setattr(main.settings, "ai_cost_user_daily_usd", Decimal(10))
     monkeypatch.setattr(main.settings, "ai_cost_user_monthly_usd", Decimal(100))
+    monkeypatch.setattr(main.settings, "ai_cost_matter_daily_usd", Decimal(20))
+    monkeypatch.setattr(main.settings, "ai_cost_matter_monthly_usd", Decimal(200))
     monkeypatch.setattr(main.settings, "ai_cost_global_daily_usd", Decimal(1000))
     monkeypatch.setattr(main.settings, "ai_queue_backend", "supabase")
     monkeypatch.setattr(main.settings, "ai_queue_worker_claim_limit", 5)

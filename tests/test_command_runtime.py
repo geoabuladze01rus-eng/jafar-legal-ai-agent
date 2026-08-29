@@ -32,7 +32,7 @@ def test_read_only_commands_do_not_require_approval():
     matters = runtime.execute("list_matters", request_id="req-matters")
 
     assert health.approval_required is False
-    assert health.message == "Джафар на связи."
+    assert health.message == "Юстиция на связи."
     assert matters.approval_required is False
     assert matters.data["count"] == 1
     assert matters.data["matters"][0]["id"] == "matter-1"

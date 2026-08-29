@@ -39,4 +39,6 @@ def test_matter_lifecycle_and_analysis_endpoint() -> None:
 
     fetched = client.get(f"/v1/matters/{matter_id}")
     assert fetched.status_code == 200
-    assert fetched.json()["deadlines"]
+    assert fetched.json()["deadlines"] == []
+    assert analyzed.json()["persisted"] is False
+    assert analyzed.json()["requires_approval_to_persist"] is True

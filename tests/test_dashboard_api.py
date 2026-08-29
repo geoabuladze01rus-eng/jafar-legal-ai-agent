@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,6 +41,20 @@ def _development_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "environment", "development")
     monkeypatch.setattr(main.settings, "api_key", None)
     monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:test")
+
+
+def _production_scale_ready(monkeypatch) -> None:
+    monkeypatch.setattr(main, "validate_storage_security", lambda _settings: None)
+    monkeypatch.setattr(main.settings, "ai_cost_control_enabled", True)
+    monkeypatch.setattr(main.settings, "ai_pricing_json", '{"openai":{"*":{"input":"1","output":"4"}}}')
+    monkeypatch.setattr(main.settings, "ai_pricing_version", "2026-08-28-reviewed")
+    monkeypatch.setattr(main.settings, "ai_cost_per_request_usd", Decimal(1))
+    monkeypatch.setattr(main.settings, "ai_cost_user_daily_usd", Decimal(10))
+    monkeypatch.setattr(main.settings, "ai_cost_user_monthly_usd", Decimal(100))
+    monkeypatch.setattr(main.settings, "ai_cost_matter_daily_usd", Decimal(20))
+    monkeypatch.setattr(main.settings, "ai_cost_matter_monthly_usd", Decimal(200))
+    monkeypatch.setattr(main.settings, "ai_cost_global_daily_usd", Decimal(1000))
+    monkeypatch.setattr(main.settings, "ai_queue_backend", "supabase")
 
 
 def _email_payload() -> dict[str, str]:
@@ -233,6 +248,7 @@ def test_production_runtime_requires_server_bound_lawyer_identity(monkeypatch) -
         main.validate_runtime_security()
 
     monkeypatch.setattr(main.settings, "lawyer_approver_id", "lawyer:server-bound")
+    _production_scale_ready(monkeypatch)
     main.validate_runtime_security()
     assert main._approval_identity() == "lawyer:server-bound"
 
@@ -252,4 +268,5 @@ def test_production_runtime_rejects_placeholder_or_short_keys(monkeypatch) -> No
         "this-is-a-long-random-production-key",
     )
     monkeypatch.setattr(main.settings, "storage_backend", "supabase")
+    _production_scale_ready(monkeypatch)
     main.validate_runtime_security()

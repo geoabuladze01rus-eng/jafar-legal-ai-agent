@@ -15,6 +15,7 @@ class VoiceIntent:
 class AppleVoiceCommandRouter:
     """Maps Siri/Shortcuts voice phrases to safe Jafar intents."""
 
+    WAKE_WORDS = ("джафар", "юстиция", "юстиция ai", "юстиция аи")
     PATTERNS = (
         ("investigate_entity", re.compile(r"(?:проверь|проверить)\s+(?P<entity>.+)", re.IGNORECASE)),
         ("find_case", re.compile(r"(?:найди|покажи)\s+(?:дело\s+)?(?P<case>.+)", re.IGNORECASE)),
@@ -24,6 +25,12 @@ class AppleVoiceCommandRouter:
 
     def route(self, phrase: str) -> VoiceIntent:
         normalized = " ".join(phrase.strip().split())
+        lowered = normalized.casefold()
+        for wake_word in self.WAKE_WORDS:
+            prefix = f"{wake_word}, "
+            if lowered.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
         for intent, pattern in self.PATTERNS:
             match = pattern.fullmatch(normalized)
             if match:

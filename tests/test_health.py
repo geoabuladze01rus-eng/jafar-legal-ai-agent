@@ -14,4 +14,7 @@ def test_health() -> None:
 def test_analysis_boundary() -> None:
     response = client.post("/v1/analyze", json={"text": "Тест документа"})
     assert response.status_code == 200
-    assert response.json()["task"] == "legal_analysis"
+    payload = response.json()
+    assert payload["analysis"]["task"] == "legal_analysis"
+    assert payload["persisted"] is False
+    assert payload["requires_approval_to_persist"] is True

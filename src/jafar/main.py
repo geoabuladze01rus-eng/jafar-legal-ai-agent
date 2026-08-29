@@ -1,9 +1,10 @@
 import hmac
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -165,7 +166,7 @@ async def protect_v1_api(request: Request, call_next):
             if limiter is not None:
                 try:
                     allowed = limiter.allow(request.url.path)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     # A broken distributed limiter must fail closed rather than silently allowing
                     # an unbounded model-spend path during a Supabase/network incident.
                     return JSONResponse(
@@ -191,10 +192,10 @@ class CreateMatterRequest(BaseModel):
 
     title: str = Field(min_length=1, max_length=500)
     matter_type: MatterType = MatterType.GENERAL
-    client_name: str | None = None
-    opposing_party: str | None = None
-    court_or_authority: str | None = None
-    case_number: str | None = None
+    client_name: str | None = Field(default=None, max_length=300)
+    opposing_party: str | None = Field(default=None, max_length=300)
+    court_or_authority: str | None = Field(default=None, max_length=300)
+    case_number: str | None = Field(default=None, max_length=120)
 
 
 class CommandRequest(BaseModel):
@@ -272,13 +273,23 @@ def _approval_item(request: ActionRequest) -> ApprovalItemResponse:
     )
 
 
+def _command_intent(text: str) -> str:
+    normalized = " ".join(text.strip().casefold().split())
+    if normalized in {"health", "проверка связи", "статус", "юстиция на связи"}:
+        return "health"
+    if normalized in {"list_matters", "покажи мои дела", "открытые дела"}:
+        return "list_matters"
+    return text.strip()
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
 
 
-@app.post("/v1/matters", response_model=Matter)
+@app.post("/v1/matters", response_model=Matter, status_code=201)
 def create_matter(request: CreateMatterRequest) -> Matter:
+    now = datetime.now(UTC)
     matter = Matter(
         id=str(uuid4()),
         title=request.title,
@@ -287,8 +298,10 @@ def create_matter(request: CreateMatterRequest) -> Matter:
         opposing_party=request.opposing_party,
         court_or_authority=request.court_or_authority,
         case_number=request.case_number,
+        created_at=now,
+        updated_at=now,
     )
-    return matter_store.create_matter(matter)
+    return matter_store.create(matter)
 
 
 @app.get("/v1/matters", response_model=list[Matter])
@@ -296,14 +309,34 @@ def list_matters() -> list[Matter]:
     return matter_store.list_matters()
 
 
+@app.get("/v1/matters/{matter_id}", response_model=Matter)
+def get_matter(matter_id: str) -> Matter:
+    matter = matter_store.get(matter_id)
+    if matter is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    return matter
+
+
 @app.get("/v1/dashboard", response_model=DashboardSnapshot)
 def dashboard() -> DashboardSnapshot:
-    return dashboard_service.snapshot()
+    pending = action_approval_store.pending()
+    approval_signals = tuple(
+        DashboardService.approval_signal(
+            action_id=item.action_id,
+            action_type=item.action_type,
+            description=item.description,
+        )
+        for item in pending
+    )
+    return dashboard_service.snapshot(
+        pending_approvals=len(pending),
+        extra_signals=approval_signals,
+    )
 
 
 @app.post("/v1/command", response_model=CommandResponse)
 def command(request: CommandRequest) -> CommandResponse:
-    result = command_runtime.execute(request.text)
+    result = command_runtime.execute(_command_intent(request.text))
     return CommandResponse(
         message=result.message,
         intent=result.intent,
@@ -314,47 +347,62 @@ def command(request: CommandRequest) -> CommandResponse:
 
 
 @app.get("/v1/approvals", response_model=list[ApprovalItemResponse])
-def approvals() -> list[ApprovalItemResponse]:
-    return [_approval_item(item) for item in action_approval_store.list_all()]
+def approvals(state: Annotated[ActionState | None, Query()] = None) -> list[ApprovalItemResponse]:
+    items = action_approval_store.all()
+    if state is not None:
+        items = tuple(item for item in items if item.state is state)
+    return [_approval_item(item) for item in items]
 
 
 @app.post("/v1/approvals/{action_id}/approve", response_model=ApprovalDecisionResponse)
 def approve_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalDecisionResponse:
-    decided_by = _approval_identity()
     try:
-        item = action_approval_engine.approve(
-            action_id,
-            decided_by=decided_by,
-            reason=request.reason,
-        )
+        decided_by = _approval_identity()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    item = action_approval_store.get(action_id)
+    if item is None:
+        raise HTTPException(status_code=409, detail=action_id)
+    try:
+        action_approval_engine.approve(item, approver=decided_by)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    decided = action_approval_store.get(action_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail=action_id)
     return ApprovalDecisionResponse(
-        action_id=item.action_id,
-        state=item.state,
-        decided_by=item.decided_by or decided_by,
-        decided_at=item.decided_at or datetime.now(UTC).isoformat(),
-        reason=item.decision_reason,
+        action_id=decided.action_id,
+        state=decided.state,
+        decided_by=decided.decided_by or decided_by,
+        decided_at=decided.decided_at or datetime.now(UTC).isoformat(),
+        reason=decided.decision_reason,
     )
 
 
 @app.post("/v1/approvals/{action_id}/reject", response_model=ApprovalDecisionResponse)
 def reject_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalDecisionResponse:
-    decided_by = _approval_identity()
+    if not (request.reason or "").strip():
+        raise HTTPException(status_code=422, detail="rejection_reason_required")
     try:
-        item = action_approval_engine.reject(
-            action_id,
-            decided_by=decided_by,
-            reason=request.reason,
-        )
+        decided_by = _approval_identity()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    item = action_approval_store.get(action_id)
+    if item is None:
+        raise HTTPException(status_code=409, detail=action_id)
+    try:
+        action_approval_engine.reject(item, approver=decided_by, reason=request.reason)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    decided = action_approval_store.get(action_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail=action_id)
     return ApprovalDecisionResponse(
-        action_id=item.action_id,
-        state=item.state,
-        decided_by=item.decided_by or decided_by,
-        decided_at=item.decided_at or datetime.now(UTC).isoformat(),
-        reason=item.decision_reason,
+        action_id=decided.action_id,
+        state=decided.state,
+        decided_by=decided.decided_by or decided_by,
+        decided_at=decided.decided_at or datetime.now(UTC).isoformat(),
+        reason=decided.decision_reason,
     )
 
 
@@ -377,7 +425,7 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
 
 @app.post("/v1/documents/analyze")
 async def analyze_document(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     matter_id: str | None = None,
     task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
 ):

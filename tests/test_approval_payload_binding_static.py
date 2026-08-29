@@ -1,7 +1,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "supabase" / "migrations" / "20260828165000_bind_action_approval_payload.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20260828165500_bind_action_approval_payload.sql"
 
 
 def test_database_approval_payload_hash_is_immutable_and_required_for_lifecycle() -> None:

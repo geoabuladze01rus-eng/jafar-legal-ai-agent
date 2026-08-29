@@ -143,6 +143,13 @@ class TelegramPollStore:
             hashlib.sha256,
         ).hexdigest()
 
+    @staticmethod
+    def _legacy_identity_namespace(old_key: str) -> str:
+        # The pre-pseudonym store wrote Telegram user IDs as bare values and voter-chat IDs
+        # with a `chat:` prefix. Normalize them to the same namespace used by new updates so a
+        # migrated voter does not acquire a second pseudonym on their next poll answer.
+        return old_key if old_key.startswith("chat:") else f"user:{old_key}"
+
     def _migrate_legacy_raw_voter_ids(self, con: sqlite3.Connection) -> None:
         rows = con.execute(
             "SELECT poll_id, user_id, option_ids_json, updated_at FROM telegram_poll_answers"
@@ -151,7 +158,7 @@ class TelegramPollStore:
             old_key = str(row["user_id"])
             if _HEX64.fullmatch(old_key):
                 continue
-            new_key = self._pseudonymize(old_key)
+            new_key = self._pseudonymize(self._legacy_identity_namespace(old_key))
             if new_key is None:
                 continue
             con.execute(
@@ -193,7 +200,6 @@ class TelegramPollStore:
             return False
         voter_key = self._voter_key(answer)
         if voter_key is None:
-            # Aggregate poll updates are still retained; individual answer identity is optional.
             return True
         poll_id = str(answer["poll_id"])
         with self._connect() as con:
@@ -268,9 +274,7 @@ class TelegramPollStore:
             voter_key = str(answer["user_id"])
             if not _HEX64.fullmatch(voter_key):
                 raise RuntimeError("telegram_poll_voter_key_not_pseudonymous")
-            normalized_answers.append(
-                {"voter_key": voter_key, "option_ids": option_ids}
-            )
+            normalized_answers.append({"voter_key": voter_key, "option_ids": option_ids})
         return {
             "poll_id": key,
             "chat_id": row["chat_id"],

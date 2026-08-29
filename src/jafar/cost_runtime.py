@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -196,7 +196,10 @@ def _parse_rates(rates: dict[str, Any]) -> ProviderPricing:
     values = [input_rate, output_rate]
     if cached_rate is not None:
         values.append(cached_rate)
-    if any(value < 0 or not value.is_finite() for value in values):
+    # Check finiteness first: comparing Decimal("NaN") to zero raises
+    # InvalidOperation and would otherwise turn an invalid production pricing
+    # configuration into an unclassified startup failure.
+    if any(not value.is_finite() or value < 0 for value in values):
         raise RuntimeError("AI_PRICING_JSON rates must be finite non-negative values")
 
     return ProviderPricing(

@@ -21,6 +21,10 @@ def test_content_plan_news_and_replacement(monkeypatch, tmp_path):
     news = asyncio.run(telegram_mcp.telegram_news_ingest("https://example.test/a", "Источник", "Новость", verified=True, relevance=.9))
     assert news["verified"] is True
     assert asyncio.run(telegram_mcp.telegram_news_suggest_post("Новость", .9, True))["recommendation"] == "breaking_news"
+    duplicate = asyncio.run(telegram_mcp.telegram_news_ingest("https://example.test/a", "Источник", "Новость", verified=True, relevance=.9))
+    assert duplicate["duplicate"] is True and duplicate["id"] == news["id"]
+    with pytest.raises(ValueError):
+        asyncio.run(telegram_mcp.telegram_news_ingest("file:///tmp/a", "Источник", "bad"))
 
 
 def test_case_redaction_comment_and_safe_generation(monkeypatch, tmp_path):
@@ -43,3 +47,5 @@ def test_image_series_validation_and_no_fake_analytics(monkeypatch, tmp_path):
     series = asyncio.run(telegram_mcp.telegram_series_create("Ошибки", 2, ["первая", "вторая"]))
     assert len(series["parts"]) == 2
     assert "basis" in asyncio.run(telegram_mcp.telegram_content_recommend_next())
+    metrics = asyncio.run(telegram_mcp.telegram_content_metrics_ingest(42, views=10))
+    assert metrics["kind"] == "metrics"

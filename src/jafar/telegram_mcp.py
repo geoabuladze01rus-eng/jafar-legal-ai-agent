@@ -12,12 +12,14 @@ from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 
 from jafar.config import settings
+from jafar.model_router import ModelRequest, ModelRouter
 from jafar.telegram_editorial import (
     DEFAULT_RUBRICS,
     EditorialStore,
     redact_transcript,
     safety_check,
 )
+from jafar.telegram_media import MediaStore, generate_post, redact_case
 from jafar.telegram_polls import TelegramPollStore, validate_poll
 from jafar.telegram_publishing import (
     MAX_PHOTO_BYTES,
@@ -27,7 +29,14 @@ from jafar.telegram_publishing import (
     validate_photo_url,
 )
 from jafar.telegram_runtime import TelegramBotHttpClient
-from jafar.telegram_media import MediaStore, generate_post, redact_case
+
+_editorial_router: ModelRouter | None = None
+
+
+def configure_editorial_model_router(router: ModelRouter) -> None:
+    """Inject the application's central router; Telegram never creates an LLM client."""
+    global _editorial_router
+    _editorial_router = router
 from jafar.telegram_scheduler import (
     ScheduledItem,
     TelegramScheduler,
@@ -758,7 +767,13 @@ async def telegram_news_suggest_post(title: str, relevance: float = 0.5, verifie
 
 @mcp.tool()
 async def telegram_generate_post(topic: str, category: str = "real_legal_practice", facts: str = "") -> dict[str, Any]:
-    return _media().save("post", generate_post(topic, category, facts))
+    if _editorial_router is not None:
+        routed = _editorial_router.run(ModelRequest(prompt=f"Создай пост для Telegram: {topic}\n{facts}", task="editorial_generation", confidential=True))
+        generated = generate_post(topic, category, routed[0].text)
+        generated["model_routing"] = {"provider": routed[0].provider, "model": routed[0].model}
+    else:
+        generated = generate_post(topic, category, facts)
+    return _media().save("post", generated)
 
 
 @mcp.tool()
@@ -862,6 +877,12 @@ async def telegram_content_best_topics() -> dict[str, Any]:
 @mcp.tool()
 async def telegram_content_recommend_next() -> dict[str, Any]:
     return {"topics": list(DEFAULT_RUBRICS), "basis": "available editorial categories; no invented engagement metrics"}
+
+
+@mcp.tool()
+async def telegram_content_metrics_ingest(message_id: int, views: int | None = None, reactions: int | None = None, comments: int | None = None) -> dict[str, Any]:
+    """Persist only metrics observed from Telegram updates/API responses."""
+    return _media().save_metrics(message_id=message_id, views=views, reactions=reactions, comments=comments)
 
 
 async def run_scheduler_once() -> int:

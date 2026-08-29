@@ -10,8 +10,10 @@ import json
 import re
 import sqlite3
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 CATEGORIES = (
@@ -65,8 +67,12 @@ class MediaStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.path) as con:
             con.execute("CREATE TABLE IF NOT EXISTS telegram_content_plans (id TEXT PRIMARY KEY, week_start TEXT, items_json TEXT, created_at TEXT)")
-            con.execute("CREATE TABLE IF NOT EXISTS telegram_news (id TEXT PRIMARY KEY, source_url TEXT, source_name TEXT, published_at TEXT, verified INTEGER, title TEXT, relevance REAL, created_at TEXT)")
+            con.execute("CREATE TABLE IF NOT EXISTS telegram_news (id TEXT PRIMARY KEY, source_url TEXT, source_name TEXT, published_at TEXT, verified INTEGER, title TEXT, relevance REAL, created_at TEXT, dedupe_key TEXT UNIQUE)")
             con.execute("CREATE TABLE IF NOT EXISTS telegram_media_posts (id TEXT PRIMARY KEY, kind TEXT, payload_json TEXT, created_at TEXT)")
+            columns = {row[1] for row in con.execute("PRAGMA table_info(telegram_news)")}
+            if "dedupe_key" not in columns:
+                con.execute("ALTER TABLE telegram_news ADD COLUMN dedupe_key TEXT")
+                con.execute("CREATE UNIQUE INDEX IF NOT EXISTS telegram_news_dedupe ON telegram_news(dedupe_key)")
 
     def create_plan(self, week_start: str, topics: list[str], *, count: int = 7) -> dict[str, Any]:
         if not 7 <= count <= 10:
@@ -102,10 +108,24 @@ class MediaStore:
     def ingest_news(self, **payload: Any) -> dict[str, Any]:
         if not payload.get("source_url") or not payload.get("source_name"):
             raise ValueError("source_url_and_source_name_required")
+        parsed = urlparse(str(payload["source_url"]))
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("source_url_must_be_http_or_https")
         title = str(payload.get("title", "")).strip()
         verified = bool(payload.get("verified", False))
         relevance = min(1.0, max(0.0, float(payload.get("relevance", 0.0))))
-        item = {"id": str(uuid4()), "title": title, "source_url": payload["source_url"], "source_name": payload["source_name"], "published_at": payload.get("published_at"), "verified": verified, "relevance": relevance}
+        dedupe_key = sha256(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{parsed.path.rstrip('/')}|{title.casefold()}".encode()).hexdigest()
+        item = {"id": str(uuid4()), "title": title, "source_url": payload["source_url"], "source_name": payload["source_name"], "published_at": payload.get("published_at"), "verified": verified, "relevance": relevance, "dedupe_key": dedupe_key}
         with sqlite3.connect(self.path) as con:
-            con.execute("INSERT INTO telegram_news VALUES (?,?,?,?,?,?,?,?)", (item["id"], item["source_url"], item["source_name"], item["published_at"], int(verified), title, relevance, _now()))
+            existing = con.execute("SELECT id FROM telegram_news WHERE dedupe_key=?", (dedupe_key,)).fetchone()
+            if existing:
+                item["id"] = existing[0]
+                item["duplicate"] = True
+                return item
+            con.execute("INSERT INTO telegram_news VALUES (?,?,?,?,?,?,?,?,?)", (item["id"], item["source_url"], item["source_name"], item["published_at"], int(verified), title, relevance, _now(), dedupe_key))
         return item
+
+    def save_metrics(self, *, message_id: int, views: int | None = None, reactions: int | None = None, comments: int | None = None) -> dict[str, Any]:
+        if all(value is None for value in (views, reactions, comments)) or any(value is not None and value < 0 for value in (views, reactions, comments)):
+            raise ValueError("at_least_one_nonnegative_metric_required")
+        return self.save("metrics", {"message_id": message_id, "views": views, "reactions": reactions, "comments": comments})

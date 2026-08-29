@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 HARDEN = ROOT / "supabase" / "migrations" / "20260828164000_harden_action_approval_ledger.sql"
 CLAIM = ROOT / "supabase" / "migrations" / "20260828210000_add_atomic_action_execution_claim.sql"

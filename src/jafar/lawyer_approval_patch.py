@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 
 from .reviewed_redraft_proposals import ReviewedRedraftProposal
@@ -62,7 +62,7 @@ class LawyerApprovalPatchEngine:
         if not proposal.passed_authority_gate or not proposal.passed_source_ref_gate:
             raise ValueError("Proposal has not passed required review gates")
 
-        timestamp = approved_at or datetime.now(timezone.utc)
+        timestamp = approved_at or datetime.now(UTC)
         if timestamp.tzinfo is None:
             raise ValueError("approved_at must be timezone-aware")
         proposal_hash = self.proposal_hash(proposal)

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -48,7 +48,7 @@ def _record(request_id: str, cost: str, matter_id: str = "matter-1") -> CostReco
         model="model-a",
         usage=TokenUsage(input_tokens=100),
         cost_usd=Decimal(cost),
-        recorded_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
     )
 
 
@@ -87,7 +87,7 @@ def test_preflight_does_not_apply_matter_budget_without_matter_identity() -> Non
 
     control.preflight(
         _context("non-matter", matter_id=None),
-        estimated_cost_usd=Decimal("100"),
+        estimated_cost_usd=Decimal(100),
     )
 
 
@@ -99,11 +99,11 @@ def test_supabase_reservation_receives_matter_ceiling_parameters() -> None:
         context=_context("reserve-1"),
         estimated_cost_usd=Decimal("0.50"),
         limits=BudgetLimits(
-            per_user_daily_usd=Decimal("5"),
-            per_user_monthly_usd=Decimal("100"),
-            per_matter_daily_usd=Decimal("10"),
-            per_matter_monthly_usd=Decimal("200"),
-            global_daily_usd=Decimal("500"),
+            per_user_daily_usd=Decimal(5),
+            per_user_monthly_usd=Decimal(100),
+            per_matter_daily_usd=Decimal(10),
+            per_matter_monthly_usd=Decimal(200),
+            global_daily_usd=Decimal(500),
         ),
     )
 

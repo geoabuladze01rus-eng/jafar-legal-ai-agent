@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
@@ -58,7 +58,7 @@ def test_explicit_apply_returns_new_fragment_and_audit_entry() -> None:
         fragment=_fragment(),
         patch=_patch(),
         applied_by="lawyer:chernov",
-        applied_at=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        applied_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
     )
 
     assert result.fragment_before.text == "Старый довод"
@@ -110,7 +110,7 @@ def test_rollback_restores_exact_original_and_appends_linked_audit_entry() -> No
         fragment=_fragment(),
         patch=_patch(),
         applied_by="lawyer:chernov",
-        applied_at=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        applied_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
     )
 
     rolled_back = engine.rollback(
@@ -119,7 +119,7 @@ def test_rollback_restores_exact_original_and_appends_linked_audit_entry() -> No
         apply_entry_id=applied.audit_entry.entry_id,
         original_text="Старый довод",
         rolled_back_by="lawyer:chernov",
-        rolled_back_at=datetime(2026, 8, 28, 12, 5, tzinfo=timezone.utc),
+        rolled_back_at=datetime(2026, 8, 28, 12, 5, tzinfo=UTC),
     )
 
     assert rolled_back.fragment_after.text == "Старый довод"

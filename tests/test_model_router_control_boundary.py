@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -62,7 +62,7 @@ class _Reservations:
             reservation_id=context.request_id,
             context=context,
             estimated_cost_usd=estimated_cost_usd,
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
     def release(self, _reservation_id: str) -> None:

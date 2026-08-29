@@ -1,7 +1,12 @@
 import pytest
 
 from jafar.model_consensus import ModelConsensus
-from jafar.model_router import ModelRequest, ModelResponse, ModelRouter
+from jafar.model_router import (
+    ModelRequest,
+    ModelResponse,
+    ModelRouter,
+    ProviderDispatchUncertainError,
+)
 
 
 class FakeProvider:
@@ -38,8 +43,8 @@ def test_router_falls_back_when_primary_is_unavailable() -> None:
         "gemini": FakeProvider("gemini", "vision"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
-    assert decision.primary == "gemini"
+    with pytest.raises(RuntimeError, match="No permitted and available"):
+        ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
 
 
 def test_router_falls_back_when_primary_fails_at_runtime() -> None:
@@ -48,9 +53,9 @@ def test_router_falls_back_when_primary_fails_at_runtime() -> None:
         "gemini": FakeProvider("gemini", "fallback"),
         "deepseek": FakeProvider("deepseek", "technical"),
     }
-    result = ModelRouter(providers).run(ModelRequest("p", "legal_analysis"))
-    assert result[0].provider == "gemini"
-    assert result[0].metadata["routing_fallback_from"] == "openai"
+    with pytest.raises(ProviderDispatchUncertainError, match="dispatch outcome is uncertain"):
+        ModelRouter(providers).run(ModelRequest("p", "legal_analysis"))
+    assert providers["gemini"].calls == 0
 
 
 def test_verification_uses_independent_provider() -> None:
@@ -60,7 +65,7 @@ def test_verification_uses_independent_provider() -> None:
         "gemini": FakeProvider("gemini", "vision"),
     }
     result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
+        ModelRequest("p", "legal_analysis", verification=True, confidential=False)
     )
     assert result.primary.provider == "openai"
     assert result.verifier is not None
@@ -76,7 +81,7 @@ def test_verification_marks_disagreement_instead_of_hiding_it() -> None:
         "gemini": FakeProvider("gemini", "vision"),
     }
     result = ModelConsensus(ModelRouter(providers)).evaluate(
-        ModelRequest("p", "legal_analysis", verification=True)
+        ModelRequest("p", "legal_analysis", verification=True, confidential=False)
     )
     assert result.verifier is not None
     assert result.confidence == 0.45
@@ -98,5 +103,10 @@ def test_verifier_runtime_failure_is_not_silently_downgraded() -> None:
         "openai": FakeProvider("openai", "primary"),
         "deepseek": FakeProvider("deepseek", "broken", error=RuntimeError("timeout")),
     }
-    with pytest.raises(RuntimeError, match="Independent verification provider"):
-        ModelRouter(providers).run(ModelRequest("p", "legal_analysis", verification=True))
+    with pytest.raises(ProviderDispatchUncertainError, match="dispatch outcome is uncertain"):
+        ModelRouter(providers).run(
+            ModelRequest(
+                "p", "legal_analysis", verification=True, confidential=False,
+                allowed_providers=("openai", "deepseek"),
+            )
+        )

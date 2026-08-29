@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
@@ -13,7 +13,7 @@ from jafar.matters import MatterStore
 
 
 def _matter() -> Matter:
-    now = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 28, 12, tzinfo=UTC)
     return Matter(
         id="matter-read-only",
         title="Проверка read-only анализа",

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -32,7 +32,7 @@ class AtomicCreateClient:
 def test_server_mode_create_uses_single_atomic_rpc() -> None:
     client = AtomicCreateClient()
     repo = SupabaseMatterRepository(client, "owner-1", server_mode=True)
-    now = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 28, 12, tzinfo=UTC)
     matter = Matter(
         id="00000000-0000-0000-0000-000000000001",
         title="Павлик",

@@ -23,7 +23,7 @@ class ExtractedDocument:
     @property
     def fingerprint(self) -> str:
         """Stable identity for the extracted document content."""
-        payload = f"{self.media_type}\n{self.text}".encode("utf-8")
+        payload = f"{self.media_type}\n{self.text}".encode()
         return sha256(payload).hexdigest()
 
     def fragments(self, *, max_chars: int = 2_000) -> tuple[DocumentFragment, ...]:

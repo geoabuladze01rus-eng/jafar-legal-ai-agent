@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -50,9 +50,9 @@ def test_usage_normalizes_openai_and_chat_completion_shapes() -> None:
 
 def test_cost_uses_cached_rate_only_for_cached_input() -> None:
     pricing = ProviderPricing(
-        input_per_million=Decimal("10"),
-        cached_input_per_million=Decimal("1"),
-        output_per_million=Decimal("20"),
+        input_per_million=Decimal(10),
+        cached_input_per_million=Decimal(1),
+        output_per_million=Decimal(20),
     )
     usage = TokenUsage(input_tokens=1_000_000, cached_input_tokens=400_000, output_tokens=100_000)
 
@@ -76,7 +76,7 @@ def test_cost_ledger_rejects_duplicate_request_accounting() -> None:
 
 def test_preflight_enforces_user_and_global_budgets() -> None:
     ledger = CostLedger()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ledger.record(
         CostRecord(
             context=context("existing"),
@@ -112,9 +112,9 @@ def test_meter_response_records_tokens_and_cost_without_raw_output() -> None:
     control = CostScaleControl(
         pricing={
             ("openai", "model-a"): ProviderPricing(
-                input_per_million=Decimal("2"),
+                input_per_million=Decimal(2),
                 cached_input_per_million=Decimal("0.2"),
-                output_per_million=Decimal("8"),
+                output_per_million=Decimal(8),
             )
         }
     )

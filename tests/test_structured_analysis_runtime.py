@@ -82,12 +82,12 @@ def _control() -> CostScaleControl:
     return CostScaleControl(
         pricing={
             ("openai", "model-a"): ProviderPricing(
-                input_per_million=Decimal("1"),
-                output_per_million=Decimal("4"),
+                input_per_million=Decimal(1),
+                output_per_million=Decimal(4),
             )
         },
         ledger=CostLedger(),
-        limits=BudgetLimits(per_request_usd=Decimal("1")),
+        limits=BudgetLimits(per_request_usd=Decimal(1)),
         pricing_version="2026-08-28-reviewed",
     )
 

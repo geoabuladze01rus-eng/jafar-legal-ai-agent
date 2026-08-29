@@ -9,7 +9,6 @@ from .cost_scale_control import CostScaleControl, UsageContext
 from .legal_models import AnalysisRequest, LegalAnalysis
 from .supabase_cost_reservations import CostReservationRepository
 
-
 STRUCTURED_ANALYSIS_INPUT_OVERHEAD_TOKENS = 4096
 
 

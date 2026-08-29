@@ -7,7 +7,6 @@ import socket
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
-
 DEFAULT_PROVIDER_HOSTS = frozenset(
     {
         "api.openai.com",

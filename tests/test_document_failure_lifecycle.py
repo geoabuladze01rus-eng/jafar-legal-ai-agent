@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.document_status import DocumentStatus
@@ -21,7 +21,7 @@ def test_failed_workflow_preserves_original_and_error():
         message_id="msg-failure-test",
         sender="client@example.test",
         subject="Contract",
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(UTC),
         body_text="Review attached contract",
         attachments=(attachment,),
     )

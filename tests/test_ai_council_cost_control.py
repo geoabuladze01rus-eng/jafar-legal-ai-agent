@@ -27,8 +27,8 @@ class FakeProvider:
 
 def make_control() -> CostScaleControl:
     pricing = ProviderPricing(
-        input_per_million=Decimal("1"),
-        output_per_million=Decimal("2"),
+        input_per_million=Decimal(1),
+        output_per_million=Decimal(2),
     )
     return CostScaleControl(
         pricing={

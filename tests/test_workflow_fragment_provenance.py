@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.ai_council import AICouncil
 from jafar.council_review import CouncilReviewService
@@ -28,7 +28,7 @@ class CapturingProvider:
 
 def test_workflow_passes_page_chunk_ids_to_council_prompt() -> None:
     store = MatterStore()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store.create(
         Matter(
             id="m1",

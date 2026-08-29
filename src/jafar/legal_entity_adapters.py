@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from ipaddress import ip_address
-import re
 from typing import Any, Protocol
 from urllib.parse import quote, urlparse
 
 from .legal_entity_intelligence import EntityQuery
-
 
 _SOURCE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,99}$")
 _ALLOWED_STATUSES = {"found", "negative", "no_data", "error"}

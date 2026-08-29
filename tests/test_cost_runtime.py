@@ -46,7 +46,7 @@ def test_pricing_catalog_is_configuration_driven_and_provider_keys_are_normalize
     price = catalog[("openai", "model-a")]
     assert price.input_per_million == Decimal("2.5")
     assert price.cached_input_per_million == Decimal("0.25")
-    assert price.output_per_million == Decimal("10")
+    assert price.output_per_million == Decimal(10)
 
 
 def test_pricing_catalog_rejects_missing_invalid_or_ambiguous_configuration() -> None:
@@ -141,7 +141,7 @@ def test_production_requires_every_positive_spend_ceiling() -> None:
         )
     with pytest.raises(RuntimeError, match="AI_COST_PER_REQUEST_USD"):
         validate_production_ai_scale(
-            valid_production_settings(ai_cost_per_request_usd=Decimal("0"))
+            valid_production_settings(ai_cost_per_request_usd=Decimal(0))
         )
     with pytest.raises(RuntimeError, match="AI_COST_MATTER_DAILY_USD"):
         validate_production_ai_scale(
@@ -157,37 +157,37 @@ def test_production_rejects_incoherent_spend_hierarchy() -> None:
     with pytest.raises(RuntimeError, match="Per-request AI ceiling"):
         validate_production_ai_scale(
             valid_production_settings(
-                ai_cost_per_request_usd=Decimal("10"),
-                ai_cost_user_daily_usd=Decimal("5"),
+                ai_cost_per_request_usd=Decimal(10),
+                ai_cost_user_daily_usd=Decimal(5),
             )
         )
     with pytest.raises(RuntimeError, match="per-matter daily"):
         validate_production_ai_scale(
             valid_production_settings(
-                ai_cost_per_request_usd=Decimal("11"),
-                ai_cost_user_daily_usd=Decimal("20"),
-                ai_cost_matter_daily_usd=Decimal("10"),
+                ai_cost_per_request_usd=Decimal(11),
+                ai_cost_user_daily_usd=Decimal(20),
+                ai_cost_matter_daily_usd=Decimal(10),
             )
         )
     with pytest.raises(RuntimeError, match="Per-user daily AI ceiling"):
         validate_production_ai_scale(
             valid_production_settings(
-                ai_cost_user_daily_usd=Decimal("5"),
-                ai_cost_user_monthly_usd=Decimal("4"),
+                ai_cost_user_daily_usd=Decimal(5),
+                ai_cost_user_monthly_usd=Decimal(4),
             )
         )
     with pytest.raises(RuntimeError, match="Per-matter daily AI ceiling"):
         validate_production_ai_scale(
             valid_production_settings(
-                ai_cost_matter_daily_usd=Decimal("10"),
-                ai_cost_matter_monthly_usd=Decimal("9"),
+                ai_cost_matter_daily_usd=Decimal(10),
+                ai_cost_matter_monthly_usd=Decimal(9),
             )
         )
     with pytest.raises(RuntimeError, match="global daily ceiling"):
         validate_production_ai_scale(
             valid_production_settings(
-                ai_cost_user_daily_usd=Decimal("5"),
-                ai_cost_global_daily_usd=Decimal("4"),
+                ai_cost_user_daily_usd=Decimal(5),
+                ai_cost_global_daily_usd=Decimal(4),
             )
         )
 

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from threading import RLock
-from typing import Mapping
-
 
 _ALLOWED_EVENT_KEYS = {
     "queue_enqueued",

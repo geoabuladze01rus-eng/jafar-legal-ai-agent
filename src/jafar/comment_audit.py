@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .comment_classifier import CommentIntent
 from .comment_response_engine import CommentResponseDraft
@@ -35,5 +35,5 @@ def make_audit_record(comment: TelegramComment, draft: CommentResponseDraft, *, 
         decision_mode=draft.decision.mode,
         draft=draft.decision.draft,
         status=status,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

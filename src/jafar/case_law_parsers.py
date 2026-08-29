@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from html.parser import HTMLParser
-import re
 from typing import Protocol
 
 from .case_law_sources import CaseLawSourceItem, SourceTrust
@@ -93,7 +93,7 @@ class LinkBasedCaseLawParser:
         for href, label in collector.links:
             if not self._looks_like_case_law(label):
                 continue
-            external_id = sha256(f"{href}\n{label}".encode("utf-8")).hexdigest()[:24]
+            external_id = sha256(f"{href}\n{label}".encode()).hexdigest()[:24]
             items.append(
                 CaseLawSourceItem(
                     external_id=external_id,

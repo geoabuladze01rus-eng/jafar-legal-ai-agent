@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from hashlib import sha256
-import json
 from threading import RLock
 from typing import Any, Protocol
 
@@ -144,7 +144,7 @@ class ActionApprovalStore:
             updated = replace(
                 request,
                 state=state,
-                decided_at=datetime.now(timezone.utc).isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
                 decided_by=decided_by.strip(),
                 decision_reason=(reason or "").strip() or None,
             )
@@ -166,7 +166,7 @@ class ActionApprovalStore:
             updated = replace(
                 request,
                 state=ActionState.EXECUTING,
-                execution_claimed_at=datetime.now(timezone.utc).isoformat(),
+                execution_claimed_at=datetime.now(UTC).isoformat(),
                 execution_claimed_by=executor,
                 execution_error=None,
             )
@@ -212,7 +212,7 @@ class ActionApprovalStore:
             updated = replace(
                 request,
                 state=ActionState.EXECUTED,
-                executed_at=datetime.now(timezone.utc).isoformat(),
+                executed_at=datetime.now(UTC).isoformat(),
                 execution_error=None,
             )
             self._actions[action_id] = updated
@@ -273,7 +273,7 @@ class LegalActionApprovalEngine:
             description=description.strip(),
             evidence_ids=tuple(evidence_ids or ()),
             payload_hash=payload_fingerprint(payload) if payload is not None else None,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         if self.store is not None:
             self.store.add(request)
@@ -296,7 +296,7 @@ class LegalActionApprovalEngine:
             else replace(
                 request,
                 state=ActionState.APPROVED,
-                decided_at=datetime.now(timezone.utc).isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
                 decided_by=approver.strip(),
             )
         )
@@ -328,7 +328,7 @@ class LegalActionApprovalEngine:
             else replace(
                 request,
                 state=ActionState.REJECTED,
-                decided_at=datetime.now(timezone.utc).isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
                 decided_by=approver.strip(),
                 decision_reason=reason.strip(),
             )

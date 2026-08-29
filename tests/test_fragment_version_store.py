@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
@@ -53,7 +53,7 @@ def test_seed_creates_immutable_initial_version() -> None:
     version = store.seed(
         fragment=_fragment(),
         created_by="lawyer:chernov",
-        created_at=datetime(2026, 8, 28, 13, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 28, 13, 0, tzinfo=UTC),
     )
 
     assert version.version_number == 1
@@ -68,13 +68,13 @@ def test_explicit_service_persists_new_version_and_keeps_original_history() -> N
     initial = service.store.seed(
         fragment=_fragment(),
         created_by="lawyer:chernov",
-        created_at=datetime(2026, 8, 28, 13, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 28, 13, 0, tzinfo=UTC),
     )
 
     applied, version = service.apply(
         patch=_patch(),
         applied_by="lawyer:chernov",
-        applied_at=datetime(2026, 8, 28, 13, 5, tzinfo=timezone.utc),
+        applied_at=datetime(2026, 8, 28, 13, 5, tzinfo=UTC),
     )
 
     assert applied.fragment_after.text == "Новый проверенный довод"

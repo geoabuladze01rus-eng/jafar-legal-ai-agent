@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -70,8 +70,8 @@ class DashboardService:
         pending_approvals: int = 0,
         extra_signals: tuple[DashboardSignal, ...] = (),
     ) -> DashboardSnapshot:
-        today = today or datetime.now(timezone.utc).date()
-        generated_at = generated_at or datetime.now(timezone.utc)
+        today = today or datetime.now(UTC).date()
+        generated_at = generated_at or datetime.now(UTC)
         if generated_at.tzinfo is None:
             raise ValueError("generated_at must be timezone-aware")
         if pending_approvals < 0:

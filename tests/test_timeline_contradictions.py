@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.evidence_graph import CaseEvidenceGraph, EvidenceSource
 from jafar.timeline_contradictions import TimelineAssertion, TimelineContradictionAnalyzer
 
 
 def dt(day: int, hour: int = 12) -> datetime:
-    return datetime(2026, 8, day, hour, tzinfo=timezone.utc)
+    return datetime(2026, 8, day, hour, tzinfo=UTC)
 
 
 def source(evidence_id: str, document_name: str, page: int, actor: str) -> EvidenceSource:

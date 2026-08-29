@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.case_theory import CaseTheoryEngine, TheoryStatus
 from jafar.cross_document_contradictions import CrossDocumentContradictionGraph
@@ -99,7 +99,7 @@ def test_timeline_conflict_requires_review_and_keeps_source_trace() -> None:
         TimelineAssertion(
             assertion_id="t1",
             topic="meeting",
-            occurred_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 8, 12, tzinfo=UTC),
             earliest_at=None,
             latest_at=None,
             actor="witness",
@@ -109,7 +109,7 @@ def test_timeline_conflict_requires_review_and_keeps_source_trace() -> None:
         TimelineAssertion(
             assertion_id="t2",
             topic="meeting",
-            occurred_at=datetime(2026, 8, 14, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 8, 14, tzinfo=UTC),
             earliest_at=None,
             latest_at=None,
             actor="investigator",

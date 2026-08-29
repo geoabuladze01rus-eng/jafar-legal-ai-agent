@@ -4,7 +4,7 @@ from jafar.document_intake import DocumentExtractionError, DocumentExtractor
 
 
 def test_extracts_utf8_text():
-    result = DocumentExtractor().extract("petition.txt", "Ходатайство суда".encode("utf-8"), "text/plain")
+    result = DocumentExtractor().extract("petition.txt", "Ходатайство суда".encode(), "text/plain")
     assert result.filename == "petition.txt"
     assert result.text == "Ходатайство суда"
 

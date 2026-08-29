@@ -1,6 +1,6 @@
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import hmac
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -333,7 +333,7 @@ def approve_action(action_id: str, request: ApprovalDecisionRequest) -> Approval
         action_id=item.action_id,
         state=item.state,
         decided_by=item.decided_by or decided_by,
-        decided_at=item.decided_at or datetime.now(timezone.utc).isoformat(),
+        decided_at=item.decided_at or datetime.now(UTC).isoformat(),
         reason=item.decision_reason,
     )
 
@@ -353,7 +353,7 @@ def reject_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalD
         action_id=item.action_id,
         state=item.state,
         decided_by=item.decided_by or decided_by,
-        decided_at=item.decided_at or datetime.now(timezone.utc).isoformat(),
+        decided_at=item.decided_at or datetime.now(UTC).isoformat(),
         reason=item.decision_reason,
     )
 
@@ -362,9 +362,11 @@ def reject_action(action_id: str, request: ApprovalDecisionRequest) -> ApprovalD
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
     if request.matter_id:
         try:
-            matter_store.get_matter(request.matter_id)
-        except KeyError as exc:
+            matter = matter_store.get(request.matter_id)
+        except ValueError as exc:
             raise HTTPException(status_code=404, detail="Matter not found") from exc
+        if matter is None:
+            raise HTTPException(status_code=404, detail="Matter not found")
     return AnalysisResponse(
         analysis=_analyze(request),
         matter_id=request.matter_id,
@@ -381,9 +383,11 @@ async def analyze_document(
 ):
     if matter_id:
         try:
-            matter_store.get_matter(matter_id)
-        except KeyError as exc:
+            matter = matter_store.get(matter_id)
+        except ValueError as exc:
             raise HTTPException(status_code=404, detail="Matter not found") from exc
+        if matter is None:
+            raise HTTPException(status_code=404, detail="Matter not found")
 
     try:
         document = await document_extractor.extract_upload(file)

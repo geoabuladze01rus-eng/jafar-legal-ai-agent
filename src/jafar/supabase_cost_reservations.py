@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -60,7 +60,7 @@ class SupabaseCostReservationRepository(CostReservationRepository):
             raise ValueError("estimated_cost_must_be_non_negative")
         if ttl_seconds <= 0:
             raise ValueError("reservation_ttl_must_be_positive")
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
         response = self.client.rpc(
             self.RESERVE_RPC,
             {

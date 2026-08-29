@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from jafar.main import app
 
-
 client = TestClient(app)
 
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -46,7 +46,7 @@ def test_approval_is_immutable_and_bound_to_proposal_hash():
     approval = engine.approve(
         proposal=item,
         approved_by="lawyer-1",
-        approved_at=datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc),
+        approved_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
     )
     assert approval.immutable is True
     assert approval.proposal_hash == engine.proposal_hash(item)

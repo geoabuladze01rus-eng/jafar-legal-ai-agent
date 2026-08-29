@@ -1,9 +1,8 @@
 import re
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from .domains import DocumentTask, MatterType
 from .legal_models import Deadline, LegalAnalysis, LegalIssue, RiskLevel
-
 
 DATE_PATTERNS = (
     re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b"),
@@ -39,7 +38,7 @@ class LegalAnalyzer:
             key_facts=facts,
             missing_information=missing,
             confidence=confidence,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
         )
 
     def _summary(self, text: str) -> str:

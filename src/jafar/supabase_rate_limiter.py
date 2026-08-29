@@ -40,7 +40,7 @@ class SupabaseRateLimiter:
         if not key.strip():
             raise ValueError("rate_limit_key_required")
         key_hash = hashlib.sha256(
-            f"{self.namespace}:{key.strip()}".encode("utf-8")
+            f"{self.namespace}:{key.strip()}".encode()
         ).hexdigest()
         response = self.client.rpc(
             "consume_ai_rate_limit",

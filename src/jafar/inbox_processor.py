@@ -7,7 +7,12 @@ from .attachment_storage import AttachmentStorage
 from .document_status import DocumentStatus
 from .document_status_store import DocumentStatusStore, NullDocumentStatusStore
 from .document_workflow import DocumentWorkflow, DocumentWorkflowResult
-from .inbox import AttachmentProcessingIssue, ExtractedInboxDocument, InboxDocumentIntake, InboxMessage
+from .inbox import (
+    AttachmentProcessingIssue,
+    ExtractedInboxDocument,
+    InboxDocumentIntake,
+    InboxMessage,
+)
 
 
 @dataclass(frozen=True)

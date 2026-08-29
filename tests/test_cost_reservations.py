@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from jafar.cost_scale_control import BudgetLimits, UsageContext
 from jafar.supabase_cost_reservations import SupabaseCostReservationRepository
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "supabase" / "migrations" / "20260828173000_add_ai_cost_reservations.sql"
 
@@ -44,9 +43,9 @@ def test_repository_reserves_with_server_side_limits_and_can_settle() -> None:
     repo = SupabaseCostReservationRepository(client, "owner-1")
     context = UsageContext("request-1", "user-1", "deep-analysis", "matter-1")
     limits = BudgetLimits(
-        per_user_daily_usd=Decimal("5"),
-        per_user_monthly_usd=Decimal("50"),
-        global_daily_usd=Decimal("100"),
+        per_user_daily_usd=Decimal(5),
+        per_user_monthly_usd=Decimal(50),
+        global_daily_usd=Decimal(100),
     )
 
     reservation = repo.reserve(

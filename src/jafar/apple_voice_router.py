@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,10 +16,10 @@ class AppleVoiceCommandRouter:
     """Maps Siri/Shortcuts voice phrases to safe Jafar intents."""
 
     PATTERNS = (
-        ("investigate_entity", re.compile(r"(?:проверь|проверить)\s+(?P<entity>.+)", re.I)),
-        ("find_case", re.compile(r"(?:найди|покажи)\s+(?:дело\s+)?(?P<case>.+)", re.I)),
-        ("create_draft", re.compile(r"(?:создай|подготовь)\s+(?:черновик|ответ)(?:\s+(?P<topic>.+))?", re.I)),
-        ("set_reminder", re.compile(r"(?:напомни|поставь напоминание)\s+(?P<task>.+)", re.I)),
+        ("investigate_entity", re.compile(r"(?:проверь|проверить)\s+(?P<entity>.+)", re.IGNORECASE)),
+        ("find_case", re.compile(r"(?:найди|покажи)\s+(?:дело\s+)?(?P<case>.+)", re.IGNORECASE)),
+        ("create_draft", re.compile(r"(?:создай|подготовь)\s+(?:черновик|ответ)(?:\s+(?P<topic>.+))?", re.IGNORECASE)),
+        ("set_reminder", re.compile(r"(?:напомни|поставь напоминание)\s+(?P<task>.+)", re.IGNORECASE)),
     )
 
     def route(self, phrase: str) -> VoiceIntent:

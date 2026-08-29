@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from jafar.case_law_parsers import LinkBasedCaseLawParser
 from jafar.case_law_sources import SourceTrust
@@ -17,7 +17,7 @@ def fetched(body: str) -> HttpFetchResult:
         etag="etag-1",
         last_modified="Fri, 28 Aug 2026 10:00:00 GMT",
         retrieved_at_monotonic=1.0,
-        retrieved_at=datetime(2026, 8, 28, 10, tzinfo=timezone.utc),
+        retrieved_at=datetime(2026, 8, 28, 10, tzinfo=UTC),
     )
 
 

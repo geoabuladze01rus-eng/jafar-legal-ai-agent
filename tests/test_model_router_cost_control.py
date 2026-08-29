@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from jafar.cost_scale_control import CostScaleControl, ProviderPricing, UsageContext
-from jafar.model_router import ModelRequest, ModelResponse, ModelRouter
+from jafar.model_router import ModelControlError, ModelRequest, ModelResponse, ModelRouter
 
 
 class FakeProvider:
@@ -34,9 +34,9 @@ class FakeProvider:
 
 def control() -> CostScaleControl:
     rate = ProviderPricing(
-        input_per_million=Decimal("2"),
+        input_per_million=Decimal(2),
         cached_input_per_million=Decimal("0.2"),
-        output_per_million=Decimal("8"),
+        output_per_million=Decimal(8),
     )
     return CostScaleControl(
         pricing={
@@ -89,18 +89,17 @@ def test_kill_switch_removes_provider_before_dispatch() -> None:
     scale.disable_provider("deepseek")
     router = ModelRouter({"deepseek": deepseek, "openai": openai}, cost_control=scale)
 
-    response = router.run(metered_request())[0]
-
-    assert response.provider == "openai"
+    with pytest.raises(ModelControlError, match="disabled"):
+        router.run(metered_request())
     assert deepseek.calls == 0
-    assert openai.calls == 1
+    assert openai.calls == 0
 
 
 def test_cost_control_rejects_unattributed_or_unestimated_requests() -> None:
     provider = FakeProvider("deepseek")
     router = ModelRouter({"deepseek": provider}, cost_control=control())
 
-    with pytest.raises(RuntimeError, match="All permitted AI providers failed") as missing_context:
+    with pytest.raises(ModelControlError, match="usage_context_required"):
         router.run(
             ModelRequest(
                 prompt="analyze",
@@ -109,10 +108,7 @@ def test_cost_control_rejects_unattributed_or_unestimated_requests() -> None:
                 estimated_cost_usd=Decimal("0.01"),
             )
         )
-    assert isinstance(missing_context.value.__cause__, RuntimeError)
-    assert "usage_context_required" in str(missing_context.value.__cause__)
-
-    with pytest.raises(RuntimeError, match="All permitted AI providers failed") as missing_estimate:
+    with pytest.raises(ModelControlError, match="cost_estimate_required"):
         router.run(
             ModelRequest(
                 prompt="analyze",
@@ -125,8 +121,6 @@ def test_cost_control_rejects_unattributed_or_unestimated_requests() -> None:
                 ),
             )
         )
-    assert isinstance(missing_estimate.value.__cause__, RuntimeError)
-    assert "cost_estimate_required" in str(missing_estimate.value.__cause__)
     assert provider.calls == 0
 
 

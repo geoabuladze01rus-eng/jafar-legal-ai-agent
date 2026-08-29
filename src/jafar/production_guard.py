@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from os import getenv
-from typing import Awaitable, Callable, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 

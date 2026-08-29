@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from .action_approval import (
@@ -105,7 +105,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
         if state is ActionState.APPROVED and not current.payload_hash:
             raise ValueError("payload_binding_required")
 
-        decided_at = datetime.now(timezone.utc).isoformat()
+        decided_at = datetime.now(UTC).isoformat()
         payload = {
             "state": state.value,
             "decided_at": decided_at,
@@ -152,7 +152,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             .update(
                 {
                     "state": ActionState.EXECUTING.value,
-                    "execution_claimed_at": datetime.now(timezone.utc).isoformat(),
+                    "execution_claimed_at": datetime.now(UTC).isoformat(),
                     "execution_claimed_by": executor,
                     "execution_error": None,
                 }
@@ -213,7 +213,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
             .update(
                 {
                     "state": ActionState.EXECUTED.value,
-                    "executed_at": datetime.now(timezone.utc).isoformat(),
+                    "executed_at": datetime.now(UTC).isoformat(),
                     "execution_error": None,
                 }
             )
@@ -252,7 +252,7 @@ class SupabaseActionApprovalRepository(ActionApprovalRepository):
 
     @staticmethod
     def _payload(request: ActionRequest) -> dict[str, Any]:
-        created_at = request.created_at or datetime.now(timezone.utc).isoformat()
+        created_at = request.created_at or datetime.now(UTC).isoformat()
         return {
             "action_id": request.action_id,
             "action_type": request.action_type,

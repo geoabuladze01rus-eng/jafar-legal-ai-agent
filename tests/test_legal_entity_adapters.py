@@ -8,7 +8,6 @@ from jafar.legal_entity_adapters import (
 )
 from jafar.legal_entity_intelligence import EntityQuery
 
-
 VALID_INN = "7707083893"
 
 

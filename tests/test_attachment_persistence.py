@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.inbox import InboxAttachment, InboxDocumentIntake, InboxMessage
@@ -20,7 +20,7 @@ def test_processor_persists_original_and_exposes_fingerprint():
         message_id="msg-storage-test",
         sender="client@example.test",
         subject="Order",
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(UTC),
         body_text="Please review",
         attachments=(attachment,),
     )

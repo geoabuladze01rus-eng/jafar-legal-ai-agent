@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -44,7 +44,7 @@ class FakeReservations:
             reservation_id=context.request_id,
             context=context,
             estimated_cost_usd=estimated_cost_usd,
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
     def release(self, reservation_id: str) -> None:
@@ -58,11 +58,11 @@ def make_router(provider: FakeProvider, reservations: FakeReservations) -> Model
     control = CostScaleControl(
         pricing={
             ("openai", "test"): ProviderPricing(
-                input_per_million=Decimal("1"),
-                output_per_million=Decimal("2"),
+                input_per_million=Decimal(1),
+                output_per_million=Decimal(2),
             )
         },
-        limits=BudgetLimits(per_request_usd=Decimal("1")),
+        limits=BudgetLimits(per_request_usd=Decimal(1)),
     )
     return ModelRouter(
         {"openai": provider},

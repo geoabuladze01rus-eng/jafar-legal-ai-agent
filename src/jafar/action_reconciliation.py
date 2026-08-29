@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from threading import RLock
 from typing import Protocol
 
 from .action_approval import ActionApprovalRepository, ActionRequest, ActionState
-
 
 MAX_ACTION_ID_LENGTH = 200
 MAX_OPERATOR_ID_LENGTH = 200
@@ -113,7 +112,7 @@ class ActionReconciliationService:
         self.audit_repository = audit_repository or ReconciliationAuditStore()
 
     def candidates(self, *, now: datetime | None = None) -> tuple[ReconciliationCandidate, ...]:
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         if current.tzinfo is None:
             raise ValueError("now_must_be_timezone_aware")
 
@@ -177,7 +176,7 @@ class ActionReconciliationService:
                 decision=decision,
                 operator_id=operator,
                 evidence_note=note,
-                recorded_at=datetime.now(timezone.utc).isoformat(),
+                recorded_at=datetime.now(UTC).isoformat(),
             )
         )
         return updated

@@ -102,6 +102,14 @@ class OpenAILegalAnalyzer:
                 return response.output_parsed, self._safe_usage_metadata(response)
             except ValueError:
                 raise
+            except RuntimeError as exc:
+                if str(exc) == "OpenAI returned no structured legal analysis":
+                    # The provider may already have processed and billed the request. A missing
+                    # structured response is not safe to retry automatically.
+                    raise
+                last_error = exc
+                if attempt >= self.config.max_retries:
+                    break
             except Exception as exc:
                 last_error = exc
                 if attempt >= self.config.max_retries:

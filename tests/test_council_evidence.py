@@ -29,6 +29,7 @@ def test_evidence_service_detects_structured_model_contradiction() -> None:
             disagreements=("different",),
         ),
         prompt="p",
+        allowed_evidence_ids=("document",),
     )
 
     report = CouncilEvidenceService().build(review)
@@ -52,6 +53,7 @@ def test_evidence_service_preserves_gaps_and_lawyer_questions() -> None:
             disagreements=(),
         ),
         prompt="p",
+        allowed_evidence_ids=("document",),
     )
 
     report = CouncilEvidenceService().build(review)
@@ -69,6 +71,7 @@ def test_evidence_service_flags_malformed_provider_without_inventing_claims() ->
             disagreements=(),
         ),
         prompt="p",
+        allowed_evidence_ids=("document",),
     )
 
     report = CouncilEvidenceService().build(review)

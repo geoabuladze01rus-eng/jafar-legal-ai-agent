@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 MIGRATION = Path(
     "supabase/migrations/20260828223000_scope_ai_job_rpcs_to_owner.sql"
 )

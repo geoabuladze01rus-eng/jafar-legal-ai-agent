@@ -4,10 +4,10 @@ import hashlib
 import json
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from threading import RLock
-from typing import Any, Callable, Generic, TypeVar
-
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 

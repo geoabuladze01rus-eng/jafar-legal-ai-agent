@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 
 from .lawyer_approval_patch import ControlledFragmentPatch
@@ -185,7 +185,7 @@ class FragmentVersionStore:
 
     @staticmethod
     def _timestamp(value: datetime | None) -> datetime:
-        timestamp = value or datetime.now(timezone.utc)
+        timestamp = value or datetime.now(UTC)
         if timestamp.tzinfo is None:
             raise ValueError("created_at must be timezone-aware")
         return timestamp

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from threading import RLock
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
-
-MILLION = Decimal("1000000")
+MILLION = Decimal(1000000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +118,7 @@ class CostRecord:
     usage: TokenUsage
     cost_usd: Decimal
     pricing_version: str = "unversioned"
-    recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    recorded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
         if not self.pricing_version.strip():
@@ -201,7 +201,7 @@ class CostLedger(CostLedgerRepository):
                     for record in self._records
                     if record.recorded_at >= since and predicate(record)
                 ),
-                Decimal("0"),
+                Decimal(0),
             )
 
 
@@ -274,7 +274,7 @@ class CostScaleControl:
     def preflight(self, context: UsageContext, *, estimated_cost_usd: Decimal) -> None:
         if estimated_cost_usd < 0:
             raise ValueError("estimated_cost_must_be_non_negative")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         month_start = day_start.replace(day=1)
 

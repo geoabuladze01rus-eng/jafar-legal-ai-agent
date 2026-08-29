@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -23,7 +23,7 @@ class EvidenceLayer:
             claim=claim,
             source=source,
             source_url=source_url,
-            observed_at=datetime.now(timezone.utc).isoformat(),
+            observed_at=datetime.now(UTC).isoformat(),
             confidence=max(0.0, min(1.0, confidence)),
             raw=dict(raw),
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,28 +11,28 @@ from jafar.supabase_matter_repository import SupabaseMatterRepository
 
 
 class FakeQuery:
-    def __init__(self, client: "FakeSupabase", table: str) -> None:
+    def __init__(self, client: FakeSupabase, table: str) -> None:
         self.client = client
         self.table_name = table
         self.filters: list[tuple[str, Any]] = []
         self.single = False
         self.insert_payload: Any = None
 
-    def select(self, _: str) -> "FakeQuery":
+    def select(self, _: str) -> FakeQuery:
         return self
 
-    def eq(self, field: str, value: Any) -> "FakeQuery":
+    def eq(self, field: str, value: Any) -> FakeQuery:
         self.filters.append((field, value))
         return self
 
-    def maybe_single(self) -> "FakeQuery":
+    def maybe_single(self) -> FakeQuery:
         self.single = True
         return self
 
-    def order(self, _: str) -> "FakeQuery":
+    def order(self, _: str) -> FakeQuery:
         return self
 
-    def insert(self, payload: Any) -> "FakeQuery":
+    def insert(self, payload: Any) -> FakeQuery:
         self.insert_payload = deepcopy(payload)
         return self
 
@@ -185,7 +185,7 @@ def test_add_deadlines_matches_in_memory_deduplication_semantics() -> None:
 def test_create_persists_status_and_initial_deadlines() -> None:
     client = FakeSupabase({"matters": [], "deadlines": []})
     repo = SupabaseMatterRepository(client, "owner-1")
-    now = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 28, 12, tzinfo=UTC)
     matter = Matter(
         id="new-matter",
         title="Новое дело",

@@ -1,7 +1,6 @@
+import re
 from collections import Counter
 from pathlib import Path
-import re
-
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "supabase" / "migrations"

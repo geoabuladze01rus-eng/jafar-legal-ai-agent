@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
 MAX_DURABLE_AI_JOB_PAYLOAD_BYTES = 65_536
 SENSITIVE_QUEUE_KEYS = frozenset(
     {

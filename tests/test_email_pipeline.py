@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.document_workflow import DocumentWorkflowResult
 from jafar.email_pipeline import EmailPipeline
@@ -31,7 +31,7 @@ def message(*, subject="Дело", body="Требуется юридическа
         message_id="msg-1",
         sender="client@example.com",
         subject=subject,
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(UTC),
         body_text=body,
         attachments=tuple(attachments),
     )

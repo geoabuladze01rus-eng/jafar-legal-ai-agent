@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.command_runtime import JafarCommandRuntime
-from jafar.legal_models import Matter
 from jafar.domains import MatterType
+from jafar.legal_models import Matter
 from jafar.matters import MatterStore
 
 
 def make_store() -> MatterStore:
     store = MatterStore()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store.create(
         Matter(
             id="matter-1",

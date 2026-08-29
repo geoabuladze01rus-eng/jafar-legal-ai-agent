@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from time import monotonic, sleep
 from typing import Protocol
@@ -85,7 +85,7 @@ class ResilientHttpTransport:
                         last_modified=response.headers.get("Last-Modified"),
                         retrieved_at_monotonic=self._last_request_at,
                         requested_url=url,
-                        retrieved_at=datetime.now(timezone.utc),
+                        retrieved_at=datetime.now(UTC),
                     )
             except HTTPError as exc:
                 last_error = exc

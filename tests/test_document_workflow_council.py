@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -29,7 +29,7 @@ class FakeProvider:
 
 
 def make_matter() -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Matter(
         id="matter-1",
         title="Уголовное дело",

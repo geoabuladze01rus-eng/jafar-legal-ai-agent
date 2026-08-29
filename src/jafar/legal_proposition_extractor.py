@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
-import re
 from typing import Any
 
 from .case_law_document import CaseLawDocument

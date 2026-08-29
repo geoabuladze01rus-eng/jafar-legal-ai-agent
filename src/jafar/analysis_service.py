@@ -14,7 +14,7 @@ class LegalAnalysisService:
         self.router = router
 
     @classmethod
-    def from_environment(cls) -> "LegalAnalysisService":
+    def from_environment(cls) -> LegalAnalysisService:
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY is required to create the legal analysis service")
 

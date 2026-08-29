@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
 from typing import Any
@@ -285,7 +285,7 @@ class ControlledPatchApplyEngine:
 
     @staticmethod
     def _timestamp(value: datetime | None) -> datetime:
-        timestamp = value or datetime.now(timezone.utc)
+        timestamp = value or datetime.now(UTC)
         if timestamp.tzinfo is None:
             raise ValueError("Audit timestamp must be timezone-aware")
         return timestamp

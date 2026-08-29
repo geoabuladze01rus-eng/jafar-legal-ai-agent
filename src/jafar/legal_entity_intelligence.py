@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import re
+from dataclasses import asdict, dataclass
 from typing import Any, Protocol
-
 
 VALID_ENTITY_QUERY_TYPES = {"name", "inn", "ogrn", "kpp"}
 _KPP_RE = re.compile(r"^[0-9]{4}[0-9A-Z]{2}[0-9]{3}$")
@@ -110,7 +109,7 @@ class EntityQuery:
         object.__setattr__(self, "query_type", normalized_type)
 
     @classmethod
-    def infer(cls, value: str) -> "EntityQuery":
+    def infer(cls, value: str) -> EntityQuery:
         normalized = value.strip()
         if normalized.isdigit() and len(normalized) in {10, 12}:
             return cls(normalized, "inn")
@@ -136,7 +135,7 @@ class EntityQuery:
     def kpp(self) -> str | None:
         return self.value if self.query_type == "kpp" else None
 
-    def normalized(self) -> "EntityQuery":
+    def normalized(self) -> EntityQuery:
         return self
 
 

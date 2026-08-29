@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -19,7 +19,7 @@ def matter(
     *,
     status: str = "active",
 ) -> Matter:
-    now = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 28, 12, tzinfo=UTC)
     return Matter(
         id=matter_id,
         title=title,
@@ -53,7 +53,7 @@ def test_dashboard_uses_real_matter_deadlines_and_orders_urgent_signals_first() 
 
     snapshot = DashboardService(store).snapshot(
         today=date(2026, 8, 28),
-        generated_at=datetime(2026, 8, 28, 13, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 8, 28, 13, tzinfo=UTC),
     )
 
     assert snapshot.total_matters == 2

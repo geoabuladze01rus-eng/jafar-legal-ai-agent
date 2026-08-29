@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
-from urllib.parse import quote
+from typing import Any
 
 from .legal_entity_adapters import SourceResult
 from .legal_entity_intelligence import EntityQuery

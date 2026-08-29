@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 BASE = ROOT / "20260828221000_add_distributed_ai_rate_limit.sql"
 OWNER_SCOPE = ROOT / "20260828226000_scope_ai_rate_limit_to_owner.sql"

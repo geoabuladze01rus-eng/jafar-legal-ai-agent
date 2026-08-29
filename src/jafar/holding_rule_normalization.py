@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from hashlib import sha256
-import re
 
 from .legal_holding_verifier import HoldingStatus, HoldingVerificationResult
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .legal_entity_adapters import LegalEntitySourceRegistry, SourceResult
 from .legal_entity_intelligence import EntityQuery, LegalEntityIntelligence, SourceFinding

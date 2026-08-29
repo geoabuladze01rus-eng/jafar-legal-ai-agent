@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +14,7 @@ from jafar.matters import MatterStore
 
 def _dashboard_store() -> MatterStore:
     store = MatterStore()
-    now = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 28, 12, tzinfo=UTC)
     store.create(
         Matter(
             id="case-api",

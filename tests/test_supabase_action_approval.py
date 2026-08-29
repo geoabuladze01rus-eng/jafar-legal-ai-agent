@@ -16,7 +16,7 @@ from jafar.supabase_action_approval import SupabaseActionApprovalRepository
 
 
 class FakeQuery:
-    def __init__(self, client: "FakeSupabase", table: str) -> None:
+    def __init__(self, client: FakeSupabase, table: str) -> None:
         self.client = client
         self.table_name = table
         self.filters: list[tuple[str, Any]] = []
@@ -24,25 +24,25 @@ class FakeQuery:
         self.insert_payload: Any = None
         self.update_payload: dict[str, Any] | None = None
 
-    def select(self, _: str) -> "FakeQuery":
+    def select(self, _: str) -> FakeQuery:
         return self
 
-    def eq(self, field: str, value: Any) -> "FakeQuery":
+    def eq(self, field: str, value: Any) -> FakeQuery:
         self.filters.append((field, value))
         return self
 
-    def maybe_single(self) -> "FakeQuery":
+    def maybe_single(self) -> FakeQuery:
         self.single = True
         return self
 
-    def order(self, _: str) -> "FakeQuery":
+    def order(self, _: str) -> FakeQuery:
         return self
 
-    def insert(self, payload: Any) -> "FakeQuery":
+    def insert(self, payload: Any) -> FakeQuery:
         self.insert_payload = deepcopy(payload)
         return self
 
-    def update(self, payload: dict[str, Any]) -> "FakeQuery":
+    def update(self, payload: dict[str, Any]) -> FakeQuery:
         self.update_payload = deepcopy(payload)
         return self
 

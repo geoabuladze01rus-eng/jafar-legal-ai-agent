@@ -31,8 +31,6 @@ class TelegramBotHttpClient:
         return f"https://api.telegram.org/bot{self._bot_token}/{method}"
 
     async def _post(self, method: str, **kwargs: Any) -> dict[str, Any]:
-        """POST without ever propagating an httpx exception containing the tokenized URL."""
-
         try:
             async with httpx.AsyncClient(timeout=self.request_timeout) as client:
                 response = await client.post(self._url(method), **kwargs)
@@ -57,10 +55,7 @@ class TelegramBotHttpClient:
         return dict(result) if isinstance(result, dict) else {}
 
     async def send_message(self, *, chat_id: int | str, text: str) -> dict[str, Any]:
-        return await self._post(
-            "sendMessage",
-            json={"chat_id": chat_id, "text": text},
-        )
+        return await self._post("sendMessage", json={"chat_id": chat_id, "text": text})
 
     async def send_photo(
         self,
@@ -72,7 +67,6 @@ class TelegramBotHttpClient:
         filename: str = "image.png",
         mime_type: str = "application/octet-stream",
     ) -> dict[str, Any]:
-        """Send a photo by public URL or uploaded bytes."""
         if bool(photo_url) == bool(photo_bytes):
             raise ValueError("provide exactly one of photo_url or photo_bytes")
 
@@ -89,7 +83,6 @@ class TelegramBotHttpClient:
         return await self._post("sendPhoto", data=data, files=files)
 
     async def send_poll(self, *, chat_id: int | str, poll: dict[str, Any]) -> dict[str, Any]:
-        """Send a validated Bot API 10 poll without leaking the bot token in errors."""
         options = poll.get("options")
         if not isinstance(options, list):
             raise ValueError("telegram_poll_options_invalid")
@@ -123,10 +116,15 @@ class TelegramRuntime:
         *,
         production_send: bool = False,
         dry_run: bool = True,
+        poll_identity_secret: str | None = None,
     ) -> None:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
         self.dry_run = dry_run
+        self.poll_store = TelegramPollStore(
+            settings.telegram_scheduler_db_path,
+            identity_secret=poll_identity_secret,
+        )
         self.outbound = TelegramOutbound(
             guard=ProductionGuard(production_send=production_send and not dry_run),
             bot=self.bot,
@@ -134,15 +132,13 @@ class TelegramRuntime:
         self._task: asyncio.Task[None] | None = None
 
     async def handle_update(self, update: dict[str, Any]) -> None:
-        # Poll/poll_answer updates are state updates, not inbound comments.
-        if TelegramPollStore(settings.telegram_scheduler_db_path).ingest_update(update):
+        if self.poll_store.ingest_update(update):
             return
         result = process_update(update)
         if result is None or not result.safety.allowed:
             return
 
         if self.dry_run:
-            # Never log generated legal/user content even in dry-run mode.
             logger.info(
                 "Telegram dry-run update=%s chat=%s draft_chars=%s",
                 update.get("update_id"),
@@ -158,7 +154,6 @@ class TelegramRuntime:
         )
 
     async def handle_error(self, update: dict[str, Any], exc: Exception) -> None:
-        # Exception strings may contain user content or token-bearing URLs from third-party code.
         logger.error(
             "Telegram update %s failed error_type=%s",
             update.get("update_id"),

@@ -130,6 +130,8 @@ class BudgetLimits:
     per_request_usd: Decimal | None = None
     per_user_daily_usd: Decimal | None = None
     per_user_monthly_usd: Decimal | None = None
+    per_matter_daily_usd: Decimal | None = None
+    per_matter_monthly_usd: Decimal | None = None
     global_daily_usd: Decimal | None = None
 
     def __post_init__(self) -> None:
@@ -137,6 +139,8 @@ class BudgetLimits:
             self.per_request_usd,
             self.per_user_daily_usd,
             self.per_user_monthly_usd,
+            self.per_matter_daily_usd,
+            self.per_matter_monthly_usd,
             self.global_daily_usd,
         )
         if any(value is not None and value <= 0 for value in values):
@@ -147,6 +151,8 @@ class CostLedgerRepository(Protocol):
     def record(self, record: CostRecord) -> None: ...
 
     def spend_for_user(self, user_id: str, *, since: datetime) -> Decimal: ...
+
+    def spend_for_matter(self, matter_id: str, *, since: datetime) -> Decimal: ...
 
     def spend_global(self, *, since: datetime) -> Decimal: ...
 
@@ -174,6 +180,12 @@ class CostLedger(CostLedgerRepository):
         return self._sum(
             since=since,
             predicate=lambda record: record.context.user_id == user_id,
+        )
+
+    def spend_for_matter(self, matter_id: str, *, since: datetime) -> Decimal:
+        return self._sum(
+            since=since,
+            predicate=lambda record: record.context.matter_id == matter_id,
         )
 
     def spend_global(self, *, since: datetime) -> Decimal:
@@ -277,6 +289,14 @@ class CostScaleControl:
             current = self.ledger.spend_for_user(context.user_id, since=month_start)
             if current + estimated_cost_usd > self.limits.per_user_monthly_usd:
                 raise RuntimeError("cost_budget_exceeded:user_monthly")
+        if context.matter_id and self.limits.per_matter_daily_usd is not None:
+            current = self.ledger.spend_for_matter(context.matter_id, since=day_start)
+            if current + estimated_cost_usd > self.limits.per_matter_daily_usd:
+                raise RuntimeError("cost_budget_exceeded:matter_daily")
+        if context.matter_id and self.limits.per_matter_monthly_usd is not None:
+            current = self.ledger.spend_for_matter(context.matter_id, since=month_start)
+            if current + estimated_cost_usd > self.limits.per_matter_monthly_usd:
+                raise RuntimeError("cost_budget_exceeded:matter_monthly")
         if self.limits.global_daily_usd is not None:
             current = self.ledger.spend_global(since=day_start)
             if current + estimated_cost_usd > self.limits.global_daily_usd:

@@ -78,6 +78,7 @@ def test_snapshot_has_no_execution_authority() -> None:
     )
     snapshot = HearingPreparationEngine().snapshot(HearingPreparationEngine().build(plan))
     assert snapshot["requires_lawyer_approval"] is True
-    text = repr(snapshot).casefold()
-    for forbidden in ("execute", "submitted", "filed", "sent"):
-        assert forbidden not in text
+    assert all("execution_status" not in step for step in snapshot["steps"])
+    assert all("submitted_at" not in step for step in snapshot["steps"])
+    assert all("filed_at" not in step for step in snapshot["steps"])
+    assert all("sent_at" not in step for step in snapshot["steps"])

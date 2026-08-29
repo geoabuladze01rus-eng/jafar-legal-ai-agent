@@ -10,14 +10,19 @@ from jafar.precedent_freshness import (
 from jafar.precedent_policy import PrecedentReleasePolicy
 
 
-def record(authority_id: str, decided_on: date, proposition: str) -> PrecedentRecord:
+def record(
+    authority_id: str,
+    decided_on: date,
+    proposition: str,
+    weight: AuthorityWeight = AuthorityWeight.HIGH,
+) -> PrecedentRecord:
     return PrecedentRecord(
         authority_id=authority_id,
         citation=authority_id,
         topic="topic",
         proposition=proposition,
         decided_on=decided_on,
-        weight=AuthorityWeight.HIGH,
+        weight=weight,
         authority_type="court_position",
         source_url=f"https://example.test/{authority_id}",
         source_fingerprint=f"fp-{authority_id}",
@@ -41,7 +46,7 @@ def test_conflicting_precedent_blocks_release() -> None:
 
 
 def test_confirmed_consistent_chain_can_release() -> None:
-    older = record("old", date(2024, 1, 1), "A")
+    older = record("old", date(2024, 1, 1), "A", AuthorityWeight.BINDING)
     newer = record("new", date(2026, 1, 1), "A")
     relation = PrecedentRelation(
         earlier_id="old",

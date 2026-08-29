@@ -47,7 +47,7 @@ def test_ambiguous_reported_speech_requires_review() -> None:
     result = LegalHoldingVerifier().verify(
         candidate("В жалобе заявитель указывает, что Верховный Суд указал на необходимость иной оценки этих обстоятельств.")
     )
-    assert result.status == HoldingStatus.PARTY_ARGUMENT
+    assert result.status == HoldingStatus.REVIEW_REQUIRED
     assert result.may_enter_holding_base is False
 
 

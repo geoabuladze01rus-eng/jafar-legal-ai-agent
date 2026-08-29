@@ -145,7 +145,7 @@ def test_scheduler_delivers_once_and_stores_result(tmp_path) -> None:
     assert asyncio.run(scheduler.run_due(utc_now() + timedelta(seconds=2))) == 1
     assert asyncio.run(scheduler.run_due(utc_now() + timedelta(seconds=3))) == 0
     assert calls == [item.id]
-    assert store.get(item.id).status == "sent"
+    assert store.get(item.id).status == "published"
     assert store.get(item.id).message_id == 42
 
 
@@ -164,7 +164,7 @@ def test_scheduler_persists_error_code_not_exception_text(tmp_path) -> None:
 
     asyncio.run(TelegramScheduler(store, broken).run_due(utc_now() + timedelta(seconds=2)))
     failed = store.get(item.id)
-    assert failed.status == "failed"
+    assert failed.status == "failed_before_dispatch"
     assert failed.error == "delivery_runtimeerror"
     assert "secret-token" not in (failed.error or "")
 
@@ -182,7 +182,7 @@ def test_restart_fails_closed_for_uncertain_sending_job(tmp_path) -> None:
     store.claim_due(utc_now() + timedelta(seconds=2))
     reloaded = TelegramScheduleStore(path)
     recovered = reloaded.get(interrupted.id)
-    assert recovered.status == "failed"
+    assert recovered.status == "delivery_uncertain"
     assert recovered.error == "interrupted_before_delivery_confirmation"
 
 

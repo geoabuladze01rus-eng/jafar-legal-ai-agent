@@ -367,6 +367,12 @@ async def telegram_cancel_scheduled_post(schedule_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def telegram_reconcile_delivery(schedule_id: str, outcome: str, operator: str, evidence_note: str) -> dict[str, Any]:
+    """Manually reconcile an uncertain dispatch; this never re-sends a Telegram publication."""
+    return _scheduled(_store().reconcile(schedule_id, outcome=outcome, operator=operator, evidence_note=evidence_note))
+
+
+@mcp.tool()
 async def telegram_send_poll(
     chat_id: int | str,
     question: str,

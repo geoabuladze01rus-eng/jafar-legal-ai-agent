@@ -12,6 +12,10 @@ from typing import Any
 from uuid import uuid4
 
 
+class DeliveryUncertainError(RuntimeError):
+    """The HTTP dispatch may have reached Telegram; never retry automatically."""
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -84,9 +88,14 @@ class TelegramScheduleStore:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS telegram_scheduled_due ON telegram_scheduled_items(status, scheduled_for)"
             )
+            columns = {row[1] for row in con.execute("PRAGMA table_info(telegram_scheduled_items)")}
+            if "reconciled_by" not in columns:
+                con.execute("ALTER TABLE telegram_scheduled_items ADD COLUMN reconciled_by TEXT")
+                con.execute("ALTER TABLE telegram_scheduled_items ADD COLUMN reconciliation_note TEXT")
+                con.execute("ALTER TABLE telegram_scheduled_items ADD COLUMN reconciled_at TEXT")
             # Sending can mean Telegram received it before a restart. Failing closed avoids duplicates.
             con.execute(
-                "UPDATE telegram_scheduled_items SET status='failed', error='interrupted_before_delivery_confirmation', updated_at=? WHERE status='sending'",
+                "UPDATE telegram_scheduled_items SET status='delivery_uncertain', error='interrupted_before_delivery_confirmation', updated_at=? WHERE status='sending'",
                 (utc_now().isoformat(),),
             )
 
@@ -108,7 +117,7 @@ class TelegramScheduleStore:
         try:
             with self._connect() as con:
                 con.execute(
-                    "INSERT INTO telegram_scheduled_items VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, ?, ?, 0, ?)",
+                    "INSERT INTO telegram_scheduled_items (id, kind, chat_id, payload_json, scheduled_for, status, idempotency_key, recurrence_seconds, message_id, error, created_at, updated_at, attempts, parent_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, ?, ?, 0, ?)",
                     (
                         item_id,
                         kind,
@@ -154,7 +163,7 @@ class TelegramScheduleStore:
         return self._item(row)
 
     def list(
-        self, statuses: tuple[str, ...] = ("pending", "sending", "failed")
+        self, statuses: tuple[str, ...] = ("pending", "sending", "failed", "delivery_uncertain")
     ) -> list[ScheduledItem]:
         if not statuses:
             return []
@@ -200,7 +209,7 @@ class TelegramScheduleStore:
     def finish(
         self, item: ScheduledItem, *, message_id: int | None = None, error: str | None = None
     ) -> None:
-        status = "failed" if error else "sent"
+        status = "failed_before_dispatch" if error else "published"
         with self._connect() as con:
             changed = con.execute(
                 "UPDATE telegram_scheduled_items SET status=?, message_id=?, error=?, updated_at=? WHERE id=? AND status='sending'",
@@ -221,6 +230,30 @@ class TelegramScheduleStore:
                 recurrence_seconds=item.recurrence_seconds,
                 parent_id=item.id,
             )
+
+    def mark_uncertain(self, item: ScheduledItem, error: str = "delivery_uncertain") -> None:
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_scheduled_items SET status='delivery_uncertain', error=?, updated_at=? WHERE id=? AND status='sending'",
+                (error, utc_now().isoformat(), item.id),
+            ).rowcount
+        if not changed:
+            raise RuntimeError("scheduled_item_finish_state_mismatch")
+
+    def reconcile(self, item_id: str, *, outcome: str, operator: str, evidence_note: str) -> ScheduledItem:
+        if outcome not in {"confirmed_published", "confirmed_not_published"}:
+            raise ValueError("invalid_reconciliation_outcome")
+        if not operator.strip() or not evidence_note.strip():
+            raise ValueError("operator_and_evidence_note_required")
+        final = "published" if outcome == "confirmed_published" else "failed_before_dispatch"
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_scheduled_items SET status=?, error=?, reconciled_by=?, reconciliation_note=?, reconciled_at=?, updated_at=? WHERE id=? AND status='delivery_uncertain'",
+                (final, f"{outcome}:operator_recorded", operator.strip()[:200], evidence_note.strip()[:1000], utc_now().isoformat(), utc_now().isoformat(), item_id),
+            ).rowcount
+        if not changed:
+            raise ValueError("scheduled_item_not_reconcilable")
+        return self.get(item_id)
 
     @staticmethod
     def _item(row: sqlite3.Row) -> ScheduledItem:
@@ -254,6 +287,8 @@ class TelegramScheduler:
         for item in items:
             try:
                 message_id = await self.deliver(item)
+            except DeliveryUncertainError as exc:
+                self.store.mark_uncertain(item, _safe_delivery_error(exc))
             except Exception as exc:  # noqa: BLE001 - every failure must close the state machine
                 self.store.finish(item, error=_safe_delivery_error(exc))
             else:

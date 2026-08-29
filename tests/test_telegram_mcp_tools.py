@@ -102,7 +102,7 @@ def test_mcp_schedule_tools_and_delivery_allowlist_recheck(
         )
     )
     failed = telegram_mcp._store().get(item.id)
-    assert failed.status == "failed"
+    assert failed.status == "failed_before_dispatch"
     assert failed.error == "delivery_policy_denied"
 
 
@@ -124,7 +124,7 @@ def test_scheduled_delivery_rechecks_live_send_gate(
         )
     )
     failed = telegram_mcp._store().get(item.id)
-    assert failed.status == "failed"
+    assert failed.status == "failed_before_dispatch"
     assert failed.error == "delivery_policy_denied"
 
 

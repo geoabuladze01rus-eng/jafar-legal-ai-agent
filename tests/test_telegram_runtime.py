@@ -12,7 +12,7 @@ class FakeOutbound:
 
 
 def test_runtime_routes_safe_comment_to_outbound() -> None:
-    runtime = TelegramRuntime("test-token", production_send=False)
+    runtime = TelegramRuntime("test-token", production_send=False, dry_run=False)
     fake = FakeOutbound()
     runtime.outbound = fake  # type: ignore[assignment]
 

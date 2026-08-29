@@ -12,6 +12,7 @@ from .config import settings
 from .production_guard import ProductionGuard
 from .telegram_outbound import TelegramOutbound
 from .telegram_polls import TelegramPollStore
+from .telegram_scheduler import DeliveryUncertainError
 from .telegram_update_receiver import TelegramUpdateReceiver, run_polling
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,9 @@ class TelegramBotHttpClient:
             async with httpx.AsyncClient(timeout=self.request_timeout) as client:
                 response = await client.post(self._url(method), **kwargs)
         except httpx.TimeoutException:
-            raise RuntimeError(f"Telegram {method} timed out") from None
+            raise DeliveryUncertainError(f"Telegram {method} timed out") from None
         except httpx.HTTPError:
-            raise RuntimeError(f"Telegram {method} transport failed") from None
+            raise DeliveryUncertainError(f"Telegram {method} transport failed") from None
 
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"Telegram {method} HTTP {response.status_code}")

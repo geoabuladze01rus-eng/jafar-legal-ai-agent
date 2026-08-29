@@ -53,9 +53,12 @@ def safety_check(text: str) -> dict[str, Any]:
         (
             "high",
             "identifying_person",
-            r"\b(?:паспорт|снилс|инн|персональн\w* данн\w*)",
+            r"\b(?:паспорт|снилс|инн|персональн\w* данн\w*|[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+)",
             "personal data indicator",
         ),
+        ("high", "bank_details", r"\b(?:р/с|сч[её]т|бик|карта)\s*\d{4,}", "banking details"),
+        ("high", "document_identifier", r"\b(?:материал|постановление|протокол)\s*(?:№|N)?\s*[\w/-]{4,}", "case material/document identifier"),
+        ("high", "legal_advice", r"\b(?:вам следует|советую вам|ваш адвокат)\b", "individual legal advice"),
         (
             "medium",
             "accusation",
@@ -64,7 +67,7 @@ def safety_check(text: str) -> dict[str, Any]:
         ),
     )
     findings = [
-        {"severity": severity, "kind": kind, "reason": reason}
+        {"severity": severity, "kind": kind, "reason": reason, "suggested_redaction": f"Remove or generalize {reason}."}
         for severity, kind, pattern, reason in checks
         if re.search(pattern, text, re.IGNORECASE)
     ]
@@ -78,6 +81,7 @@ def safety_check(text: str) -> dict[str, Any]:
     return {
         "severity": severity,
         "findings": findings,
+        "auto_publish_allowed": severity == "low",
         "disclaimer": "This is a publication safety gate, not definitive legal clearance.",
     }
 
@@ -233,7 +237,7 @@ class EditorialStore:
             "draft"
             if mode == "DRAFT"
             else "approval_required"
-            if mode == "APPROVE" or safety["severity"] == "high"
+            if mode == "APPROVE" or safety["severity"] != "low"
             else "approved"
         )
         with self._connect() as con:

@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     ai_rate_limit_requests: int = 30
     ai_rate_limit_window_seconds: int = 60
     telegram_bot_token: str | None = None
+    telegram_allowed_chat_ids: str = ""
     telegram_polling_enabled: bool = False
+    telegram_scheduler_enabled: bool = False
+    telegram_scheduler_db_path: str = "var/telegram_scheduler.sqlite3"
+    telegram_poll_identity_secret: str | None = None
     telegram_production_send: bool = False
     telegram_dry_run: bool = True
+    jafar_mcp_auth_token: str | None = None
+    jafar_mcp_public_url: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

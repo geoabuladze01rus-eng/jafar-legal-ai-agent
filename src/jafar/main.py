@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import hmac
@@ -27,8 +28,10 @@ from .rate_limit_runtime import RateLimiter, build_ai_rate_limiter
 from .storage import build_runtime_repositories, validate_storage_security
 from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
+from .telegram_security import validate_telegram_settings
 
 telegram_runtime: TelegramRuntime | None = None
+telegram_scheduler_task: asyncio.Task[None] | None = None
 metered_openai_analyzer: MeteredStructuredLegalAnalyzer | None = None
 ai_rate_limiter: RateLimiter | None = None
 AI_RATE_LIMIT_PATHS = frozenset({"/v1/analyze", "/v1/documents/analyze"})
@@ -41,6 +44,7 @@ def production_api_key_is_secure() -> bool:
 
 
 def validate_runtime_security() -> None:
+    validate_telegram_settings(settings)
     if settings.environment.strip().casefold() != "production":
         return
     if not production_api_key_is_secure():
@@ -82,17 +86,28 @@ def _ensure_metered_openai_runtime() -> MeteredStructuredLegalAnalyzer | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global ai_rate_limiter, telegram_runtime
+    global ai_rate_limiter, telegram_runtime, telegram_scheduler_task
     validate_runtime_security()
     ai_rate_limiter = build_ai_rate_limiter(settings)
     if settings.ai_cost_control_enabled and openai_analyzer is not None:
         _ensure_metered_openai_runtime()
-    if settings.telegram_polling_enabled and settings.telegram_bot_token:
+    if settings.telegram_polling_enabled:
+        assert settings.telegram_bot_token is not None
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
             production_send=settings.telegram_production_send,
+            dry_run=settings.telegram_dry_run,
         )
         telegram_runtime.start()
+    if settings.telegram_scheduler_enabled:
+        from .telegram_mcp import _deliver, _store
+        from .telegram_scheduler import TelegramScheduler
+
+        app.state.telegram_scheduler_stop = asyncio.Event()
+        telegram_scheduler_task = asyncio.create_task(
+            TelegramScheduler(_store(), _deliver).serve(app.state.telegram_scheduler_stop),
+            name="jafar-telegram-scheduler",
+        )
     try:
         yield
     finally:
@@ -100,9 +115,13 @@ async def lifespan(app: FastAPI):
         if telegram_runtime is not None:
             await telegram_runtime.stop()
             telegram_runtime = None
+        if telegram_scheduler_task is not None:
+            app.state.telegram_scheduler_stop.set()
+            await telegram_scheduler_task
+            telegram_scheduler_task = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.12", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.9.14", lifespan=lifespan)
 app.include_router(legal_entity_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = (
@@ -169,8 +188,6 @@ async def protect_v1_api(request: Request, call_next):
                 try:
                     allowed = limiter.allow(request.url.path)
                 except Exception:
-                    # A broken distributed limiter must fail closed rather than silently allowing
-                    # an unbounded model-spend path during a Supabase/network incident.
                     return JSONResponse(
                         status_code=503,
                         content={"detail": "AI rate-limit safety service unavailable"},

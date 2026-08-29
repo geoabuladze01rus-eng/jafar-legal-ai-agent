@@ -198,13 +198,14 @@ class LegalEntityIntelligence:
         self,
         findings: list[SourceFinding],
         *,
-        trusted: bool = True,
+        trusted: bool = False,
     ) -> dict[str, Any]:
         """Aggregate findings while keeping source trust explicit.
 
-        Only findings obtained by the server-side source pipeline may produce a legal/entity
-        risk score. Caller-supplied findings remain visible as unverified material but cannot
-        be promoted into scored risk conclusions.
+        The safe default is untrusted. Only findings that explicitly crossed a server-owned,
+        validated source pipeline may set ``trusted=True`` and produce a legal/entity risk score.
+        Caller-supplied or future call-site findings therefore fail closed if the trust flag is
+        accidentally omitted.
         """
 
         risks = self._score(findings) if trusted else []

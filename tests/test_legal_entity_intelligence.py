@@ -49,3 +49,15 @@ def test_untrusted_findings_are_visible_but_not_scored():
     assert profile["risk_level"] == "unverified"
     assert profile["risks"] == []
     assert profile["findings"][0]["details"]["bankruptcy"] is True
+
+
+def test_profile_scoring_fails_closed_when_trust_flag_is_omitted():
+    profile = LegalEntityIntelligence().build_profile(
+        [SourceFinding("fedresurs", "found", "Claim", {"bankruptcy": True})]
+    )
+
+    assert profile["source_trust"] == "client_supplied_unverified"
+    assert profile["risk_assessment_status"] == "not_scored_unverified_input"
+    assert profile["risk_score"] is None
+    assert profile["risk_level"] == "unverified"
+    assert profile["risks"] == []

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     telegram_scheduler_enabled: bool = False
     jafar_mcp_auth_token: str | None = None
     jafar_mcp_public_url: str | None = None
+    telegram_editorial_mode: str = "APPROVE"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

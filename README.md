@@ -66,6 +66,38 @@ Call `telegram_get_poll_results` with the returned `poll_id`. Enable
 `TELEGRAM_POLLING_ENABLED=true` so poll and poll_answer updates are collected. Telegram only
 provides per-user answer updates for non-anonymous polls; aggregate poll counts are stored for all polls.
 
+### Editorial autopilot
+
+`TELEGRAM_EDITORIAL_MODE=APPROVE` is the default. `DRAFT` never schedules or publishes;
+`APPROVE` needs `telegram_editorial_approve`; `AUTO` approves only low-risk text and high-risk
+material still becomes approval-required. This safety gate is not legal clearance.
+
+Create a weekly plan, draft, approve and schedule it in Inspector:
+
+```json
+{"week_start":"2026-09-01","topics":["ошибки при допросе","позиция защиты"],"publishing_windows":["09:00","18:00"]}
+```
+
+```json
+{"item_id":"<planned-item-id>","image_prompt":"restrained editorial cover, blue-black palette"}
+```
+
+```json
+{"draft_id":"<draft-id>","chat_id":"-1001234567890"}
+```
+
+Use `telegram_editorial_safety_check` before review, or create a redacted voice-to-post draft with:
+
+```json
+{"transcript":"Эээ, у клиента test@example.com возник вопрос по делу А40-12345/2026"}
+```
+
+An image URL/base64 attachment or vendor-neutral `image_prompt` can be stored with a draft. Use
+`telegram_editorial_suggest_poll` to propose a poll, then separately approve/schedule it through
+the existing poll tools. Use `telegram_editorial_performance`, `telegram_editorial_best_topics`,
+and `telegram_editorial_suggest_followup` for locally tracked publication data; unavailable Bot API
+views/reactions remain explicitly null rather than invented.
+
 ### Remote ChatGPT/Codex MCP
 
 The remote server uses the supported streamable-HTTP transport. Keep it bound to loopback,

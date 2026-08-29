@@ -12,6 +12,12 @@ from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 
 from jafar.config import settings
+from jafar.telegram_editorial import (
+    DEFAULT_RUBRICS,
+    EditorialStore,
+    redact_transcript,
+    safety_check,
+)
 from jafar.telegram_polls import TelegramPollStore, validate_poll
 from jafar.telegram_publishing import (
     MAX_PHOTO_BYTES,
@@ -163,6 +169,10 @@ def _polls() -> TelegramPollStore:
     return TelegramPollStore(settings.telegram_scheduler_db_path)
 
 
+def _editorial() -> EditorialStore:
+    return EditorialStore(settings.telegram_scheduler_db_path)
+
+
 def _publisher() -> TelegramPublisher:
     return TelegramPublisher(
         lambda: TelegramBotHttpClient(_require_live_send_token()),
@@ -212,7 +222,10 @@ async def _deliver(item: ScheduledItem) -> int | None:
             photo_bytes=image,
             filename=payload.get("filename", "image.png"),
         )
-        return result.message_ids[-1] if result.message_ids else result.photo_message_id
+        message_id = result.message_ids[-1] if result.message_ids else result.photo_message_id
+        if payload.get("editorial_draft_id"):
+            _editorial().link_delivery(payload["editorial_draft_id"], message_id)
+        return message_id
     if item.kind == "poll":
         chat = _require_allowed_chat(item.chat_id)
         result = await TelegramBotHttpClient(_require_live_send_token()).send_poll(
@@ -310,6 +323,7 @@ async def telegram_schedule_post(
     filename: str = "image.png",
     idempotency_key: str | None = None,
     recurrence_seconds: int | None = None,
+    editorial_draft_id: str | None = None,
 ) -> dict[str, Any]:
     """Persist an allowlisted text/photo publication for a future timezone-aware time."""
     chat = _require_allowed_chat(chat_id)
@@ -328,6 +342,7 @@ async def telegram_schedule_post(
         "photo_url": photo_url,
         "photo_base64": photo_base64,
         "filename": filename,
+        "editorial_draft_id": editorial_draft_id,
     }
     item = _store().schedule(
         kind="post",
@@ -445,6 +460,243 @@ async def telegram_get_poll_results(poll_id: str) -> dict[str, Any]:
         raise PermissionError("poll is not bound to an allowlisted Telegram chat")
     _require_allowed_chat(chat_id)
     return result
+
+
+def _editorial_mode(mode: str | None) -> str:
+    value = (mode or settings.telegram_editorial_mode).upper()
+    if value not in {"DRAFT", "APPROVE", "AUTO"}:
+        raise ValueError("mode must be DRAFT, APPROVE, or AUTO")
+    return value
+
+
+@mcp.tool()
+async def telegram_editorial_plan_week(
+    week_start: str,
+    topics: list[str],
+    rubrics: list[str] | None = None,
+    publishing_windows: list[str] | None = None,
+    series_length: int | None = None,
+) -> dict[str, Any]:
+    """Persist a non-repetitive weekly editorial plan; windows are UTC HH:MM values."""
+    try:
+        start = __import__("datetime").date.fromisoformat(week_start)
+    except ValueError as exc:
+        raise ValueError("week_start must be YYYY-MM-DD") from exc
+    items = _editorial().create_plan(
+        week_start=start,
+        topics=topics,
+        rubrics=rubrics or list(DEFAULT_RUBRICS),
+        windows=publishing_windows or ["09:00"],
+        series_length=series_length,
+    )
+    return {"items": [item.__dict__ for item in items]}
+
+
+@mcp.tool()
+async def telegram_editorial_list_plan(week_start: str | None = None) -> dict[str, Any]:
+    """List persistent planned editorial items."""
+    return {"items": [item.__dict__ for item in _editorial().list_items(week_start)]}
+
+
+@mcp.tool()
+async def telegram_editorial_update_plan_item(
+    item_id: str, topic: str | None = None, scheduled_for: str | None = None
+) -> dict[str, Any]:
+    """Update a persistent plan item before it becomes a scheduled publication."""
+    return _editorial().update_item(item_id, topic=topic, scheduled_for=scheduled_for).__dict__
+
+
+@mcp.tool()
+async def telegram_editorial_cancel_plan_item(item_id: str) -> dict[str, Any]:
+    """Cancel a planned item; a separately scheduled publication must be cancelled by schedule ID."""
+    return _editorial().update_item(item_id, state="cancelled").__dict__
+
+
+@mcp.tool()
+async def telegram_editorial_generate_draft(
+    item_id: str | None = None,
+    topic: str | None = None,
+    rubric: str | None = None,
+    body: str | None = None,
+    mode: str | None = None,
+    image_url: str | None = None,
+    photo_base64: str | None = None,
+    image_prompt: str | None = None,
+) -> dict[str, Any]:
+    """Generate/store a reviewable draft. AUTO only approves low-risk material."""
+    editorial_mode = _editorial_mode(mode)
+    item = _editorial().get_item(item_id) if item_id else None
+    topic, rubric = (
+        topic or (item.topic if item else None),
+        rubric or (item.rubric if item else "профессиональный взгляд/наблюдение"),
+    )
+    if not topic:
+        raise ValueError("topic or item_id is required")
+    headline = f"{rubric.capitalize()}: {topic}"
+    content = (
+        body
+        or f"{headline}\n\nКороткий профессиональный разбор темы «{topic}». Делитесь своим опытом в комментариях."
+    )
+    draft = _editorial().create_draft(
+        item_id=item.id if item else None,
+        headline=headline,
+        body=content,
+        mode=editorial_mode,
+        image_url=image_url,
+        photo_base64=photo_base64,
+        image_prompt=image_prompt,
+    )
+    return draft
+
+
+@mcp.tool()
+async def telegram_editorial_safety_check(text: str) -> dict[str, Any]:
+    """Run a structured publication safety gate; it is not definitive legal clearance."""
+    return safety_check(text)
+
+
+@mcp.tool()
+async def telegram_editorial_approve(draft_id: str) -> dict[str, Any]:
+    """Explicitly approve a draft after human review."""
+    draft = _editorial().get_draft(draft_id)
+    if draft["state"] == "rejected":
+        raise ValueError("rejected draft cannot be approved")
+    return _editorial().set_draft_state(draft_id, "approved")
+
+
+@mcp.tool()
+async def telegram_editorial_reject(draft_id: str) -> dict[str, Any]:
+    """Reject a draft so it cannot be scheduled."""
+    return _editorial().set_draft_state(draft_id, "rejected")
+
+
+@mcp.tool()
+async def telegram_editorial_schedule_approved(
+    draft_id: str,
+    chat_id: int | str,
+    scheduled_for: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Schedule only an explicitly approved draft through the existing secure scheduler."""
+    draft = _editorial().get_draft(draft_id)
+    if draft["state"] != "approved":
+        raise PermissionError("draft requires explicit approval before scheduling")
+    # A high-risk AUTO draft reaches this point only after explicit human approval.
+    when = scheduled_for
+    if not when and draft["item_id"]:
+        when = _editorial().get_item(draft["item_id"]).scheduled_for
+    if not when:
+        raise ValueError("scheduled_for is required when the draft has no planned item")
+    response = await telegram_schedule_post(
+        chat_id=chat_id,
+        text=draft["body"],
+        scheduled_for=when,
+        photo_url=draft["image_url"],
+        photo_base64=draft["photo_base64"],
+        idempotency_key=idempotency_key or f"editorial:{draft_id}",
+        editorial_draft_id=draft_id,
+    )
+    # Preserve linkage without returning image bytes or modifying base scheduler semantics.
+    with _editorial()._connect() as con:
+        con.execute(
+            "UPDATE telegram_editorial_drafts SET scheduled_id=?, state='scheduled', updated_at=? WHERE id=?",
+            (
+                response["schedule_id"],
+                __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
+                draft_id,
+            ),
+        )
+    return response
+
+
+@mcp.tool()
+async def telegram_editorial_from_transcript(
+    transcript: str, item_id: str | None = None, mode: str | None = None
+) -> dict[str, Any]:
+    """Turn a transcript into a redacted draft; audio transcription can be plugged in upstream later."""
+    clean = redact_transcript(transcript)
+    if not clean:
+        raise ValueError("transcript has no usable content")
+    return await telegram_editorial_generate_draft(
+        item_id=item_id, topic=clean[:80], body=clean, mode=mode
+    )
+
+
+@mcp.tool()
+async def telegram_editorial_suggest_poll(draft_id: str) -> dict[str, Any]:
+    """Propose, but never auto-publish, a concise engagement poll for an editorial draft."""
+    draft = _editorial().get_draft(draft_id)
+    topic = draft["headline"][:120]
+    return {
+        "draft_id": draft_id,
+        "requires_approval": True,
+        "question": f"Что разобрать дальше: {topic}?",
+        "options": ["Практические ошибки", "Позиция защиты", "Судебная практика"],
+    }
+
+
+@mcp.tool()
+async def telegram_editorial_performance() -> dict[str, Any]:
+    """Report locally tracked publication data; unavailable Telegram metrics remain null."""
+    return {"items": _editorial().performance()}
+
+
+@mcp.tool()
+async def telegram_editorial_best_topics() -> dict[str, Any]:
+    """Group only collected publication records; no unsupported engagement metric is invented."""
+    items = _editorial().performance()
+    counts: dict[str, int] = {}
+    for item in items:
+        if item["rubric"]:
+            counts[item["rubric"]] = counts.get(item["rubric"], 0) + 1
+    return {
+        "ranked_rubrics": sorted(
+            ({"rubric": key, "published_count": value} for key, value in counts.items()),
+            key=lambda row: row["published_count"],
+            reverse=True,
+        ),
+        "basis": "published_count only; engagement metrics unavailable",
+    }
+
+
+@mcp.tool()
+async def telegram_editorial_suggest_followup(draft_id: str) -> dict[str, Any]:
+    """Suggest a follow-up based on an existing draft without claiming unavailable Telegram metrics."""
+    draft = _editorial().get_draft(draft_id)
+    return {
+        "draft_id": draft_id,
+        "suggestion": f"Продолжение: практические выводы по теме «{draft['headline']}»",
+        "basis": "local editorial linkage; no unavailable engagement metrics inferred",
+    }
+
+
+@mcp.tool()
+async def telegram_editorial_mark_evergreen(draft_id: str) -> dict[str, Any]:
+    """Mark an existing draft evergreen; any repost still requires draft safety/approval flow."""
+    return _editorial().mark_evergreen(draft_id)
+
+
+@mcp.tool()
+async def telegram_editorial_list_evergreen() -> dict[str, Any]:
+    """Find prior evergreen posts; availability/performance is limited to locally tracked data."""
+    return {"items": _editorial().evergreen()}
+
+
+@mcp.tool()
+async def telegram_editorial_prepare_repost(draft_id: str) -> dict[str, Any]:
+    """Create an updated repost draft; it always re-enters APPROVE safety/approval flow."""
+    source = _editorial().get_draft(draft_id)
+    if not source["evergreen"]:
+        raise ValueError("mark the source draft evergreen before preparing a repost")
+    return _editorial().create_draft(
+        item_id=None,
+        headline=f"Обновлено: {source['headline']}",
+        body=source["body"],
+        mode="APPROVE",
+        image_url=source["image_url"],
+        photo_base64=source["photo_base64"],
+        image_prompt=source["image_prompt"],
+    )
 
 
 async def run_scheduler_once() -> int:

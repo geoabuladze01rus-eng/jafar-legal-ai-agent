@@ -32,7 +32,7 @@ class LegalAnalysisService:
         primary = routed[0]
         payload = primary.metadata.get("legal_analysis")
         if not isinstance(payload, dict):
-            raise RuntimeError("AI provider returned no structured legal analysis")
+            raise RuntimeError("AI provider returned no structured legal analysis")  # noqa: TRY004
 
         analysis = LegalAnalysis.model_validate(payload)
         return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)

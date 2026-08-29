@@ -122,7 +122,7 @@ class ApprovalExecutionService:
 
         try:
             result = handler(payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             error_text = str(exc) or exc.__class__.__name__
             try:
                 self.store.release_execution_claim(
@@ -130,7 +130,7 @@ class ApprovalExecutionService:
                     executor_id=self.executor_id,
                     error=error_text,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # Fail closed: if claim release itself cannot be persisted, another worker must not
                 # assume the action is safely retryable. Operational recovery can inspect EXECUTING.
                 return ExecutionResult(
@@ -148,7 +148,7 @@ class ApprovalExecutionService:
 
         try:
             self.store.mark_executed(action_id, executor_id=self.executor_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # The side effect may already have happened. Never release the claim here: automatic
             # retry could duplicate an external legal action. Human/ops reconciliation is required.
             return ExecutionResult(
@@ -191,7 +191,7 @@ class ApprovalExecutionService:
             result = handler(payload)
             data = result if isinstance(result, dict) else {"result": result}
             return ExecutionResult(request.approval_id, "executed", "Действие выполнено.", data)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return ExecutionResult(
                 request.approval_id,
                 "error",

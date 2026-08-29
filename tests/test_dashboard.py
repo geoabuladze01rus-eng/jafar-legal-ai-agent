@@ -128,7 +128,7 @@ def test_dashboard_validates_timestamp_and_approval_count() -> None:
     service = DashboardService(MatterStore())
 
     with pytest.raises(ValueError, match="timezone-aware"):
-        service.snapshot(generated_at=datetime(2026, 8, 28, 13))
+        service.snapshot(generated_at=datetime(2026, 8, 28, 13))  # noqa: DTZ001
 
     with pytest.raises(ValueError, match="cannot be negative"):
         service.snapshot(pending_approvals=-1)

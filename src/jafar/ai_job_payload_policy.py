@@ -30,7 +30,7 @@ def validate_durable_ai_job_payload(payload: dict[str, Any]) -> None:
     """
 
     if not isinstance(payload, dict):
-        raise ValueError("ai_job_payload_must_be_object")
+        raise ValueError("ai_job_payload_must_be_object")  # noqa: TRY004
     _reject_sensitive_keys(payload)
     try:
         encoded = json.dumps(

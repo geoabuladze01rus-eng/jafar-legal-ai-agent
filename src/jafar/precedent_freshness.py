@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from itertools import combinations
+from typing import ClassVar
 
 from .authority_applicability import AuthorityWeight
 
@@ -73,7 +74,7 @@ class PrecedentFreshnessEngine:
     chronology and only *verified* treatment relationships supplied by a canonical resolver.
     """
 
-    WEIGHT_SCORE = {
+    WEIGHT_SCORE: ClassVar[dict[AuthorityWeight, int]] = {
         AuthorityWeight.BINDING: 500,
         AuthorityWeight.HIGH: 400,
         AuthorityWeight.PERSUASIVE: 250,

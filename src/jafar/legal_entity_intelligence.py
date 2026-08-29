@@ -182,7 +182,7 @@ class LegalEntityIntelligence:
         for source in self.sources:
             try:
                 findings.append(source.lookup(q))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 findings.append(
                     SourceFinding(
                         source.source_key,

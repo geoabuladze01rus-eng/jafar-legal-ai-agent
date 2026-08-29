@@ -278,9 +278,11 @@ class CostScaleControl:
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         month_start = day_start.replace(day=1)
 
-        if self.limits.per_request_usd is not None:
-            if estimated_cost_usd > self.limits.per_request_usd:
-                raise RuntimeError("cost_budget_exceeded:per_request")
+        if (
+            self.limits.per_request_usd is not None
+            and estimated_cost_usd > self.limits.per_request_usd
+        ):
+            raise RuntimeError("cost_budget_exceeded:per_request")
         if self.limits.per_user_daily_usd is not None:
             current = self.ledger.spend_for_user(context.user_id, since=day_start)
             if current + estimated_cost_usd > self.limits.per_user_daily_usd:

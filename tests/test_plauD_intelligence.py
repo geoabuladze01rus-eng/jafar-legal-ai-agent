@@ -1,4 +1,4 @@
-from jafar.plauD_intelligence import PlaudIntelligence
+from jafar.plaud_audio_intelligence import PlaudIntelligence
 
 
 def test_plauD_recording_becomes_audio_evidence():

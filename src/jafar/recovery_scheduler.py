@@ -28,7 +28,7 @@ class ScheduledRecoveryRunner:
             candidates: list[RecoveryCandidate] = self.worker.run_once(limit=limit)
             finished = datetime.now(UTC)
             run = RecoveryRun(started_at=started, finished_at=finished, claimed=len(candidates))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             finished = datetime.now(UTC)
             run = RecoveryRun(started_at=started, finished_at=finished, claimed=0, status="failed", error=f"{type(exc).__name__}: {exc}")
         if self.heartbeat_store is not None:

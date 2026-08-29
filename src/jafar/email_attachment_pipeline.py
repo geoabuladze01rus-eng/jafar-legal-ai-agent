@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +19,7 @@ class AttachmentRecord:
 class EmailAttachmentPipeline:
     """Normalizes email attachments before document/evidence processing."""
 
-    ALLOWED_DOCUMENT_TYPES = {
+    ALLOWED_DOCUMENT_TYPES: ClassVar[set[str]] = {
         "application/pdf",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

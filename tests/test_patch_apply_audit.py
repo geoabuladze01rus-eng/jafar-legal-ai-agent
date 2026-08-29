@@ -100,7 +100,7 @@ def test_apply_requires_identified_actor_and_timezone_aware_timestamp() -> None:
             fragment=_fragment(),
             patch=_patch(),
             applied_by="lawyer:chernov",
-            applied_at=datetime(2026, 8, 28, 12, 0),
+            applied_at=datetime(2026, 8, 28, 12, 0),  # noqa: DTZ001
         )
 
 

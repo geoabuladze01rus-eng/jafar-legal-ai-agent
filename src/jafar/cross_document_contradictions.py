@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Any
+from typing import Any, ClassVar
 
 from .evidence_graph import CaseEvidenceGraph, EvidenceClaim, EvidenceSource
 
@@ -26,7 +26,7 @@ class CrossDocumentContradiction:
 class CrossDocumentContradictionGraph:
     """Detect conflicts between supported claims and preserve both source trails."""
 
-    OPPOSING_POSITIONS = {
+    OPPOSING_POSITIONS: ClassVar[set[tuple[str, str]]] = {
         ("supports", "opposes"),
         ("opposes", "supports"),
         ("yes", "no"),

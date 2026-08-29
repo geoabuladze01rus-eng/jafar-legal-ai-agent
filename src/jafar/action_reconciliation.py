@@ -190,7 +190,7 @@ class ActionReconciliationService:
         if not raw:
             raise ValueError(f"execution_claim_timestamp_missing:{action.action_id}")
         try:
-            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(raw)
         except ValueError as exc:
             raise ValueError(f"execution_claim_timestamp_invalid:{action.action_id}") from exc
         if parsed.tzinfo is None:

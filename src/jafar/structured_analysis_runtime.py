@@ -67,7 +67,7 @@ class MeteredStructuredLegalAnalyzer:
                 task=request.task,
                 matter_type=request.matter_type,
             )
-        except Exception:
+        except Exception:  # noqa: TRY203
             # The provider may have received the request even when a downstream parser raises
             # ValueError. Keep the reservation active until reconciliation/TTL instead of
             # understating spend and immediately allowing a duplicate expensive call.
@@ -83,7 +83,7 @@ class MeteredStructuredLegalAnalyzer:
             if reservation_id is not None:
                 assert self.reservations is not None
                 self.reservations.settle(reservation_id)
-        except Exception:
+        except Exception:  # noqa: TRY203
             # The provider completed but durable accounting is uncertain. The reservation remains
             # active so another request cannot consume the same budget until recovery.
             raise

@@ -30,9 +30,8 @@ def safe_provider_metadata(data: dict[str, Any]) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
     for key in ("id", "model", "created", "system_fingerprint", "object"):
         value = data.get(key)
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            if key in data:
-                metadata[key] = value
+        if key in data and (isinstance(value, (str, int, float, bool)) or value is None):
+            metadata[key] = value
 
     usage = data.get("usage")
     if isinstance(usage, dict):

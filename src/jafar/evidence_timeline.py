@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -23,7 +23,10 @@ class EvidenceTimeline:
     """Builds a chronological, source-linked evidence view for a matter."""
 
     def build(self, items: list[EvidenceItem]) -> dict[str, Any]:
-        ordered = sorted(items, key=lambda item: item.occurred_at or datetime.min)
+        ordered = sorted(
+            items,
+            key=lambda item: item.occurred_at or datetime.min.replace(tzinfo=UTC),
+        )
         return {
             "items": [self._serialize(item) for item in ordered],
             "evidence_count": len(ordered),

@@ -143,5 +143,5 @@ def test_seed_rejects_duplicate_fragment_and_naive_timestamp() -> None:
         second.seed(
             fragment=_fragment(),
             created_by="lawyer:chernov",
-            created_at=datetime(2026, 8, 28, 13, 0),
+            created_at=datetime(2026, 8, 28, 13, 0),  # noqa: DTZ001
         )

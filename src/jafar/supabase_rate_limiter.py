@@ -55,7 +55,7 @@ class SupabaseRateLimiter:
         if isinstance(value, list):
             value = value[0] if value else None
         if not isinstance(value, bool):
-            raise RuntimeError("rate_limit_response_invalid")
+            raise RuntimeError("rate_limit_response_invalid")  # noqa: TRY004
         return value
 
     def cleanup(self, *, retention_seconds: int = 172800) -> int:
@@ -71,5 +71,5 @@ class SupabaseRateLimiter:
         if isinstance(value, list):
             value = value[0] if value else None
         if isinstance(value, bool) or not isinstance(value, int):
-            raise RuntimeError("rate_limit_cleanup_response_invalid")
+            raise RuntimeError("rate_limit_cleanup_response_invalid")  # noqa: TRY004
         return value

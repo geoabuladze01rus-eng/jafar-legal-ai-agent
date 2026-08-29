@@ -30,6 +30,6 @@ class DocumentRecoveryWorker:
         for candidate in candidates:
             try:
                 self.retry_service.retry(storage_path=candidate.storage_path)
-            except Exception:
+            except Exception:  # noqa: BLE001, S112
                 continue
         return candidates

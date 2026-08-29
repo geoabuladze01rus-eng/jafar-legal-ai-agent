@@ -79,7 +79,7 @@ def read_json_response_limited(
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("provider_response_invalid_json") from exc
     if not isinstance(data, dict):
-        raise RuntimeError("provider_response_must_be_object")
+        raise RuntimeError("provider_response_must_be_object")  # noqa: TRY004
     return data
 
 

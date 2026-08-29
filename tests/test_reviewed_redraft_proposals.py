@@ -53,13 +53,13 @@ def packet(source_refs=("evidence:1",)):
 
 
 def authority(**overrides):
-    data = dict(
-        authority_id="auth-current",
-        citation="Определение Верховного Суда РФ",
-        proposition="Актуальная проверенная позиция.",
-        source_url="https://vsrf.ru/example",
-        rule_ids=("rule-current",),
-    )
+    data = {
+        "authority_id": "auth-current",
+        "citation": "Определение Верховного Суда РФ",
+        "proposition": "Актуальная проверенная позиция.",
+        "source_url": "https://vsrf.ru/example",
+        "rule_ids": ("rule-current",),
+    }
     data.update(overrides)
     return VerifiedRedraftAuthority(**data)
 

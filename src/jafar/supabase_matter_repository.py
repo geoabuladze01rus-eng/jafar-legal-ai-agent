@@ -267,7 +267,7 @@ class SupabaseMatterRepository(MatterRepository):
             try:
                 due_date = date.fromisoformat(value[:10])
             except ValueError:
-                due_date = datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+                due_date = datetime.fromisoformat(value).date()
         return Deadline(
             title=str(row["title"]),
             due_date=due_date,
@@ -292,7 +292,7 @@ class SupabaseMatterRepository(MatterRepository):
     def _datetime(value: Any) -> datetime:
         if isinstance(value, datetime):
             return value
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(value))
 
     @classmethod
     def _event(cls, row: dict[str, Any]) -> MatterEvent:

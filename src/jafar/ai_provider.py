@@ -110,7 +110,7 @@ class OpenAILegalAnalyzer:
                 last_error = exc
                 if attempt >= self.config.max_retries:
                     break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if attempt >= self.config.max_retries:
                     break

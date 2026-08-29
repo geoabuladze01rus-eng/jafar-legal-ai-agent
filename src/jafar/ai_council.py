@@ -82,7 +82,7 @@ class AICouncil:
             except ProviderDispatchUncertainError:
                 failed.append(key)
                 uncertain.append(key)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 failed.append(key)
 
         if len(responses) < minimum_responses:

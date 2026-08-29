@@ -103,7 +103,7 @@ class SupabaseAIJobQueue:
         if isinstance(value, list):
             value = value[0] if value else None
         if isinstance(value, bool) or not isinstance(value, int):
-            raise RuntimeError("ai_job_reclaim_response_invalid")
+            raise RuntimeError("ai_job_reclaim_response_invalid")  # noqa: TRY004
         return value
 
     def finish(
@@ -143,14 +143,14 @@ class SupabaseAIJobQueue:
         if isinstance(row, list):
             row = row[0] if row else None
         if not isinstance(row, dict):
-            raise RuntimeError(error_code)
+            raise RuntimeError(error_code)  # noqa: TRY004
         return cls._hydrate(row)
 
     @staticmethod
     def _hydrate(row: dict[str, Any]) -> AIJob:
         payload = row.get("payload")
         if not isinstance(payload, dict):
-            raise RuntimeError("ai_job_payload_invalid")
+            raise RuntimeError("ai_job_payload_invalid")  # noqa: TRY004
         return AIJob(
             id=str(row["id"]),
             owner_id=str(row["owner_id"]),

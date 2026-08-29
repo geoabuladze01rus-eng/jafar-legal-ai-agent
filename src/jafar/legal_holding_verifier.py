@@ -91,10 +91,11 @@ class LegalHoldingVerifier:
             reasons.append("Фрагмент содержит цитирование или пересказ внешнего authority.")
             return self._result(proposition, HoldingStatus.QUOTED_AUTHORITY, 0.9, reasons, False)
 
-        if any(marker in lowered for marker in self.FACT_MARKERS):
-            if not any(marker in lowered for marker in self.OWN_HOLDING_MARKERS):
-                reasons.append("Фрагмент относится к описанию фактов/материалов дела, а не к правовому выводу.")
-                return self._result(proposition, HoldingStatus.FACTUAL_NARRATIVE, 0.88, reasons, False)
+        if any(marker in lowered for marker in self.FACT_MARKERS) and not any(
+            marker in lowered for marker in self.OWN_HOLDING_MARKERS
+        ):
+            reasons.append("Фрагмент относится к описанию фактов/материалов дела, а не к правовому выводу.")
+            return self._result(proposition, HoldingStatus.FACTUAL_NARRATIVE, 0.88, reasons, False)
 
         own_marker = next((marker for marker in self.OWN_HOLDING_MARKERS if marker in lowered), None)
         if own_marker is None:

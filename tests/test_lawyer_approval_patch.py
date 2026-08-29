@@ -9,18 +9,18 @@ from jafar.work_product_dependency_graph import FragmentKind, WorkProductFragmen
 
 
 def proposal(**overrides):
-    data = dict(
-        fragment_id="complaint:p3",
-        original_text="Старый довод.",
-        proposed_text="Новый проверенный довод.",
-        style=ProposalStyle.BALANCED,
-        rationale="Актуализация правовой опоры.",
-        authority_ids=("auth:new",),
-        rule_ids=("rule:new",),
-        diff_lines=("- Старый довод.", "+ Новый проверенный довод."),
-        passed_authority_gate=True,
-        passed_source_ref_gate=True,
-    )
+    data = {
+        "fragment_id": "complaint:p3",
+        "original_text": "Старый довод.",
+        "proposed_text": "Новый проверенный довод.",
+        "style": ProposalStyle.BALANCED,
+        "rationale": "Актуализация правовой опоры.",
+        "authority_ids": ("auth:new",),
+        "rule_ids": ("rule:new",),
+        "diff_lines": ("- Старый довод.", "+ Новый проверенный довод."),
+        "passed_authority_gate": True,
+        "passed_source_ref_gate": True,
+    }
     data.update(overrides)
     return ReviewedRedraftProposal(**data)
 

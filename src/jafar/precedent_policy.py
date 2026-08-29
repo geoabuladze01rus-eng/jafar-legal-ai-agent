@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from .precedent_freshness import FreshnessStatus, PrecedentFreshnessReport
 
@@ -15,7 +16,7 @@ class PrecedentReleaseDecision:
 class PrecedentReleasePolicy:
     """Prevent unresolved precedent conflicts from silently entering final legal drafting."""
 
-    BLOCKING = {
+    BLOCKING: ClassVar[set[FreshnessStatus]] = {
         FreshnessStatus.SUPERSEDED,
         FreshnessStatus.CONFLICTING,
         FreshnessStatus.REVIEW_REQUIRED,

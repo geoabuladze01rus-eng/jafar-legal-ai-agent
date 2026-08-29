@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from html.parser import HTMLParser
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from .case_law_sources import CaseLawSourceItem, SourceTrust
 from .case_law_transport import HttpFetchResult
@@ -65,7 +65,7 @@ class LinkBasedCaseLawParser:
     a later deterministic extractor or lawyer-reviewed model stage before ingestion.
     """
 
-    _RUSSIAN_MONTHS = {
+    _RUSSIAN_MONTHS: ClassVar[dict[str, int]] = {
         "января": 1,
         "февраля": 2,
         "марта": 3,

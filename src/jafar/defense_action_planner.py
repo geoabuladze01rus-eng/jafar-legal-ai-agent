@@ -83,7 +83,7 @@ class DefenseActionPlanner:
 
     def _actions_for_item(self, item: AttackSurfaceItem) -> list[DefenseAction]:
         actions: list[DefenseAction] = []
-        combined_sources = tuple((*item.prosecution_sources, *item.defense_sources))
+        combined_sources = (*item.prosecution_sources, *item.defense_sources)
         base_priority = min(100, max(10, item.score))
         signals = set(item.signals)
 

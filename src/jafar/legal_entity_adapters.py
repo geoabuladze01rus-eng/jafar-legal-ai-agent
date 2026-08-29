@@ -174,7 +174,7 @@ class LegalEntitySourceRegistry:
         for source_key, adapter in self._adapters.items():
             try:
                 results.append(_validate_adapter_result(adapter.search(query), source_key))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 results.append(
                     SourceResult(
                         source_key=source_key,

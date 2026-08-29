@@ -40,7 +40,7 @@ async def run_polling(
             update_id = int(update["update_id"])
             try:
                 await handler(update)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 if on_error is not None:
                     await on_error(update, exc)
             finally:

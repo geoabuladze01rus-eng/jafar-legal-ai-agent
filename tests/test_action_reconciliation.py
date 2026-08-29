@@ -136,4 +136,4 @@ def test_candidates_require_timezone_aware_clock() -> None:
     service = ActionReconciliationService(store)
 
     with pytest.raises(ValueError, match="now_must_be_timezone_aware"):
-        service.candidates(now=datetime(2026, 8, 28, 12, 0, 0))
+        service.candidates(now=datetime(2026, 8, 28, 12, 0, 0))  # noqa: DTZ001

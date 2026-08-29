@@ -37,6 +37,10 @@ class MeteredStructuredLegalAnalyzer:
         )
 
     def analyze(self, request: AnalysisRequest) -> LegalAnalysis:
+        # Validate inputs before reserving spend. After the provider boundary begins, exception
+        # class alone cannot prove that no request was accepted/billed by the provider.
+        if not request.text.strip():
+            raise ValueError("document text must not be empty")
         if not self.cost_control.provider_enabled(self.analyzer.key):
             raise RuntimeError("structured_analysis_provider_disabled")
 
@@ -64,22 +68,24 @@ class MeteredStructuredLegalAnalyzer:
                 task=request.task,
                 matter_type=request.matter_type,
             )
-        except ValueError:
-            # Input validation happens before provider dispatch and is safe to release.
-            if reservation_id is not None:
-                self.reservations.release(reservation_id)
-            raise
         except Exception:
-            # The provider may have received the request. Keep the reservation active until its
-            # TTL rather than understating spend and immediately allowing another expensive call.
+            # The provider may have received the request even when a downstream parser raises
+            # ValueError. Keep the reservation active until reconciliation/TTL instead of
+            # understating spend and immediately allowing a duplicate expensive call.
             raise
 
-        self.cost_control.meter_response(
-            context=context,
-            provider=self.analyzer.key,
-            model=self.analyzer.config.model,
-            metadata=metadata,
-        )
-        if reservation_id is not None:
-            self.reservations.settle(reservation_id)
+        try:
+            self.cost_control.meter_response(
+                context=context,
+                provider=self.analyzer.key,
+                model=self.analyzer.config.model,
+                metadata=metadata,
+            )
+            if reservation_id is not None:
+                assert self.reservations is not None
+                self.reservations.settle(reservation_id)
+        except Exception:
+            # The provider completed but durable accounting is uncertain. The reservation remains
+            # active so another request cannot consume the same budget until recovery.
+            raise
         return analysis

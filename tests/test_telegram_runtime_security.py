@@ -6,6 +6,8 @@ import json
 import httpx
 import pytest
 
+from jafar import telegram_runtime as runtime_module
+from jafar.config import settings
 from jafar.telegram_runtime import TelegramBotHttpClient, TelegramRuntime
 
 
@@ -17,6 +19,30 @@ def test_telegram_runtime_defaults_to_dry_run() -> None:
 def test_bot_client_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="telegram_bot_token_required"):
         TelegramBotHttpClient("   ")
+
+
+def test_non_allowlisted_inbound_chat_is_dropped_before_drafting(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "telegram_scheduler_db_path", str(tmp_path / "telegram.sqlite3"))
+    monkeypatch.setattr(settings, "telegram_allowed_chat_ids", "-1001")
+
+    def forbidden_process(_update):
+        raise AssertionError("unauthorized content reached drafting pipeline")
+
+    monkeypatch.setattr(runtime_module, "process_update", forbidden_process)
+    runtime = TelegramRuntime("123456:abcdefghijklmnopqrstuvwxyz")
+    asyncio.run(
+        runtime.handle_update(
+            {
+                "update_id": 1,
+                "message": {
+                    "message_id": 9,
+                    "chat": {"id": -2002, "type": "supergroup"},
+                    "from": {"id": 7},
+                    "text": "confidential unauthorized text",
+                },
+            }
+        )
+    )
 
 
 def test_transport_exception_does_not_expose_token(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -143,13 +143,6 @@ class TelegramPollStore:
             hashlib.sha256,
         ).hexdigest()
 
-    @staticmethod
-    def _legacy_identity_namespace(old_key: str) -> str:
-        # The pre-pseudonym store wrote Telegram user IDs as bare values and voter-chat IDs
-        # with a `chat:` prefix. Normalize them to the same namespace used by new updates so a
-        # migrated voter does not acquire a second pseudonym on their next poll answer.
-        return old_key if old_key.startswith("chat:") else f"user:{old_key}"
-
     def _migrate_legacy_raw_voter_ids(self, con: sqlite3.Connection) -> None:
         rows = con.execute(
             "SELECT poll_id, user_id, option_ids_json, updated_at FROM telegram_poll_answers"
@@ -158,7 +151,8 @@ class TelegramPollStore:
             old_key = str(row["user_id"])
             if _HEX64.fullmatch(old_key):
                 continue
-            new_key = self._pseudonymize(self._legacy_identity_namespace(old_key))
+            namespace = old_key if old_key.startswith(("user:", "chat:")) else f"user:{old_key}"
+            new_key = self._pseudonymize(namespace)
             if new_key is None:
                 continue
             con.execute(
@@ -168,6 +162,13 @@ class TelegramPollStore:
             con.execute(
                 "DELETE FROM telegram_poll_answers WHERE poll_id=? AND user_id=?",
                 (row["poll_id"], old_key),
+            )
+
+    def _known_poll(self, poll_id: str) -> bool:
+        with self._connect() as con:
+            return (
+                con.execute("SELECT 1 FROM telegram_polls WHERE poll_id=?", (poll_id,)).fetchone()
+                is not None
             )
 
     def record_sent(self, *, poll: dict[str, Any], chat_id: str, message_id: int | None) -> None:
@@ -192,22 +193,25 @@ class TelegramPollStore:
     def ingest_update(self, update: dict[str, Any]) -> bool:
         poll = update.get("poll")
         if isinstance(poll, dict) and poll.get("id"):
+            poll_id = str(poll["id"]).strip()
+            if not poll_id or not self._known_poll(poll_id):
+                # Accept state updates only for polls that Jafar previously sent and bound to a chat.
+                return False
             self._upsert_poll(poll)
             return True
 
         answer = update.get("poll_answer")
         if not isinstance(answer, dict) or not answer.get("poll_id"):
             return False
+        poll_id = str(answer["poll_id"]).strip()
+        if not poll_id or not self._known_poll(poll_id):
+            return False
+
         voter_key = self._voter_key(answer)
         if voter_key is None:
+            # Known poll, but no pseudonym key: consume the update without storing raw identity.
             return True
-        poll_id = str(answer["poll_id"])
         with self._connect() as con:
-            exists = con.execute(
-                "SELECT 1 FROM telegram_polls WHERE poll_id=?", (poll_id,)
-            ).fetchone()
-            if exists is None:
-                return False
             con.execute(
                 "INSERT OR REPLACE INTO telegram_poll_answers VALUES (?, ?, ?, ?)",
                 (
@@ -235,12 +239,14 @@ class TelegramPollStore:
             old = con.execute(
                 "SELECT chat_id, message_id FROM telegram_polls WHERE poll_id=?", (poll_id,)
             ).fetchone()
+            if old is None:
+                raise RuntimeError("telegram_poll_update_for_unknown_poll")
             con.execute(
                 "INSERT OR REPLACE INTO telegram_polls VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     poll_id,
-                    old["chat_id"] if old else None,
-                    old["message_id"] if old else None,
+                    old["chat_id"],
+                    old["message_id"],
                     poll.get("question", ""),
                     json.dumps(poll.get("options", []), ensure_ascii=False),
                     json.dumps(poll, ensure_ascii=False),

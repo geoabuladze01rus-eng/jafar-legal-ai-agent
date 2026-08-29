@@ -377,7 +377,7 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
 async def analyze_document(
     file: UploadFile = File(...),
     matter_id: str | None = None,
-    task: DocumentTask = DocumentTask.GENERAL_ANALYSIS,
+    task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
 ):
     if matter_id:
         try:

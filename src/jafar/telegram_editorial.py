@@ -52,10 +52,11 @@ def safety_check(text: str) -> dict[str, Any]:
         ),
         (
             "high",
-            "identifying_person",
-            r"\b(?:паспорт|снилс|инн|персональн\w* данн\w*|[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+)",
+            "personal_data",
+            r"\b(?:паспорт|снилс|инн|персональн\w* данн\w*)",
             "personal data indicator",
         ),
+        ("high", "identifying_person", r"\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\b", "full personal name"),
         ("high", "bank_details", r"\b(?:р/с|сч[её]т|бик|карта)\s*\d{4,}", "banking details"),
         ("high", "document_identifier", r"\b(?:материал|постановление|протокол)\s*(?:№|N)?\s*[\w/-]{4,}", "case material/document identifier"),
         ("high", "legal_advice", r"\b(?:вам следует|советую вам|ваш адвокат)\b", "individual legal advice"),
@@ -69,7 +70,7 @@ def safety_check(text: str) -> dict[str, Any]:
     findings = [
         {"severity": severity, "kind": kind, "reason": reason, "suggested_redaction": f"Remove or generalize {reason}."}
         for severity, kind, pattern, reason in checks
-        if re.search(pattern, text, re.IGNORECASE)
+        if re.search(pattern, text, 0 if kind == "identifying_person" else re.IGNORECASE)
     ]
     severity: Severity = (
         "high"

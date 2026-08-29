@@ -30,7 +30,9 @@ class EmailCaseMatcher:
                     score += 0.7
                     reasons.append(f"exact:{key}")
             for value in case.get("keywords", []):
-                if str(value).lower() in tokens:
+                keyword = str(value).lower()
+                stem = keyword[:-1] if len(keyword) > 4 else keyword
+                if keyword in text or any(token.startswith(stem) for token in tokens):
                     score += 0.1
                     reasons.append(f"keyword:{value}")
             if score:

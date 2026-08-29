@@ -11,11 +11,7 @@ from .action_approval import ActionRequest, ActionState, LegalActionApprovalEngi
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
-from .cost_runtime import (
-    build_cost_reservations,
-    build_cost_scale_control,
-    validate_production_ai_scale,
-)
+from .cost_runtime import build_cost_runtime, validate_production_ai_scale
 from .dashboard import DashboardService, DashboardSnapshot
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
@@ -67,7 +63,8 @@ def _ensure_metered_openai_runtime() -> MeteredStructuredLegalAnalyzer | None:
     if metered_openai_analyzer is not None:
         return metered_openai_analyzer
 
-    control = build_cost_scale_control(settings)
+    cost_runtime = build_cost_runtime(settings)
+    control = cost_runtime.control
     if control is None:
         raise RuntimeError("AI cost control unexpectedly unavailable")
     user_id = (settings.lawyer_approver_id or "local-development-user").strip()
@@ -75,7 +72,7 @@ def _ensure_metered_openai_runtime() -> MeteredStructuredLegalAnalyzer | None:
         analyzer=openai_analyzer,
         cost_control=control,
         user_id=user_id,
-        reservations=build_cost_reservations(settings),
+        reservations=cost_runtime.reservations,
     )
     return metered_openai_analyzer
 

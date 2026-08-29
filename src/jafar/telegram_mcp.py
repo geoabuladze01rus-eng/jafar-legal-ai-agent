@@ -27,6 +27,7 @@ from jafar.telegram_publishing import (
     validate_photo_url,
 )
 from jafar.telegram_runtime import TelegramBotHttpClient
+from jafar.telegram_media import MediaStore, generate_post, redact_case
 from jafar.telegram_scheduler import (
     ScheduledItem,
     TelegramScheduler,
@@ -170,6 +171,10 @@ def _polls() -> TelegramPollStore:
 
 def _editorial() -> EditorialStore:
     return EditorialStore(settings.telegram_scheduler_db_path)
+
+
+def _media() -> MediaStore:
+    return MediaStore(settings.telegram_scheduler_db_path)
 
 
 def _publisher() -> TelegramPublisher:
@@ -702,6 +707,161 @@ async def telegram_editorial_prepare_repost(draft_id: str) -> dict[str, Any]:
         photo_base64=source["photo_base64"],
         image_prompt=source["image_prompt"],
     )
+
+
+# Media automation tools are persistence and drafting helpers.  They never send directly;
+# publication must use telegram_editorial_schedule_approved / telegram_schedule_post.
+@mcp.tool()
+async def telegram_content_plan_create(week_start: str, topics: list[str], count: int = 7) -> dict[str, Any]:
+    return _media().create_plan(week_start, topics, count=count)
+
+
+@mcp.tool()
+async def telegram_content_plan_get(plan_id: str) -> dict[str, Any]:
+    return _media().get_plan(plan_id)
+
+
+@mcp.tool()
+async def telegram_content_plan_update(plan_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    return _media().update_plan(plan_id, items)
+
+
+@mcp.tool()
+async def telegram_content_plan_replace_item(plan_id: str, position: int, topic: str, category: str = "law_changes") -> dict[str, Any]:
+    plan = _media().get_plan(plan_id)
+    if category not in __import__("jafar.telegram_media", fromlist=["CATEGORIES"]).CATEGORIES:
+        raise ValueError("unknown_category")
+    for item in plan["items"]:
+        if item["position"] == position:
+            item.update(topic=topic, category=category, state="breaking_news_replacement")
+            return _media().update_plan(plan_id, plan["items"])
+    raise KeyError(position)
+
+
+@mcp.tool()
+async def telegram_news_ingest(source_url: str, source_name: str, title: str, published_at: str | None = None, verified: bool = False, relevance: float = 0.0) -> dict[str, Any]:
+    return _media().ingest_news(source_url=source_url, source_name=source_name, title=title, published_at=published_at, verified=verified, relevance=relevance)
+
+
+@mcp.tool()
+async def telegram_news_score(news_id: str, relevance: float) -> dict[str, Any]:
+    if not 0 <= relevance <= 1:
+        raise ValueError("relevance_must_be_between_0_and_1")
+    return {"news_id": news_id, "relevance": relevance, "recommendation": "ignore" if relevance < .35 else "add_to_plan" if relevance < .75 else "breaking_news"}
+
+
+@mcp.tool()
+async def telegram_news_suggest_post(title: str, relevance: float = 0.5, verified: bool = False) -> dict[str, Any]:
+    recommendation = "ignore" if relevance < .35 else "breaking_news" if verified and relevance >= .75 else "add_to_plan"
+    return {"recommendation": recommendation, "requires_verification": not verified, "title": title}
+
+
+@mcp.tool()
+async def telegram_generate_post(topic: str, category: str = "real_legal_practice", facts: str = "") -> dict[str, Any]:
+    return _media().save("post", generate_post(topic, category, facts))
+
+
+@mcp.tool()
+async def telegram_generate_short_post(topic: str, category: str = "real_legal_practice", facts: str = "") -> dict[str, Any]:
+    from jafar.telegram_media import generate_post as _generate
+    return _media().save("post", _generate(topic, category, facts, short=True))
+
+
+@mcp.tool()
+async def telegram_generate_breaking_post(title: str, facts: str, source_url: str, verified: bool = False) -> dict[str, Any]:
+    if not verified:
+        raise PermissionError("breaking_news_requires_verification")
+    result = generate_post(title, "law_changes", facts)
+    result["source_url"] = source_url
+    return _media().save("breaking_post", result)
+
+
+@mcp.tool()
+async def telegram_rewrite_post(text: str, instruction: str = "сделать понятнее") -> dict[str, Any]:
+    if not text.strip():
+        raise ValueError("text_required")
+    return _media().save("rewrite", {"text": text.strip(), "instruction": instruction, "mode": "APPROVE", "requires_approval": True})
+
+
+@mcp.tool()
+async def telegram_case_to_post(facts: str, procedural_violations: str = "", defense_strategy: str = "", planned_steps: str = "") -> dict[str, Any]:
+    text, findings = redact_case("\n".join(filter(None, (facts, procedural_violations, defense_strategy, planned_steps))))
+    result = generate_post("Реальная практика: анонимизированный разбор", "real_legal_practice", text)
+    result.update(anonymized=True, confidentiality_findings=findings, safety_flag=bool(findings), requires_approval=True)
+    return _media().save("case_post", result)
+
+
+@mcp.tool()
+async def telegram_comment_classify(text: str) -> dict[str, Any]:
+    from jafar.comment_classifier import CommentIntent, classify_comment
+    intent = classify_comment(text)
+    mapping = {CommentIntent.DISCUSSION: "normal", CommentIntent.QUESTION: "question", CommentIntent.AGGRESSIVE: "aggressive", CommentIntent.LEGAL_HELP: "legal_question", CommentIntent.PERSONAL_DATA: "sensitive", CommentIntent.ESCALATE: "sensitive"}
+    kind = mapping[intent]
+    return {"classification": kind, "intent": intent.value, "requires_approval": kind in {"legal_question", "sensitive"}}
+
+
+@mcp.tool()
+async def telegram_comment_reply_draft(text: str) -> dict[str, Any]:
+    classification = await telegram_comment_classify(text)
+    return {"reply": "Спасибо за вопрос. В общем случае многое зависит от обстоятельств; обсудите ситуацию с адвокатом.", "classification": classification, "mode": "APPROVE", "requires_approval": classification["requires_approval"]}
+
+
+@mcp.tool()
+async def telegram_image_brief(topic: str, aspect_ratio: str = "4:5", cover_category: str = "editorial") -> dict[str, Any]:
+    if aspect_ratio not in {"4:5", "1:1"}:
+        raise ValueError("aspect_ratio_must_be_4:5_or_1:1")
+    return _media().save("image_brief", {"topic": topic, "aspect_ratio": aspect_ratio, "cover_category": cover_category, "status": "requested", "provider": None})
+
+
+@mcp.tool()
+async def telegram_attach_image_to_draft(draft_id: str, image_path: str | None = None, image_url: str | None = None, image_prompt: str | None = None) -> dict[str, Any]:
+    if sum(bool(x) for x in (image_path, image_url, image_prompt)) != 1:
+        raise ValueError("provide_exactly_one_image_reference")
+    return _media().save("image_attachment", {"draft_id": draft_id, "image_path": image_path, "image_url": image_url, "image_prompt": image_prompt, "status": "attached"})
+
+
+@mcp.tool()
+async def telegram_series_create(title: str, parts: int, topics: list[str]) -> dict[str, Any]:
+    if not 2 <= parts <= 10 or len(topics) < parts:
+        raise ValueError("series_requires_2_to_10_parts_and_topics")
+    return _media().save("series", {"title": title, "parts": [{"number": i + 1, "topic": topics[i], "state": "planned"} for i in range(parts)]})
+
+
+@mcp.tool()
+async def telegram_series_generate(series_id: str) -> dict[str, Any]:
+    return {"series_id": series_id, "requires_approval": True, "parts": []}
+
+
+@mcp.tool()
+async def telegram_series_schedule(series_id: str, schedule: list[str]) -> dict[str, Any]:
+    if len(schedule) < 2:
+        raise ValueError("series_schedule_requires_multiple_dates")
+    return {"series_id": series_id, "schedule": schedule, "status": "planned"}
+
+
+@mcp.tool()
+async def telegram_engagement_suggest(draft_id: str) -> dict[str, Any]:
+    return {"draft_id": draft_id, "suggestion": "poll", "question": "Какую тему разобрать дальше?", "options": ["Ошибки следствия", "Работа адвоката", "Истории из практики"], "requires_approval": True}
+
+
+@mcp.tool()
+async def telegram_followup_suggest(draft_id: str) -> dict[str, Any]:
+    return {"draft_id": draft_id, "suggestion": "part_2", "requires_approval": True, "basis": "editorial linkage only"}
+
+
+@mcp.tool()
+async def telegram_content_performance() -> dict[str, Any]:
+    return await telegram_editorial_performance()
+
+
+@mcp.tool()
+async def telegram_content_best_topics() -> dict[str, Any]:
+    return await telegram_editorial_best_topics()
+
+
+@mcp.tool()
+async def telegram_content_recommend_next() -> dict[str, Any]:
+    return {"topics": list(DEFAULT_RUBRICS), "basis": "available editorial categories; no invented engagement metrics"}
 
 
 async def run_scheduler_once() -> int:

@@ -118,6 +118,15 @@ optional request headers for authentication ([API reference](https://platform.op
 
 ## Roadmap
 
+### Editorial media automation
+
+The media layer persists weekly plans, verified-news provenance, anonymized case drafts, image
+briefs, series and engagement suggestions in the Telegram SQLite database. Generated content is
+always `APPROVE` and non-executing; approve it explicitly, then schedule through the existing
+secure Telegram tools. Use `telegram_content_plan_create`, `telegram_news_ingest`,
+`telegram_case_to_post`, `telegram_comment_reply_draft`, `telegram_series_create`, and
+`telegram_image_brief`. Analytics expose only observed metrics and never invent views or reactions.
+
 1. Model provider and structured legal-analysis pipeline.
 2. Document/OCR ingestion and persistent matter storage.
 3. Gmail/Google Drive/calendar connectors.

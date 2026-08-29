@@ -26,12 +26,15 @@ class _Analyzer:
     key = "openai"
     config = _Config()
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, value_fail: bool = False) -> None:
         self.fail = fail
+        self.value_fail = value_fail
         self.calls = 0
 
     def analyze_with_usage(self, *, text, task, matter_type):
         self.calls += 1
+        if self.value_fail:
+            raise ValueError("structured response invalid after dispatch")
         if self.fail:
             raise RuntimeError("provider failed after dispatch")
         return (
@@ -66,9 +69,9 @@ class _Reservations:
         self.released.append(reservation_id)
 
 
-def _request() -> AnalysisRequest:
+def _request(text: str = "Материалы уголовного дела и процессуальная позиция защиты.") -> AnalysisRequest:
     return AnalysisRequest(
-        text="Материалы уголовного дела и процессуальная позиция защиты.",
+        text=text,
         task=DocumentTask.LEGAL_ANALYSIS,
         matter_type=MatterType.CRIMINAL,
         matter_id="matter-1",
@@ -127,6 +130,44 @@ def test_unknown_provider_failure_keeps_reservation_held_for_ttl() -> None:
         runtime.analyze(_request())
 
     assert len(reservations.reserved) == 1
+    assert reservations.settled == []
+    assert reservations.released == []
+
+
+def test_post_dispatch_value_error_keeps_reservation_held() -> None:
+    analyzer = _Analyzer(value_fail=True)
+    reservations = _Reservations()
+    runtime = MeteredStructuredLegalAnalyzer(
+        analyzer=analyzer,  # type: ignore[arg-type]
+        cost_control=_control(),
+        user_id="lawyer-1",
+        reservations=reservations,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="structured response invalid"):
+        runtime.analyze(_request())
+
+    assert analyzer.calls == 1
+    assert len(reservations.reserved) == 1
+    assert reservations.settled == []
+    assert reservations.released == []
+
+
+def test_empty_input_is_rejected_before_spend_reservation() -> None:
+    analyzer = _Analyzer()
+    reservations = _Reservations()
+    runtime = MeteredStructuredLegalAnalyzer(
+        analyzer=analyzer,  # type: ignore[arg-type]
+        cost_control=_control(),
+        user_id="lawyer-1",
+        reservations=reservations,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="document text must not be empty"):
+        runtime.analyze(_request("   "))
+
+    assert analyzer.calls == 0
+    assert reservations.reserved == []
     assert reservations.settled == []
     assert reservations.released == []
 

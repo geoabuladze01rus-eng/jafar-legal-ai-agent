@@ -73,6 +73,8 @@ class SupabaseCostReservationRepository(CostReservationRepository):
                 "p_expires_at": expires_at.isoformat(),
                 "p_user_daily_limit_usd": _decimal_or_none(limits.per_user_daily_usd),
                 "p_user_monthly_limit_usd": _decimal_or_none(limits.per_user_monthly_usd),
+                "p_matter_daily_limit_usd": _decimal_or_none(limits.per_matter_daily_usd),
+                "p_matter_monthly_limit_usd": _decimal_or_none(limits.per_matter_monthly_usd),
                 "p_global_daily_limit_usd": _decimal_or_none(limits.global_daily_usd),
             },
         ).execute()

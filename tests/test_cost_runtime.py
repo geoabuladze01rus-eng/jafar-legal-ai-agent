@@ -4,11 +4,14 @@ import pytest
 
 from jafar.config import Settings
 from jafar.cost_runtime import (
+    build_cost_runtime,
     build_cost_scale_control,
     parse_pricing_catalog,
     validate_production_ai_scale,
 )
 from jafar.cost_scale_control import CostLedger
+from jafar.supabase_cost_ledger import SupabaseCostLedger
+from jafar.supabase_cost_reservations import SupabaseCostReservationRepository
 
 
 def settings(**values) -> Settings:
@@ -68,10 +71,13 @@ def test_pricing_catalog_rejects_missing_invalid_or_ambiguous_configuration() ->
 
 def test_cost_runtime_is_opt_in_for_local_development() -> None:
     assert build_cost_scale_control(settings(ai_cost_control_enabled=False)) is None
+    runtime = build_cost_runtime(settings(ai_cost_control_enabled=False))
+    assert runtime.control is None
+    assert runtime.reservations is None
 
 
 def test_development_cost_runtime_uses_in_memory_ledger_limits_and_local_pricing_version() -> None:
-    control = build_cost_scale_control(
+    runtime = build_cost_runtime(
         settings(
             ai_cost_control_enabled=True,
             ai_pricing_json='{"openai":{"*":{"input":"1","output":"4"}}}',
@@ -80,11 +86,30 @@ def test_development_cost_runtime_uses_in_memory_ledger_limits_and_local_pricing
         )
     )
 
+    control = runtime.control
     assert control is not None
     assert isinstance(control.ledger, CostLedger)
     assert control.limits.per_request_usd == Decimal("0.25")
     assert control.limits.per_user_daily_usd == Decimal("2.00")
     assert control.pricing_version == "local-unversioned"
+    assert runtime.reservations is None
+
+
+def test_production_cost_runtime_shares_one_server_client_for_ledger_and_reservations(monkeypatch) -> None:
+    from jafar import cost_runtime
+
+    client = object()
+    monkeypatch.setattr(cost_runtime, "_server_supabase", lambda: (client, "owner-1"))
+
+    runtime = build_cost_runtime(valid_production_settings())
+
+    assert runtime.control is not None
+    assert isinstance(runtime.control.ledger, SupabaseCostLedger)
+    assert isinstance(runtime.reservations, SupabaseCostReservationRepository)
+    assert runtime.control.ledger.client is client
+    assert runtime.reservations.client is client
+    assert runtime.control.ledger.owner_user_id == "owner-1"
+    assert runtime.reservations.owner_user_id == "owner-1"
 
 
 def test_production_cost_runtime_requires_persistent_storage() -> None:

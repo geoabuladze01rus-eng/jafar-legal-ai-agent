@@ -7,7 +7,7 @@ private enum JusticeDestination: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .home: "Главная"; case .matters: "Дела"; case .calendar: "Календарь"; case .documents: "Документы"; case .mail: "Почта"; case .radar: "Правовой радар"; case .practice: "Практика"; case .drafts: "Черновики"; case .voice: "Голосовые материалы"; case .analytics: "Аналитика"; case .library: "Библиотека норм"; case .counterparties: "Проверка контрагентов"
+        case .home: "Юстиция"; case .matters: "Дела"; case .calendar: "Календарь"; case .documents: "Документы"; case .mail: "Почта"; case .radar: "Правовой радар"; case .practice: "Практика"; case .drafts: "Черновики"; case .voice: "Голосовые материалы"; case .analytics: "Аналитика"; case .library: "Библиотека норм"; case .counterparties: "Проверка контрагентов"
         case .evidence: "Доказательства"; case .timeline: "Хронология"
         case .contradictions: "Противоречия"; case .authorities: "Судебная практика"
         case .council: "Совет моделей"; case .position: "Правовая позиция"
@@ -34,6 +34,7 @@ struct JusticeWorkspaceView: View {
     @State private var selection: JusticeDestination = .home
     @State private var selectedMatter: DashboardMatter?
     @State private var searchText = ""
+    @State private var hoveredDestination: JusticeDestination?
     @AppStorage("justice.demo_mode") private var demoMode = false
 
     var body: some View {
@@ -72,14 +73,24 @@ struct JusticeWorkspaceView: View {
         List {
             Section {
                 ForEach(JusticeDestination.primary) { destination in
-                    Button { selection = destination } label: {
+                    Button { withAnimation(JafarMotion.normal) { selection = destination } } label: {
                         Label(destination.title, systemImage: destination.icon)
-                    }.buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .background(selection == destination ? JafarPalette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                    .background(hoveredDestination == destination ? JafarPalette.accent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(alignment: .leading) { Capsule().fill(selection == destination || hoveredDestination == destination ? JafarPalette.accentGold : .clear).frame(width: 2, height: 20) }
+                    .foregroundStyle(selection == destination || hoveredDestination == destination ? JafarPalette.accentGold : JafarPalette.textSecondary)
+                    .onHover { inside in withAnimation(JafarMotion.fast) { hoveredDestination = inside ? destination : nil } }
+                    .animation(JafarMotion.normal, value: selection)
                 }
             } header: {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) { Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold); Text("JAFAR AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.textPrimary) }
-                    Text("ЮРИДИЧЕСКИЙ ПОМОЩНИК АДВОКАТА").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary)
+                    HStack(spacing: 8) { Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold); Text("ЮСТИЦИЯ AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.textPrimary) }
+                    Text("Интеллектуальная система адвоката").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary)
                 }.padding(.vertical, JusticeSpacing.sm)
             }
             Section("Работа по делу") {
@@ -92,7 +103,7 @@ struct JusticeWorkspaceView: View {
         }
         .scrollContentBackground(.hidden)
         .background(JafarPalette.backgroundSecondary)
-        .navigationTitle("JAFAR AI")
+        .navigationTitle("ЮСТИЦИЯ AI")
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: JusticeSpacing.sm) {
                 Circle().fill(JafarPalette.success).frame(width: 8, height: 8)
@@ -157,9 +168,13 @@ private struct JusticeHomeView: View {
     let onMatter: (DashboardMatter) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var heroBreath = false
+    @State private var heroRingRotation = false
+    @State private var analyzingSweep = false
+    @State private var listening = false
+    @State private var quickAction: String?
     private var matters: [DashboardMatter] { demoMode ? JusticeSamples.matters : dashboard.snapshot.matters }
     var body: some View {
-        JusticePage(title: "Доброе утро", subtitle: "JAFAR AI готов служить вашей практике") {
+        JusticePage(title: "Доброе утро, Иван Иванович", subtitle: "ЮСТИЦИЯ AI · Интеллектуальная система адвоката") {
             HStack { Text("Поиск по делам, документам, правовым позициям...").font(JusticeTypography.callout).foregroundStyle(JafarPalette.textMuted); Spacer(); Text("⌘K").font(JusticeTypography.mono).foregroundStyle(JafarPalette.accentGold) }.padding(12).background(JafarPalette.surface, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(JafarPalette.divider))
             HStack(alignment: .top, spacing: JusticeSpacing.md) {
                 focusCard.frame(width: 220)
@@ -173,6 +188,7 @@ private struct JusticeHomeView: View {
                     }
                     activityCard
                     lowerModules
+                    footerBar
                 }.frame(maxWidth: .infinity)
                 verticalRightRail.frame(width: 260)
             }
@@ -184,10 +200,11 @@ private struct JusticeHomeView: View {
     private var lowerModules: some View { HStack(alignment: .top, spacing: JusticeSpacing.md) { VStack(alignment: .leading, spacing: 8) { Label("ПРАВОВОЙ РАДАР", systemImage: "dot.radiowaves.left.and.right").foregroundStyle(JafarPalette.accentGold); Text("12 обновлений").font(JusticeTypography.title); Text("ВС РФ · Пленум · изменения ГПК/УПК").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard(); VStack(alignment: .leading, spacing: 8) { Label("AI-АНАЛИТИКА", systemImage: "chart.pie.fill").foregroundStyle(JafarPalette.accentGold); HStack { ZStack { Circle().stroke(JafarPalette.divider, lineWidth: 8); Circle().trim(from: 0, to: 0.57).stroke(JafarPalette.accentGold, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90)); Text("57%").font(JusticeTypography.headline) }.frame(width: 56, height: 56); Text("Средний риск").font(JusticeTypography.callout) } }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard(); VStack(alignment: .leading, spacing: 8) { Label("ГОЛОСОВЫЕ МАТЕРИАЛЫ", systemImage: "waveform").foregroundStyle(JafarPalette.accentGold); HStack(alignment: .bottom, spacing: 3) { ForEach(0..<18, id: \.self) { index in Capsule().fill(JafarPalette.accent.opacity(0.7)).frame(width: 3, height: CGFloat(8 + (index % 5) * 5)) } }; Text("3 записи · 42 мин").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard() } }
     private var focusCard: some View { VStack(alignment: .leading, spacing: 12) { Text("ФОКУС ДНЯ").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); focusRow("Требуют внимания", dashboard.snapshot.pendingApprovals, "exclamationmark.triangle"); focusRow("Новые документы", dashboard.snapshot.totalMatters, "doc.text"); focusRow("Заседание завтра", dashboard.snapshot.deadlinesNext7Days, "calendar") }.padding(16).jafarCard() }
     private func focusRow(_ title: String, _ value: Int, _ icon: String) -> some View { HStack(alignment: .top) { Image(systemName: icon).foregroundStyle(JafarPalette.accentGold); VStack(alignment: .leading) { Text(title).font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary); Text("\(value)").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textPrimary) } } }
-    private var heroCard: some View { ZStack(alignment: .bottomLeading) { RoundedRectangle(cornerRadius: 8).fill(Color.clear); Circle().fill(JafarPalette.goldGlow.opacity(0.14)).blur(radius: 28).scaleEffect(heroBreath ? 1.12 : 0.94); Circle().stroke(JafarPalette.accent.opacity(0.20), lineWidth: 1).frame(width: 230, height: 230).overlay(Circle().stroke(JafarPalette.accent.opacity(0.08), lineWidth: 1).frame(width: 270, height: 270)); Image("JusticeHero").resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 300).opacity(0.92); VStack(alignment: .leading) { Text("ЮСТИЦИЯ").font(JusticeTypography.display).foregroundStyle(JafarPalette.textPrimary); Text("Статус: \(dashboard.errorMessage == nil ? "Система активна" : "Требуется решение")").font(JusticeTypography.callout).foregroundStyle(JafarPalette.accentGold) }.padding(18) }.frame(minHeight: 300).overlay(RoundedRectangle(cornerRadius: 8).stroke(JafarPalette.accent.opacity(0.35))).onAppear { guard !reduceMotion else { return }; withAnimation(JafarMotion.ambient) { heroBreath = true } } }
-    private var intelligenceCard: some View { VStack(alignment: .leading, spacing: 12) { Label("JAFAR AI", systemImage: "scalemass.fill").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); Text("Анализирует ваши дела").font(JusticeTypography.headline); ForEach(["Правовой анализ", "Процессуальные риски", "Стратегию защиты", "Черновики документов"], id: \.self) { item in Label(item, systemImage: "checkmark").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }; Button("Начать диалог") {}.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold) }.padding(16).jafarCard() }
-    private var commandBar: some View { VStack(alignment: .leading, spacing: 8) { HStack { Image(systemName: "hammer").foregroundStyle(JafarPalette.accentGold); Text("Спросите Джафара...").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textMuted); Spacer(); Image(systemName: "mic.fill").foregroundStyle(JafarPalette.accentGold) }.padding(14).background(JafarPalette.surface, in: Capsule()).overlay(Capsule().stroke(JafarPalette.accent.opacity(0.35))); HStack { ForEach(["Что требует моего внимания?", "Разбери последнее письмо", "Что нового по делу?", "Подготовь правовую позицию"], id: \.self) { Text($0).font(JusticeTypography.caption).foregroundStyle(JafarPalette.accentGold).padding(.horizontal, 10).padding(.vertical, 6).overlay(Capsule().stroke(JafarPalette.accent.opacity(0.45))) } } } }
+    private var heroCard: some View { ZStack(alignment: .bottomLeading) { Circle().fill(JafarPalette.goldGlow.opacity(0.18)).blur(radius: 24).scaleEffect(heroBreath ? 1.08 : 0.90); Circle().stroke(JafarPalette.accent.opacity(0.45), lineWidth: 1).frame(width: 190, height: 190).rotationEffect(.degrees(heroRingRotation ? 360 : 0)); Circle().stroke(JafarPalette.goldHighlight.opacity(0.18), lineWidth: 1).frame(width: 230, height: 230); Image("JusticeHero").resizable().scaledToFill().frame(maxWidth: .infinity, maxHeight: 210).clipped().opacity(0.95); VStack(alignment: .leading, spacing: 2) { Text("ЮСТИЦИЯ").font(JusticeTypography.titleLarge).foregroundStyle(JafarPalette.textPrimary); Text("Статус: \(dashboard.errorMessage == nil ? "Система активна" : "Требуется решение")").font(JusticeTypography.caption).foregroundStyle(JafarPalette.accentGold) }.padding(14) }.frame(height: 215).overlay(RoundedRectangle(cornerRadius: 8).stroke(JafarPalette.accent.opacity(0.32))).onAppear { guard !reduceMotion else { return }; withAnimation(JafarMotion.ambient) { heroBreath = true }; withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) { heroRingRotation = true }; withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) { analyzingSweep = true } } }
+    private var intelligenceCard: some View { VStack(alignment: .leading, spacing: 9) { ZStack { Circle().stroke(JafarPalette.accent.opacity(0.3), lineWidth: 1); Circle().trim(from: 0.08, to: 0.72).stroke(JafarPalette.accentGold, style: StrokeStyle(lineWidth: 2, lineCap: .round)).rotationEffect(.degrees(analyzingSweep ? 360 : 0)); Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold) }.frame(width: 48, height: 48); Text("ЮСТИЦИЯ AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); Text("Юстиция анализирует ваши дела").font(JusticeTypography.headline); ForEach(["Правовой анализ", "Процессуальные риски", "Стратегию защиты", "Черновики документов"], id: \.self) { item in Label(item, systemImage: "checkmark").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }; Button("Спросить Юстицию") {}.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold) }.padding(13).jafarCard() }
+    private var commandBar: some View { VStack(alignment: .leading, spacing: 7) { HStack { Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold); Text("Спросите Юстицию...").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textMuted); Spacer(); Button { withAnimation(JafarMotion.normal) { listening.toggle() } } label: { ZStack { Circle().fill(listening ? JafarPalette.accentGold.opacity(0.28) : JafarPalette.accent.opacity(0.12)); Image(systemName: "mic.fill").foregroundStyle(JafarPalette.accentGold); if listening && !reduceMotion { Circle().stroke(JafarPalette.accentGold.opacity(0.7), lineWidth: 1).scaleEffect(1.25).opacity(0.2) } }.frame(width: 28, height: 28) }.buttonStyle(.plain) }.padding(10).background(JafarPalette.surface, in: Capsule()).overlay(Capsule().stroke(listening ? JafarPalette.accentGold : JafarPalette.accent.opacity(0.35), lineWidth: listening ? 1.5 : 1)); HStack(spacing: 6) { ForEach(["Что требует моего внимания?", "Разбери последнее письмо", "Что нового по делу?", "Подготовь правовую позицию"], id: \.self) { action in Button { withAnimation(JafarMotion.fast) { quickAction = action } } label: { Text(action).font(JusticeTypography.caption).foregroundStyle(quickAction == action ? JafarPalette.textPrimary : JafarPalette.accentGold).padding(.horizontal, 9).padding(.vertical, 5).background(quickAction == action ? JafarPalette.accent.opacity(0.28) : .clear, in: Capsule()).overlay(Capsule().stroke(JafarPalette.accent.opacity(quickAction == action ? 0.85 : 0.45), lineWidth: quickAction == action ? 1.5 : 1)) }.buttonStyle(.plain).scaleEffect(quickAction == action ? 0.98 : 1) } } } }
     private var activityCard: some View { VStack(alignment: .leading, spacing: 10) { Text("АКТИВНОСТЬ").font(JusticeTypography.caption).foregroundStyle(JafarPalette.accentGold); ForEach([("Обновлена правовая позиция", "10 мин назад"), ("Добавлен документ в дело", "1 ч назад"), ("Проверен источник ВС РФ", "вчера")], id: \.0) { event in HStack { Circle().fill(JafarPalette.accentGold).frame(width: 6, height: 6); Text(event.0).font(JusticeTypography.caption); Spacer(); Text(event.1).font(.caption2).foregroundStyle(JafarPalette.textMuted) } } }.padding(16).jafarCard() }
+    private var footerBar: some View { HStack(spacing: 14) { Label("Шифрование: активно", systemImage: "lock.fill"); Label("Резервное копирование: сегодня, 03:00", systemImage: "externaldrive.fill"); Label("Синхронизация: активно", systemImage: "arrow.triangle.2.circlepath"); Spacer(); Text("ЮСТИЦИЯ AI защищает ваши данные и помогает управлять делами").italic() }.font(.caption2).foregroundStyle(JafarPalette.textMuted).padding(.vertical, 6) }
     private var priorityGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: JusticeSpacing.md)], spacing: JusticeSpacing.md) {
             PriorityCard(title: "Решения", value: dashboard.snapshot.pendingApprovals, icon: "checkmark.seal.fill", color: JafarPalette.accentGold)

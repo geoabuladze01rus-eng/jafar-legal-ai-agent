@@ -187,6 +187,10 @@ class HealthResponse(BaseModel):
     service: str = Field(default=settings.app_name)
 
 
+class ReadyResponse(BaseModel):
+    status: str
+
+
 class CreateMatterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -285,6 +289,28 @@ def _command_intent(text: str) -> str:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.get("/ready", response_model=ReadyResponse)
+def ready() -> ReadyResponse:
+    """Return a sanitized readiness result without probing external providers."""
+    environment = settings.environment.strip().casefold()
+    if environment not in {"development", "staging", "production"}:
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    try:
+        validate_runtime_security()
+        if environment == "staging":
+            if not production_api_key_is_secure():
+                raise RuntimeError("staging API key is not configured")
+            if not (settings.lawyer_approver_id or "").strip():
+                raise RuntimeError("staging approver is not configured")
+            if settings.storage_backend.strip().casefold() != "supabase":
+                raise RuntimeError("staging storage is not persistent")
+            if settings.ai_queue_backend.strip().casefold() != "supabase":
+                raise RuntimeError("staging AI queue is not durable")
+        return ReadyResponse(status="ready")
+    except (RuntimeError, ValueError, TypeError):
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .cost_scale_control import CostScaleControl, UsageContext
+from .matter_intelligence_writer import MatterIntelligenceWriter
 from .model_router import (
     ModelProvider,
     ModelRequest,
@@ -19,6 +20,7 @@ class CouncilResult:
     failed_providers: tuple[str, ...]
     disagreements: tuple[str, ...]
     uncertain_providers: tuple[str, ...] = ()
+    persistence_status: str = "not_requested"
 
     @property
     def providers(self) -> tuple[str, ...]:
@@ -36,11 +38,15 @@ class AICouncil:
         privacy_policy: ProviderPrivacyPolicy | None = None,
         cost_control: CostScaleControl | None = None,
         cost_reservations: CostReservationRepository | None = None,
+        intelligence_writer: MatterIntelligenceWriter | None = None,
+        owner_id: str = "local-development-user",
     ) -> None:
         self.providers = providers
         self.privacy_policy = privacy_policy or ProviderPrivacyPolicy()
         self.cost_control = cost_control
         self.cost_reservations = cost_reservations
+        self.intelligence_writer = intelligence_writer
+        self.owner_id = owner_id
 
     def run(
         self,
@@ -48,6 +54,8 @@ class AICouncil:
         *,
         provider_order: tuple[str, ...] | None = None,
         minimum_responses: int = 2,
+        matter_id: str | None = None,
+        analysis_run_id: str | None = None,
     ) -> CouncilResult:
         if minimum_responses < 1:
             raise ValueError("minimum_responses must be at least 1")
@@ -93,12 +101,30 @@ class AICouncil:
             )
 
         disagreements = self._detect_disagreements(tuple(responses))
-        return CouncilResult(
+        result = CouncilResult(
             tuple(responses),
             tuple(failed),
             disagreements,
             tuple(uncertain),
         )
+        if self.intelligence_writer is not None:
+            effective_matter = matter_id or (request.usage_context.matter_id if request.usage_context else None)
+            run_id = analysis_run_id or (request.usage_context.request_id if request.usage_context else None)
+            if effective_matter and run_id:
+                payload = {
+                    "participating_models": [f"{item.provider}:{item.model}" for item in responses],
+                    "conclusions": [item.text for item in responses],
+                    "evidence_refs": [],
+                    "authority_refs": [],
+                    "agreements": [],
+                    "disagreements": list(disagreements),
+                    "unresolved_issues": list(failed) + list(uncertain),
+                    "available": True,
+                    "verification_state": "requires_review",
+                }
+                outcome = self.intelligence_writer.write(owner_id=self.owner_id, matter_id=effective_matter, kind="council", payload=payload, analysis_run_id=run_id)
+                result = CouncilResult(result.responses, result.failed_providers, result.disagreements, result.uncertain_providers, outcome.status)
+        return result
 
     def _complete_metered(self, request: ModelRequest, provider_key: str) -> ModelResponse:
         context = self._meter_context(request, provider=provider_key)

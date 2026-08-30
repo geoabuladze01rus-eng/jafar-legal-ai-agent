@@ -5,6 +5,7 @@ from itertools import combinations
 from typing import Any, ClassVar
 
 from .evidence_graph import CaseEvidenceGraph, EvidenceClaim, EvidenceSource
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,10 @@ class CrossDocumentContradictionGraph:
             "contradictions": [self._serialize(item) for item in items],
             "requires_human_review": bool(items),
         }
+
+    def persist(self, *, graph: CaseEvidenceGraph, writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        items = self.build(graph)
+        return writer.write_many(owner_id=owner_id, matter_id=matter_id, kind="contradiction", payloads=[self._serialize(item) | {"statement_a": item.left_statement, "statement_b": item.right_statement, "source_a": item.left_sources[0].evidence_id if item.left_sources else None, "source_b": item.right_sources[0].evidence_id if item.right_sources else None, "category": "cross_document" if item.cross_document else "cross_claim", "significance": item.severity, "confidence": 0.0, "verification_state": "requires_review", "id": f"cross:{item.left_claim_id}:{item.right_claim_id}"} for item in items], analysis_run_id=analysis_run_id)
 
     def _conflicts(self, left: EvidenceClaim, right: EvidenceClaim) -> bool:
         if left.statement.strip().casefold() == right.statement.strip().casefold():

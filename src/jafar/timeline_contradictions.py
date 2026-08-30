@@ -6,6 +6,7 @@ from itertools import combinations
 from typing import Any
 
 from .evidence_graph import CaseEvidenceGraph, EvidenceSource
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,10 @@ class TimelineContradictionAnalyzer:
             "timeline_contradictions": [self._serialize(item) for item in items],
             "requires_human_review": bool(items),
         }
+
+    def persist(self, *, graph: CaseEvidenceGraph, assertions: tuple[TimelineAssertion, ...], writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        items = self.analyze(graph, assertions)
+        return writer.write_many(owner_id=owner_id, matter_id=matter_id, kind="contradiction", payloads=[self._serialize(item) | {"statement_a": item.description, "statement_b": item.description, "category": item.kind, "significance": item.severity, "confidence": 0.0, "verification_state": "requires_review", "id": f"timeline:{item.left_assertion_id}:{item.right_assertion_id or item.kind}"} for item in items], analysis_run_id=analysis_run_id)
 
     def _compare_pair(
         self,

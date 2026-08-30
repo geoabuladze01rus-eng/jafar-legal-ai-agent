@@ -54,7 +54,13 @@ class SupabaseMatterIntelligenceRepository:
 
     def append(self, *, owner_id: str, matter_id: str, kind: str, payload: dict[str, Any], analysis_run_id: str, version: int = 1) -> IntelligenceRecord:
         record = _record(owner_id, matter_id, kind, payload, analysis_run_id, version)
-        response = self.client.table("matter_intelligence_records").insert(_to_row(record)).execute()
+        try:
+            response = self.client.table("matter_intelligence_records").insert(_to_row(record)).execute()
+        except Exception:
+            existing = self.client.table("matter_intelligence_records").select("*").eq("fingerprint", record.fingerprint).maybe_single().execute()
+            if getattr(existing, "data", None):
+                return _from_row(existing.data)
+            raise
         rows = getattr(response, "data", None) or []
         return _from_row(rows[0]) if rows else record
 
@@ -67,7 +73,9 @@ def _record(owner_id: str, matter_id: str, kind: str, payload: dict[str, Any], a
     if not owner_id.strip() or not matter_id.strip() or kind not in INTELLIGENCE_KINDS or not analysis_run_id.strip() or version < 1:
         raise ValueError("invalid_intelligence_record")
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    fingerprint = hashlib.sha256(f"{owner_id}|{matter_id}|{kind}|{analysis_run_id}|{version}|{encoded}".encode()).hexdigest()
+    # Run identity is trace metadata, not semantic identity: replaying one result from a
+    # different request must deduplicate, while changed payloads append a new immutable record.
+    fingerprint = hashlib.sha256(f"{owner_id}|{matter_id}|{kind}|{encoded}".encode()).hexdigest()
     return IntelligenceRecord(fingerprint, owner_id, matter_id, kind, dict(payload), analysis_run_id, version, fingerprint, datetime.now(UTC))
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .document_intake import ExtractedDocument
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +109,28 @@ class CaseEvidenceGraph:
             "claims": [self._serialize_claim(item) for item in self._claims.values()],
             "requires_human_review": bool(self.unsupported_claims()),
         }
+
+    def persist(self, *, writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        """Persist candidate evidence only after graph construction has completed."""
+        payloads = []
+        for claim in self._claims.values():
+            for evidence_id in claim.evidence_ids:
+                source = self._sources.get(evidence_id)
+                if source is None:
+                    continue
+                payloads.append({
+                    "id": claim.claim_id,
+                    "summary": claim.statement,
+                    "source_document_id": source.evidence_id,
+                    "page_or_fragment": str(source.page) if source.page is not None else source.evidence_id,
+                    "supports": claim.position,
+                    "confidence": 0.0,
+                    "verification_state": "candidate/unverified",
+                    "provenance": {"document": source.document_name, "document_fingerprint": source.document_fingerprint, "page": source.page, "fragment": source.metadata.get("chunk_index")},
+                    "evidence_id": source.evidence_id,
+                    "proposition_ref": claim.topic,
+                })
+        return writer.write_many(owner_id=owner_id, matter_id=matter_id, kind="evidence", payloads=payloads, analysis_run_id=analysis_run_id)
 
     @staticmethod
     def _serialize_source(source: EvidenceSource) -> dict[str, Any]:

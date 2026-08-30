@@ -49,12 +49,18 @@ struct JusticeWorkspaceView: View {
     }
 
     private var regularLayout: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            destinationView(selection)
+        Group {
+            if selection == .canonicalPrototype {
+                CanonicalHomePrototypeView()
+            } else {
+                NavigationSplitView {
+                    sidebar
+                } detail: {
+                    destinationView(selection)
+                }
+                .searchable(text: $searchText, placement: .sidebar, prompt: "Поиск по делам и документам")
+            }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Поиск по делам и документам")
         .frame(minWidth: 760, minHeight: 560)
     }
 

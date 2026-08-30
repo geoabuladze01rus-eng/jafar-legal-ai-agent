@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from openai import OpenAI
 
@@ -17,6 +18,17 @@ class AIProviderConfig:
     timeout_seconds: float = 60.0
     max_retries: int = 2
     retry_backoff_seconds: float = 0.5
+    max_output_tokens: int = 6000
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("ai_provider_timeout_must_be_positive")
+        if self.max_retries < 0 or self.max_retries > 5:
+            raise ValueError("ai_provider_retries_out_of_range")
+        if self.retry_backoff_seconds < 0:
+            raise ValueError("ai_provider_retry_backoff_must_be_non_negative")
+        if self.max_output_tokens <= 0 or self.max_output_tokens > 20_000:
+            raise ValueError("ai_provider_max_output_tokens_out_of_range")
 
 
 class OpenAILegalAnalyzer:
@@ -41,6 +53,20 @@ class OpenAILegalAnalyzer:
         task: DocumentTask,
         matter_type: MatterType = MatterType.GENERAL,
     ) -> LegalAnalysis:
+        analysis, _ = self.analyze_with_usage(
+            text=text,
+            task=task,
+            matter_type=matter_type,
+        )
+        return analysis
+
+    def analyze_with_usage(
+        self,
+        *,
+        text: str,
+        task: DocumentTask,
+        matter_type: MatterType = MatterType.GENERAL,
+    ) -> tuple[LegalAnalysis, dict[str, Any]]:
         if not text.strip():
             raise ValueError("document text must not be empty")
 
@@ -69,13 +95,22 @@ class OpenAILegalAnalyzer:
                         },
                     ],
                     text_format=LegalAnalysis,
+                    max_output_tokens=self.config.max_output_tokens,
                 )
                 if response.output_parsed is None:
                     raise RuntimeError("OpenAI returned no structured legal analysis")
-                return response.output_parsed
+                return response.output_parsed, self._safe_usage_metadata(response)
             except ValueError:
                 raise
-            except Exception as exc:
+            except RuntimeError as exc:
+                if str(exc) == "OpenAI returned no structured legal analysis":
+                    # The provider may already have processed and billed the request. A missing
+                    # structured response is not safe to retry automatically.
+                    raise
+                last_error = exc
+                if attempt >= self.config.max_retries:
+                    break
+            except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if attempt >= self.config.max_retries:
                     break
@@ -89,10 +124,48 @@ class OpenAILegalAnalyzer:
         except ValueError:
             task = DocumentTask.SUMMARIZE
 
-        analysis = self.analyze(text=request.prompt, task=task)
+        analysis, metadata = self.analyze_with_usage(text=request.prompt, task=task)
         return ModelResponse(
             provider=self.key,
             model=self.config.model,
             text=analysis.summary,
-            metadata={"legal_analysis": analysis.model_dump(mode="json")},
+            metadata=metadata,
         )
+
+    @staticmethod
+    def _safe_usage_metadata(response: Any) -> dict[str, Any]:
+        """Expose numeric usage only; never copy structured legal output into metadata."""
+
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return {}
+        if hasattr(usage, "model_dump"):
+            raw = usage.model_dump()
+        elif isinstance(usage, dict):
+            raw = usage
+        else:
+            raw = {
+                key: getattr(usage, key)
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "input_tokens_details",
+                    "output_tokens_details",
+                )
+                if hasattr(usage, key)
+            }
+        sanitized = OpenAILegalAnalyzer._numeric_tree(raw)
+        return {"usage": sanitized} if sanitized else {}
+
+    @staticmethod
+    def _numeric_tree(value: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if isinstance(item, (int, float)) and not isinstance(item, bool):
+                result[key] = item
+            elif isinstance(item, dict):
+                nested = OpenAILegalAnalyzer._numeric_tree(item)
+                if nested:
+                    result[key] = nested
+        return result

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.legal_models import Matter
 from jafar.matter_matching import MatterMatcher
@@ -11,7 +11,7 @@ def matter(
     client_name: str | None = None,
     opposing_party: str | None = None,
 ) -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Matter(
         id=matter_id,
         title=title,

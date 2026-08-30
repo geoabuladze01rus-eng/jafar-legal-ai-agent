@@ -57,7 +57,7 @@ class OutlookEmailProvider:
                 attachments.append(InboxAttachment(name, content, item.get("content_type")))
 
             sender = raw.get("sender", {}).get("emailAddress", {}).get("address", "")
-            received_at = datetime.fromisoformat(str(raw["receivedDateTime"]).replace("Z", "+00:00"))
+            received_at = datetime.fromisoformat(str(raw["receivedDateTime"]))
             result.append(
                 ExternalEmail(
                     message_id=message_id,

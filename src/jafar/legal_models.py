@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -37,18 +37,18 @@ class LegalAnalysis(BaseModel):
     key_facts: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Matter(BaseModel):
-    id: str
-    title: str
+    id: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=500)
     matter_type: MatterType
-    client_name: str | None = None
-    opposing_party: str | None = None
-    court_or_authority: str | None = None
-    case_number: str | None = None
-    status: str = "active"
+    client_name: str | None = Field(default=None, max_length=500)
+    opposing_party: str | None = Field(default=None, max_length=500)
+    court_or_authority: str | None = Field(default=None, max_length=1000)
+    case_number: str | None = Field(default=None, max_length=500)
+    status: str = Field(default="active", min_length=1, max_length=100)
     deadlines: list[Deadline] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -69,9 +69,11 @@ class AnalysisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=200_000)
     task: DocumentTask = DocumentTask.LEGAL_ANALYSIS
     matter_type: MatterType = MatterType.GENERAL
-    matter_id: str | None = None
+    matter_id: str | None = Field(default=None, max_length=200)
 
 
 class AnalysisResponse(BaseModel):
     analysis: LegalAnalysis
-    matter_id: str | None = None
+    matter_id: str | None = Field(default=None, max_length=200)
+    persisted: bool = False
+    requires_approval_to_persist: bool = True

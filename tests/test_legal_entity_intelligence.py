@@ -14,9 +14,12 @@ def test_entity_profile_scores_cross_source_risks():
             SourceFinding("kad", "found", "Арбитраж", {"case_count": 25}),
             SourceFinding("bo", "found", "Финансы", {"revenue": 0, "net_loss": 100_000}),
             SourceFinding("egrul", "no_data", "ЕГРЮЛ", {}),
-        ]
+        ],
+        trusted=True,
     )
 
+    assert profile["source_trust"] == "server_verified"
+    assert profile["risk_assessment_status"] == "scored"
     assert profile["risk_level"] == "critical"
     assert profile["risk_score"] == 100
     assert profile["sources_no_data"] == 1
@@ -26,8 +29,35 @@ def test_entity_profile_scores_cross_source_risks():
 
 def test_no_data_is_not_a_negative_finding():
     profile = LegalEntityIntelligence().build_profile(
-        [SourceFinding("fssp", "no_data", "ФССП", {})]
+        [SourceFinding("fssp", "no_data", "ФССП", {})],
+        trusted=True,
     )
     assert profile["risk_level"] == "unknown"
     assert profile["sources_no_data"] == 1
     assert profile["sources_negative"] == 0
+
+
+def test_untrusted_findings_are_visible_but_not_scored():
+    profile = LegalEntityIntelligence().build_profile(
+        [SourceFinding("fedresurs", "found", "Claim", {"bankruptcy": True})],
+        trusted=False,
+    )
+
+    assert profile["source_trust"] == "client_supplied_unverified"
+    assert profile["risk_assessment_status"] == "not_scored_unverified_input"
+    assert profile["risk_score"] is None
+    assert profile["risk_level"] == "unverified"
+    assert profile["risks"] == []
+    assert profile["findings"][0]["details"]["bankruptcy"] is True
+
+
+def test_profile_scoring_fails_closed_when_trust_flag_is_omitted():
+    profile = LegalEntityIntelligence().build_profile(
+        [SourceFinding("fedresurs", "found", "Claim", {"bankruptcy": True})]
+    )
+
+    assert profile["source_trust"] == "client_supplied_unverified"
+    assert profile["risk_assessment_status"] == "not_scored_unverified_input"
+    assert profile["risk_score"] is None
+    assert profile["risk_level"] == "unverified"
+    assert profile["risks"] == []

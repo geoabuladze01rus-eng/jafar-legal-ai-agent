@@ -2,7 +2,7 @@ from jafar.apple_voice_router import AppleVoiceCommandRouter
 
 
 def test_voice_router_detects_entity_investigation():
-    result = AppleVoiceCommandRouter().route("Джафар, проверь ООО Ромашка")
+    result = AppleVoiceCommandRouter().route("Юстиция, проверь ООО Ромашка")
     assert result.intent == "investigate_entity"
     assert result.arguments["entity"] == "ООО Ромашка"
     assert result.requires_confirmation

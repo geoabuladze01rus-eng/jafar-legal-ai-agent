@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 struct JafarAlert: Identifiable, Sendable {
@@ -11,14 +12,91 @@ struct JafarAlert: Identifiable, Sendable {
 
 @MainActor
 final class JafarAlertsStore: ObservableObject {
+    static let shared = JafarAlertsStore()
+    private static let replacementNotification = Notification.Name(
+        "ru.jafar.dashboard.alerts.replaced"
+    )
+
     @Published private(set) var alerts: [JafarAlert] = []
+    private var dismissedIDs: Set<String> = []
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(
+            forName: Self.replacementNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let newAlerts = notification.userInfo?["alerts"] as? [JafarAlert] else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                self?.apply(newAlerts)
+            }
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    var urgentCount: Int {
+        alerts.count { $0.priority >= 80 }
+    }
+
+    var approvalCount: Int {
+        alerts.count { $0.requiresApproval }
+    }
+
+    func replace(with newAlerts: [JafarAlert]) {
+        apply(newAlerts)
+        NotificationCenter.default.post(
+            name: Self.replacementNotification,
+            object: nil,
+            userInfo: ["alerts": newAlerts]
+        )
+    }
+
+    func replace(with signals: [DashboardSignal], generatedAt: String) {
+        let timestamp = ISO8601DateFormatter().date(from: generatedAt) ?? Date()
+        replace(
+            with: signals.map { signal in
+                JafarAlert(
+                    id: signal.id,
+                    title: signal.title,
+                    body: signal.body,
+                    priority: signal.priority,
+                    requiresApproval: signal.requiresApproval,
+                    createdAt: timestamp
+                )
+            }
+        )
+    }
 
     func add(_ alert: JafarAlert) {
+        guard !dismissedIDs.contains(alert.id) else { return }
+        alerts.removeAll { $0.id == alert.id }
         alerts.append(alert)
-        alerts.sort { $0.priority > $1.priority }
+        alerts.sort(by: Self.order)
     }
 
     func dismiss(_ id: String) {
+        dismissedIDs.insert(id)
         alerts.removeAll { $0.id == id }
+    }
+
+    private func apply(_ newAlerts: [JafarAlert]) {
+        alerts = newAlerts
+            .filter { !dismissedIDs.contains($0.id) }
+            .sorted(by: Self.order)
+    }
+
+    private static func order(_ left: JafarAlert, _ right: JafarAlert) -> Bool {
+        if left.priority != right.priority {
+            return left.priority > right.priority
+        }
+        return left.createdAt > right.createdAt
     }
 }

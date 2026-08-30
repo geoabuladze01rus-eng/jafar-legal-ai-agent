@@ -8,6 +8,11 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from .model_router import ModelProvider, ModelRequest, ModelResponse
+from .provider_transport_safety import (
+    read_json_response_limited,
+    validate_prompt_transport,
+    validate_provider_endpoint,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,31 +38,65 @@ class GeminiProvider(ModelProvider):
         if not api_key:
             raise RuntimeError("Provider gemini is not configured")
 
-        url = f"{self.config.base_url}/{quote(self.config.model)}:generateContent?key={quote(api_key)}"
+        validate_prompt_transport(request.prompt)
+        base_url = validate_provider_endpoint(self.config.base_url).rstrip("/")
+        url = f"{base_url}/{quote(self.config.model)}:generateContent"
         payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": request.prompt}]}],
         }
         req = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
             method="POST",
         )
         with urlopen(req, timeout=60) as response:
-            data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+            data = read_json_response_limited(response)
 
         text = self._extract_text(data)
-        return ModelResponse(provider=self.key, model=self.config.model, text=text, metadata=data)
+        return ModelResponse(
+            provider=self.key,
+            model=self.config.model,
+            text=text,
+            metadata=self._safe_metadata(data),
+        )
 
     @staticmethod
     def _extract_text(data: dict[str, Any]) -> str:
         candidates = data.get("candidates")
         if isinstance(candidates, list) and candidates:
-            content = candidates[0].get("content", {})
-            if isinstance(content, dict):
-                parts = content.get("parts", [])
-                if isinstance(parts, list):
-                    texts = [p.get("text") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)]
-                    if texts:
-                        return "".join(texts)
-        return json.dumps(data, ensure_ascii=False)
+            first = candidates[0]
+            if isinstance(first, dict):
+                content = first.get("content", {})
+                if isinstance(content, dict):
+                    parts = content.get("parts", [])
+                    if isinstance(parts, list):
+                        texts = [
+                            part.get("text")
+                            for part in parts
+                            if isinstance(part, dict) and isinstance(part.get("text"), str)
+                        ]
+                        if texts:
+                            return "".join(texts)
+        raise RuntimeError("Gemini response contained no recognizable assistant text")
+
+    @staticmethod
+    def _safe_metadata(data: dict[str, Any]) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        usage = data.get("usageMetadata")
+        if isinstance(usage, dict):
+            metadata["usage"] = {
+                key: value
+                for key, value in usage.items()
+                if isinstance(value, (int, float, bool)) or value is None
+            }
+        model_version = data.get("modelVersion")
+        if isinstance(model_version, str):
+            metadata["model_version"] = model_version
+        response_id = data.get("responseId")
+        if isinstance(response_id, str):
+            metadata["response_id"] = response_id
+        return metadata

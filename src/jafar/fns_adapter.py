@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .legal_entity_adapters import SourceResult
 from .legal_entity_intelligence import EntityQuery
@@ -41,7 +42,7 @@ class FnsPublicAdapter:
                 source_url=response.url,
                 data=self.parser.parse(response.text),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return SourceResult(
                 source_key=self.source_key,
                 status="error",

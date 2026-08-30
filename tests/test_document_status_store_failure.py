@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.document_status import DocumentStatus
@@ -26,8 +26,8 @@ def test_status_store_records_processing_failed_with_error():
     processor = InboxProcessor(InboxDocumentIntake(), FailingWorkflow(), InMemoryAttachmentStorage(), statuses)
     message = InboxMessage(
         message_id="msg-failed-status-test", sender="client@example.test", subject="Contract",
-        received_at=datetime.now(timezone.utc), body_text="Review",
-        attachments=(InboxAttachment("contract.pdf", b"contract", "application/pdf"),),
+        received_at=datetime.now(UTC), body_text="Review",
+            attachments=(InboxAttachment("contract.txt", b"contract", "text/plain"),),
     )
 
     processor.process_message(message)

@@ -99,8 +99,7 @@ class OpenAICompatibleProvider:
         cleaned = content.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.strip("`")
-            if cleaned.startswith("json"):
-                cleaned = cleaned[4:]
+            cleaned = cleaned.removeprefix("json")
         value = json.loads(cleaned)
         if not isinstance(value, dict):
             return None

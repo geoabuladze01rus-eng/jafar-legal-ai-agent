@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from .command_bus import JafarCommandBus
-from .matters import MatterStore
+from .matter_repository import MatterRepository
 from .tool_router import JafarToolRouter
 
 
@@ -18,22 +18,27 @@ class CommandRuntimeResult:
 
 
 class JafarCommandRuntime:
-    """Single command facade shared by HTTP, voice and future chat clients."""
+    """Read-only command facade shared by HTTP, voice and future chat clients.
 
-    def __init__(self, matter_store: MatterStore) -> None:
+    JAFAR remains the internal engine name. Public responses use the ЮСТИЦИЯ AI product
+    identity. Mutating actions must not be registered here: they enter the dedicated human
+    approval queue and execute only after a persisted lawyer decision.
+    """
+
+    def __init__(self, matter_store: MatterRepository) -> None:
         self.matter_store = matter_store
         self.bus = JafarCommandBus()
         self.router = JafarToolRouter(self.bus)
         self._register_commands()
 
     def _register_commands(self) -> None:
-        self.bus.register("health", lambda _: {"message": "Джафар на связи."})
+        self.bus.register("health", lambda _: {"message": "Юстиция на связи."})
         self.bus.register("list_matters", self._list_matters)
 
         self.router.register(
             "health",
             "health",
-            "Проверка связи с Джафаром",
+            "Проверка связи с Юстицией",
             requires_approval=False,
         )
         self.router.register(
@@ -48,10 +53,9 @@ class JafarCommandRuntime:
         intent: str,
         *,
         request_id: str | None = None,
-        approved: bool = False,
     ) -> CommandRuntimeResult:
         request_id = request_id or str(uuid4())
-        result = self.router.route(intent, {}, request_id, approved=approved)
+        result = self.router.route(intent, {}, request_id, approved=False)
         if result.status == "approval_required":
             return CommandRuntimeResult(
                 intent=intent,

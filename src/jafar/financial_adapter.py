@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .legal_entity_adapters import SourceResult
 from .legal_entity_intelligence import EntityQuery
@@ -26,5 +27,5 @@ class FinancialPublicAdapter:
         try:
             response = self.transport.get(self.url_builder(query))
             return SourceResult(self.source_key, "found", response.url, self.parser.parse(response.text))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return SourceResult(self.source_key, "error", error=str(exc))

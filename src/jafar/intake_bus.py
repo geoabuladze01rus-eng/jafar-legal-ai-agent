@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-
 IntakeKind = Literal["email", "document", "plaud", "telegram", "calendar"]
 
 

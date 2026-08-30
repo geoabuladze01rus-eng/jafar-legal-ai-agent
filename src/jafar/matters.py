@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from .legal_models import Deadline, Matter, MatterEvent
@@ -6,7 +6,7 @@ from .matter_repository import MatterRepository
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class MatterStore(MatterRepository):

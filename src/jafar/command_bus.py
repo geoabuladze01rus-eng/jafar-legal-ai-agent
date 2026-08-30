@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,5 +40,5 @@ class JafarCommandBus:
             result = handler(command.args)
             data = result if isinstance(result, dict) else {"result": result}
             return CommandResult("completed", "Команда выполнена.", command.request_id, data)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return CommandResult("error", "Ошибка выполнения команды.", command.request_id, {"error": str(exc)})

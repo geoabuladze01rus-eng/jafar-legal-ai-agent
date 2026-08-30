@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,15 +15,22 @@ class VoiceIntent:
 class AppleVoiceCommandRouter:
     """Maps Siri/Shortcuts voice phrases to safe Jafar intents."""
 
+    WAKE_WORDS = ("джафар", "юстиция", "юстиция ai", "юстиция аи")
     PATTERNS = (
-        ("investigate_entity", re.compile(r"(?:проверь|проверить)\s+(?P<entity>.+)", re.I)),
-        ("find_case", re.compile(r"(?:найди|покажи)\s+(?:дело\s+)?(?P<case>.+)", re.I)),
-        ("create_draft", re.compile(r"(?:создай|подготовь)\s+(?:черновик|ответ)(?:\s+(?P<topic>.+))?", re.I)),
-        ("set_reminder", re.compile(r"(?:напомни|поставь напоминание)\s+(?P<task>.+)", re.I)),
+        ("investigate_entity", re.compile(r"(?:проверь|проверить)\s+(?P<entity>.+)", re.IGNORECASE)),
+        ("find_case", re.compile(r"(?:найди|покажи)\s+(?:дело\s+)?(?P<case>.+)", re.IGNORECASE)),
+        ("create_draft", re.compile(r"(?:создай|подготовь)\s+(?:черновик|ответ)(?:\s+(?P<topic>.+))?", re.IGNORECASE)),
+        ("set_reminder", re.compile(r"(?:напомни|поставь напоминание)\s+(?P<task>.+)", re.IGNORECASE)),
     )
 
     def route(self, phrase: str) -> VoiceIntent:
         normalized = " ".join(phrase.strip().split())
+        lowered = normalized.casefold()
+        for wake_word in self.WAKE_WORDS:
+            prefix = f"{wake_word}, "
+            if lowered.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
         for intent, pattern in self.PATTERNS:
             match = pattern.fullmatch(normalized)
             if match:

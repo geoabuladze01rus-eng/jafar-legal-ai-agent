@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
+from .council_review import CouncilEvidenceInput, CouncilReview, CouncilReviewService
 from .document_intake import ExtractedDocument
 from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
@@ -18,36 +18,77 @@ class DocumentWorkflowResult:
     match: MatterMatch | None
     analysis: LegalAnalysis
     event: MatterEvent | None
+    council_review: CouncilReview | None = None
 
 
 class DocumentWorkflow:
-    """Orchestrates extraction, matter matching, analysis and event capture."""
+    """Read-only document analysis and optional AI Council review.
 
-    def __init__(self, store: MatterRepository, analyzer: LegalAnalyzer,
-                 matcher: MatterMatcher | None = None) -> None:
+    Analysis may identify a matching matter, deadlines and other candidate facts, but this
+    workflow deliberately does not mutate matter state. Persisting an event, deadline or
+    other legal record must happen later through the explicit lawyer-approval execution
+    boundary.
+    """
+
+    def __init__(
+        self,
+        store: MatterRepository,
+        analyzer: LegalAnalyzer,
+        matcher: MatterMatcher | None = None,
+        council_review_service: CouncilReviewService | None = None,
+    ) -> None:
         self.store = store
         self.analyzer = analyzer
         self.matcher = matcher or MatterMatcher()
+        self.council_review_service = council_review_service
 
-    def process(self, document_name: str, extracted: ExtractedDocument,
-                task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
-                matter_type: MatterType = MatterType.GENERAL) -> DocumentWorkflowResult:
+    def process(
+        self,
+        document_name: str,
+        extracted: ExtractedDocument,
+        task: DocumentTask = DocumentTask.LEGAL_ANALYSIS,
+        matter_type: MatterType = MatterType.GENERAL,
+        *,
+        run_council_review: bool = False,
+        confidential: bool = True,
+        allowed_providers: tuple[str, ...] | None = None,
+        council_minimum_responses: int = 2,
+    ) -> DocumentWorkflowResult:
         match = self.matcher.best_match(extracted.text, self.store.list_matters())
         matter = self.store.get(match.matter_id) if match else None
         effective_type = matter.matter_type if matter else matter_type
         analysis = self.analyzer.analyze(extracted.text, task, effective_type)
-        event = None
 
-        if matter:
-            event = self.store.record_document_event(
-                matter_id=matter.id,
-                title=f"Анализ документа: {document_name}",
-                event_date=datetime.now(timezone.utc),
-                description=analysis.summary,
-                source_document=document_name,
+        council_review = None
+        if run_council_review:
+            if self.council_review_service is None:
+                raise RuntimeError("AI Council review requested but no CouncilReviewService is configured")
+            fragments = extracted.fragments()
+            evidence_inputs = tuple(
+                CouncilEvidenceInput(
+                    evidence_id=extracted.evidence_id(fragment),
+                    text=fragment.text,
+                    page=fragment.page,
+                    chunk_index=fragment.chunk_index,
+                )
+                for fragment in fragments
+            )
+            council_review = self.council_review_service.review(
+                document_text=extracted.text,
+                analysis=analysis,
+                document_name=document_name,
                 document_fingerprint=extracted.fingerprint,
-                deadlines=analysis.deadlines,
+                evidence_inputs=evidence_inputs,
+                confidential=confidential,
+                allowed_providers=allowed_providers,
+                minimum_responses=council_minimum_responses,
             )
 
-        return DocumentWorkflowResult(document_name=document_name, extracted=extracted,
-                                      match=match, analysis=analysis, event=event)
+        return DocumentWorkflowResult(
+            document_name=document_name,
+            extracted=extracted,
+            match=match,
+            analysis=analysis,
+            event=None,
+            council_review=council_review,
+        )

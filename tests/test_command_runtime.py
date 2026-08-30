@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.command_runtime import JafarCommandRuntime
-from jafar.legal_models import Matter
 from jafar.domains import MatterType
+from jafar.legal_models import Matter
 from jafar.matters import MatterStore
 
 
 def make_store() -> MatterStore:
     store = MatterStore()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store.create(
         Matter(
             id="matter-1",
@@ -32,7 +32,7 @@ def test_read_only_commands_do_not_require_approval():
     matters = runtime.execute("list_matters", request_id="req-matters")
 
     assert health.approval_required is False
-    assert health.message == "Джафар на связи."
+    assert health.message == "Юстиция на связи."
     assert matters.approval_required is False
     assert matters.data["count"] == 1
     assert matters.data["matters"][0]["id"] == "matter-1"

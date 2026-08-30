@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ class RiskSignal:
 class LegalEntityRiskEngine:
     """Aggregates source signals without turning missing data into negative findings."""
 
-    WEIGHTS = {"low": 1, "medium": 2, "high": 4, "critical": 8}
+    WEIGHTS: ClassVar[dict[str, int]] = {"low": 1, "medium": 2, "high": 4, "critical": 8}
 
     def assess(self, signals: list[RiskSignal]) -> dict[str, Any]:
         score = sum(self.WEIGHTS.get(signal.severity, 0) * max(0.0, min(1.0, signal.confidence)) for signal in signals)

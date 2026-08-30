@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,8 +16,18 @@ class EmailTriageDecision:
 class EmailTriage:
     """Read-only triage layer. It proposes actions but never sends or moves mail."""
 
-    LEGAL_TERMS = ("договор", "иск", "суд", "адвокат", "уголов", "арбитраж", "претенз", "следователь")
-    LEGAL_DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
+    LEGAL_TERMS = (
+        "договор",
+        "иск",
+        "суд",
+        "адвокат",
+        "уголов",
+        "арбитраж",
+        "претенз",
+        "следователь",
+        "юрид",
+    )
+    LEGAL_DOCUMENT_EXTENSIONS: ClassVar[set[str]] = {".pdf", ".docx"}
 
     def classify(self, *, message_id: str, subject: str, preview: str, attachment_count: int = 0,
                  attachment_names: tuple[str, ...] = ()) -> EmailTriageDecision:
@@ -29,5 +40,5 @@ class EmailTriage:
         relevance = min(1.0, hits / 3.0)
         if has_legal_attachment:
             relevance = max(relevance, 0.5)
-        action = "prepare_legal_analysis" if relevance >= 0.34 else "triage"
+        action = "prepare_legal_analysis" if relevance >= (1 / 3) else "triage"
         return EmailTriageDecision(message_id, relevance, action, attachment_count=attachment_count)

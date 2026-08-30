@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.attachment_storage import InMemoryAttachmentStorage
 from jafar.document_status import DocumentStatus
@@ -16,12 +16,12 @@ class FailingWorkflow:
 def test_failed_workflow_preserves_original_and_error():
     storage = InMemoryAttachmentStorage()
     processor = InboxProcessor(InboxDocumentIntake(), FailingWorkflow(), storage)
-    attachment = InboxAttachment("contract.pdf", b"original-contract", "application/pdf")
+    attachment = InboxAttachment("contract.txt", b"original-contract", "text/plain")
     message = InboxMessage(
         message_id="msg-failure-test",
         sender="client@example.test",
         subject="Contract",
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(UTC),
         body_text="Review attached contract",
         attachments=(attachment,),
     )
@@ -33,5 +33,5 @@ def test_failed_workflow_preserves_original_and_error():
     assert document.status is DocumentStatus.FAILED
     assert document.error == "RuntimeError: OCR provider unavailable"
     assert document.workflow is None
-    assert storage.files[document.storage_path] == (b"original-contract", "application/pdf")
-    assert any(issue.filename == "contract.pdf" for issue in result.issues)
+    assert storage.files[document.storage_path] == (b"original-contract", "text/plain")
+    assert any(issue.filename == "contract.txt" for issue in result.issues)

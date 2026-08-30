@@ -20,7 +20,11 @@ final class VoiceRecognizer: ObservableObject {
                 continuation.resume(returning: status == .authorized)
             }
         }
-        let microphone = await AVAudioApplication.requestRecordPermission()
+        let microphone = await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
         return speech && microphone
     }
 
@@ -36,21 +40,26 @@ final class VoiceRecognizer: ObservableObject {
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
         }
         audioEngine.prepare()
         try audioEngine.start()
         isListening = true
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
-                if let result { self?.transcript = result.bestTranscription.formattedString }
-                if error != nil { self?.stop() }
+                if let result {
+                    self?.transcript = result.bestTranscription.formattedString
+                }
+                if error != nil {
+                    self?.stop()
+                }
             }
         }
     }
 
     func stop() {
+        guard isListening || audioEngine.isRunning else { return }
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
@@ -61,4 +70,6 @@ final class VoiceRecognizer: ObservableObject {
     }
 }
 
-enum VoiceError: Error { case unavailable }
+enum VoiceError: Error {
+    case unavailable
+}

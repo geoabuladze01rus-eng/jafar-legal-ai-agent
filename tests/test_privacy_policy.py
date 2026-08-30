@@ -16,6 +16,8 @@ def test_non_confidential_policy_allows_configured_providers() -> None:
         "openai",
         "gemini",
         "deepseek",
+        "qwen",
+        "kimi",
     )
 
 

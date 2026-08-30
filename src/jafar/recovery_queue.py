@@ -28,6 +28,6 @@ class RecoveryQueueWorker:
             try:
                 self.retry_service.retry(storage_path=job.storage_path)
                 self.queue.complete(job_id=job.id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.queue.fail(job_id=job.id, error=f"{type(exc).__name__}: {exc}")
         return len(jobs)

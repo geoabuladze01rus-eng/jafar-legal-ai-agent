@@ -16,7 +16,13 @@ protocol CommandClient: Sendable {
 
 struct LocalCommandClient: CommandClient {
     func send(request: CommandRequest) async throws -> CommandResponse {
-        CommandResponse(message: "Команда получена локально: \(request.text)")
+        guard let baseURL = JafarAPIConfiguration.baseURL else {
+            return CommandResponse(message: "Команда получена локально: \(request.text)")
+        }
+        return try await RemoteCommandClient(
+            endpoint: baseURL.appendingPathComponent("v1/command"),
+            authorizationToken: JafarAPIConfiguration.authorizationToken
+        ).send(request: request)
     }
 }
 
@@ -25,7 +31,11 @@ struct RemoteCommandClient: CommandClient {
     let session: URLSession
     let authorizationToken: String?
 
-    init(endpoint: URL, session: URLSession = .shared, authorizationToken: String? = nil) {
+    init(
+        endpoint: URL,
+        session: URLSession = .shared,
+        authorizationToken: String? = nil
+    ) {
         self.endpoint = endpoint
         self.session = session
         self.authorizationToken = authorizationToken
@@ -35,7 +45,7 @@ struct RemoteCommandClient: CommandClient {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let authorizationToken {
+        if let authorizationToken, !authorizationToken.isEmpty {
             urlRequest.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
         }
         urlRequest.httpBody = try JSONEncoder().encode(request)

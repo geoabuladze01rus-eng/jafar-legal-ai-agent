@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,5 +42,5 @@ class VoiceCommandGateway:
         try:
             result = self.command_handler(text)
             return VoiceResult("completed", result, action=text)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return VoiceResult("error", "Не удалось выполнить команду.", metadata={"error": str(exc)})

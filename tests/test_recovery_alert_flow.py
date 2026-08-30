@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.recovery_alert import RecoveryAlertService
 from jafar.recovery_incident import RecoveryIncident
@@ -32,7 +32,7 @@ def test_failure_creates_alert_without_resolution():
     store = Store(incident)
     sink = Sink()
 
-    result = RecoveryAlertService(store, sink).run_once(now=datetime.now(timezone.utc))
+    result = RecoveryAlertService(store, sink).run_once(now=datetime.now(UTC))
 
     assert result.alerted is True
     assert sink.sent == [incident]
@@ -43,7 +43,7 @@ def test_recovery_resolves_open_incident():
     store = Store(None)
     sink = Sink()
 
-    result = RecoveryAlertService(store, sink).run_once(now=datetime.now(timezone.utc))
+    result = RecoveryAlertService(store, sink).run_once(now=datetime.now(UTC))
 
     assert result.alerted is False
     assert result.resolved_count == 1

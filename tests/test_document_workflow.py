@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jafar.document_intake import ExtractedDocument
+from jafar.document_workflow import DocumentWorkflow
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import Matter
-from jafar.document_workflow import DocumentWorkflow
 from jafar.matters import MatterStore
 
 
@@ -13,7 +13,7 @@ def make_matter(
     case_number: str = "А40-12345/2026",
     title: str = "Взыскание задолженности",
 ) -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Matter(
         id=matter_id,
         title=title,
@@ -45,10 +45,9 @@ def test_workflow_matches_analyzes_and_creates_event():
 
     assert result.match is not None
     assert result.match.matter_id == "matter-1"
-    assert result.event is not None
-    assert result.event.matter_id == "matter-1"
-    assert len(store.events("matter-1")) == 1
-    assert store.get("matter-1").deadlines
+    assert result.event is None
+    assert len(store.events("matter-1")) == 0
+    assert store.get("matter-1").deadlines == []
 
 
 def test_workflow_does_not_create_event_for_unresolved_document():
@@ -106,11 +105,11 @@ def test_workflow_is_idempotent_for_same_document_content():
     first = workflow.process("review.txt", extracted)
     second = workflow.process("renamed-copy.txt", extracted)
 
-    assert first.event is not None
-    assert second.event is not None
-    assert second.event.id == first.event.id
-    assert second.event.document_fingerprint == extracted.fingerprint
-    assert len(store.events("matter-1")) == 1
+    assert first.event is None
+    assert second.event is None
+    assert first.extracted.fingerprint == extracted.fingerprint
+    assert second.extracted.fingerprint == extracted.fingerprint
+    assert len(store.events("matter-1")) == 0
 
 
 def test_same_filename_with_different_content_is_not_deduplicated():
@@ -135,7 +134,7 @@ def test_same_filename_with_different_content_is_not_deduplicated():
         ),
     )
 
-    assert first.event is not None
-    assert second.event is not None
-    assert first.event.id != second.event.id
-    assert len(store.events("matter-1")) == 2
+    assert first.event is None
+    assert second.event is None
+    assert first.extracted.fingerprint != second.extracted.fingerprint
+    assert len(store.events("matter-1")) == 0

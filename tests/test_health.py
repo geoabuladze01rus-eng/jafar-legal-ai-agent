@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from jafar.main import app
 
-
 client = TestClient(app)
 
 
@@ -12,7 +11,16 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_ready_returns_sanitized_status() -> None:
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
 def test_analysis_boundary() -> None:
     response = client.post("/v1/analyze", json={"text": "Тест документа"})
     assert response.status_code == 200
-    assert response.json()["task"] == "legal_analysis"
+    payload = response.json()
+    assert payload["analysis"]["task"] == "legal_analysis"
+    assert payload["persisted"] is False
+    assert payload["requires_approval_to_persist"] is True

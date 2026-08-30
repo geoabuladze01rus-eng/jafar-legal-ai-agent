@@ -72,7 +72,7 @@ struct JusticePresenceView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Юстиция. \(state.title)")
         .onAppear(perform: updateAnimation)
-        .onChange(of: state) { _ in
+        .onChange(of: state) { _, _ in
             updateAnimation()
         }
     }

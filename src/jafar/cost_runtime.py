@@ -26,6 +26,7 @@ class CostRuntime:
 
     control: CostScaleControl | None
     reservations: CostReservationRepository | None
+    ledger: CostLedger | SupabaseCostLedger | None = None
 
 
 def validate_production_ai_scale(settings: Settings) -> None:
@@ -122,7 +123,7 @@ def build_cost_runtime(settings: Settings) -> CostRuntime:
     if production:
         validate_production_ai_scale(settings)
     if not settings.ai_cost_control_enabled:
-        return CostRuntime(control=None, reservations=None)
+        return CostRuntime(control=None, reservations=None, ledger=None)
 
     if production:
         client, owner_user_id = _server_supabase()
@@ -134,11 +135,13 @@ def build_cost_runtime(settings: Settings) -> CostRuntime:
             client,
             owner_user_id,
         )
-        return CostRuntime(control=control, reservations=reservations)
+        return CostRuntime(control=control, reservations=reservations, ledger=control.ledger)
 
+    ledger = CostLedger()
     return CostRuntime(
-        control=_control(settings, ledger=CostLedger()),
+        control=_control(settings, ledger=ledger),
         reservations=None,
+        ledger=ledger,
     )
 
 

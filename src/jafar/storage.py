@@ -11,6 +11,11 @@ from .action_reconciliation import (
     ReconciliationAuditStore,
 )
 from .config import Settings
+from .matter_intelligence_store import (
+    MatterIntelligenceRepository,
+    MatterIntelligenceStore,
+    SupabaseMatterIntelligenceRepository,
+)
 from .matter_repository import MatterRepository
 from .matters import MatterStore
 from .supabase_action_approval import SupabaseActionApprovalRepository
@@ -31,6 +36,8 @@ class RuntimeRepositories:
     approvals: ActionApprovalRepository
     reconciliation_audit: ReconciliationAuditRepository
     reconciliation: ActionReconciliationService
+    intelligence: MatterIntelligenceRepository
+    owner_user_id: str | None = None
 
 
 def storage_backend(settings: Settings) -> StorageBackend:
@@ -45,7 +52,7 @@ def storage_backend(settings: Settings) -> StorageBackend:
 def validate_storage_security(settings: Settings) -> None:
     backend = storage_backend(settings)
     if (
-        settings.environment.strip().casefold() == "production"
+        settings.environment.strip().casefold() in {"staging", "production"}
         and backend is StorageBackend.MEMORY
     ):
         raise RuntimeError(
@@ -66,6 +73,8 @@ def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
                 approvals,
                 audit_repository=audit,
             ),
+            intelligence=MatterIntelligenceStore(),
+            owner_user_id=None,
         )
 
     client, owner_user_id = _supabase_context()
@@ -85,6 +94,8 @@ def build_runtime_repositories(settings: Settings) -> RuntimeRepositories:
             client=client,
             owner_user_id=owner_user_id,
         ),
+        intelligence=SupabaseMatterIntelligenceRepository(client),
+        owner_user_id=owner_user_id,
     )
 
 

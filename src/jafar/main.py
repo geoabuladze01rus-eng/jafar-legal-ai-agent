@@ -12,7 +12,9 @@ from .action_approval import ActionRequest, ActionState, LegalActionApprovalEngi
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
 from .config import settings
+from .cost_dashboard import CostDashboardService
 from .cost_runtime import build_cost_runtime, validate_production_ai_scale
+from .cost_scale_control import BudgetLimits
 from .dashboard import DashboardService, DashboardSnapshot
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
@@ -21,7 +23,7 @@ from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
 from .matter_intelligence_api import build_router as build_matter_intelligence_router
-from .matter_intelligence_store import MatterIntelligenceStore
+from .matter_intelligence_store import SupabaseMatterIntelligenceRepository
 from .rate_limit_runtime import RateLimiter, build_ai_rate_limiter
 from .storage import build_runtime_repositories, validate_storage_security
 from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
@@ -113,19 +115,34 @@ openai_analyzer = (
     else None
 )
 runtime_repositories = build_runtime_repositories(settings)
-intelligence_store = MatterIntelligenceStore()
+intelligence_store = runtime_repositories.intelligence
 matter_store = runtime_repositories.matters
 action_approval_store = runtime_repositories.approvals
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
+cost_dashboard_service = CostDashboardService()
 action_approval_engine = LegalActionApprovalEngine(action_approval_store)
 app.include_router(build_matter_intelligence_router(
     matter_store,
     intelligence_store,
-    owner_id=(settings.lawyer_approver_id or "local-development-user").strip(),
+    owner_id=(runtime_repositories.owner_user_id or settings.lawyer_approver_id or "local-development-user").strip(),
+    cost_snapshot_provider=lambda matter_id: _cost_snapshot(matter_id),
 ))
+
+
+def _cost_snapshot(matter_id: str):
+    """Project the existing CostRuntime ledger; never creates a second ledger."""
+    runtime = build_cost_runtime(settings)
+    ledger = runtime.ledger
+    if ledger is None or not hasattr(ledger, "records") or runtime.control is None:
+        return cost_dashboard_service.snapshot(
+            records=(), limits=runtime.control.limits if runtime.control else BudgetLimits(), user_id=(settings.lawyer_approver_id or "local-development-user"), matter_id=matter_id,
+        )
+    return cost_dashboard_service.snapshot(
+        records=ledger.records(), limits=runtime.control.limits, user_id=(settings.lawyer_approver_id or "local-development-user"), matter_id=matter_id,
+    )
 
 
 def _analyze(request: AnalysisRequest) -> LegalAnalysis:
@@ -316,6 +333,13 @@ def ready() -> ReadyResponse:
                 raise RuntimeError("staging storage is not persistent")
             if settings.ai_queue_backend.strip().casefold() != "supabase":
                 raise RuntimeError("staging AI queue is not durable")
+        if environment in {"staging", "production"}:
+            if settings.storage_backend.strip().casefold() != "supabase":
+                raise RuntimeError("durable storage is required")
+            if not isinstance(runtime_repositories.intelligence, SupabaseMatterIntelligenceRepository):
+                raise RuntimeError("durable intelligence repository is unavailable")
+            if not runtime_repositories.owner_user_id:
+                raise RuntimeError("owner identity is unavailable")
         return ReadyResponse(status="ready")
     except (RuntimeError, ValueError, TypeError):
         return JSONResponse(status_code=503, content={"status": "not_ready"})

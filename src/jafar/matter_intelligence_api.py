@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .legal_models import Matter
+from .matter_intelligence_store import MatterIntelligenceRepository
 from .matter_repository import MatterRepository
 
 router = APIRouter(prefix="/v1/matters", tags=["matter-intelligence"])
@@ -177,7 +178,7 @@ class CostResponse(IntelligenceEnvelope):
     result: CostProjection = CostProjection()
 
 
-def build_router(matter_store: MatterRepository) -> APIRouter:
+def build_router(matter_store: MatterRepository, intelligence_store: MatterIntelligenceRepository | None = None, owner_id: str = "local-development-user") -> APIRouter:
     def matter_or_404(matter_id: str) -> Matter:
         matter = matter_store.get(matter_id)
         if matter is None:
@@ -202,7 +203,8 @@ def build_router(matter_store: MatterRepository) -> APIRouter:
     @router.get("/{matter_id}/intelligence/evidence", response_model=EvidenceResponse)
     def evidence(matter_id: MatterId, limit: BoundedLimit = 50) -> EvidenceResponse:
         matter_or_404(matter_id)
-        return EvidenceResponse(matter_id=matter_id, items=[])
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="evidence", limit=limit) if intelligence_store else []
+        return EvidenceResponse(matter_id=matter_id, items=[EvidenceProjection.model_validate(item.payload) for item in records])
 
     @router.get("/{matter_id}/intelligence/timeline", response_model=TimelineResponse)
     def timeline(matter_id: MatterId, limit: BoundedLimit = 50) -> TimelineResponse:
@@ -217,12 +219,14 @@ def build_router(matter_store: MatterRepository) -> APIRouter:
     @router.get("/{matter_id}/intelligence/contradictions", response_model=ContradictionsResponse)
     def contradictions(matter_id: MatterId, limit: BoundedLimit = 50) -> ContradictionsResponse:
         matter_or_404(matter_id)
-        return ContradictionsResponse(matter_id=matter_id, items=[])
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="contradiction", limit=limit) if intelligence_store else []
+        return ContradictionsResponse(matter_id=matter_id, items=[ContradictionProjection.model_validate(item.payload) for item in records])
 
     @router.get("/{matter_id}/intelligence/authorities", response_model=AuthoritiesResponse)
     def authorities(matter_id: MatterId, limit: BoundedLimit = 50) -> AuthoritiesResponse:
         matter_or_404(matter_id)
-        return AuthoritiesResponse(matter_id=matter_id, items=[])
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="authority", limit=limit) if intelligence_store else []
+        return AuthoritiesResponse(matter_id=matter_id, items=[AuthorityProjection.model_validate(item.payload) for item in records])
 
     @router.get("/{matter_id}/intelligence/council", response_model=CouncilResponse)
     def council(matter_id: MatterId) -> CouncilResponse:

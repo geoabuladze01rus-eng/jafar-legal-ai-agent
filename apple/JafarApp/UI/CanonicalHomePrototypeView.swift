@@ -27,7 +27,7 @@ private struct CanonicalRailRow: Identifiable {
     let urgency: String
 }
 
-private struct CanonicalPanel<Content: View>: View {
+struct CanonicalPanel<Content: View>: View {
     let glow: Color?
     @ViewBuilder let content: Content
 
@@ -50,7 +50,7 @@ private struct CanonicalPanel<Content: View>: View {
     }
 }
 
-private struct CanonicalIntelligenceEmblem: View {
+struct CanonicalIntelligenceEmblem: View {
     let isAnalyzing: Bool
     let isListening: Bool
     let hasControlFocus: Bool

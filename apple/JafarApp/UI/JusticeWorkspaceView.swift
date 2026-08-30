@@ -2,7 +2,7 @@ import SwiftUI
 
 private enum JusticeDestination: String, CaseIterable, Identifiable {
     case home, matters, calendar, documents, mail, radar, practice, drafts, voice, analytics, library, counterparties, evidence, timeline, contradictions, authorities
-    case council, position, hearing, court, approvals, costs, settings
+    case council, position, hearing, court, approvals, costs, settings, canonicalCalendarPrototype
 
     var id: String { rawValue }
     var title: String {
@@ -12,7 +12,7 @@ private enum JusticeDestination: String, CaseIterable, Identifiable {
         case .contradictions: "Противоречия"; case .authorities: "Судебная практика"
         case .council: "Совет моделей"; case .position: "Правовая позиция"
         case .hearing: "Подготовка к заседанию"; case .court: "Режим суда"
-        case .approvals: "Решения"; case .costs: "Использование AI"; case .settings: "Настройки"
+        case .approvals: "Решения"; case .costs: "Использование AI"; case .settings: "Настройки"; case .canonicalCalendarPrototype: "Canonical Calendar"
         }
     }
     var icon: String {
@@ -22,7 +22,7 @@ private enum JusticeDestination: String, CaseIterable, Identifiable {
         case .contradictions: "exclamationmark.triangle.fill"; case .authorities: "building.columns.fill"
         case .council: "person.3.fill"; case .position: "text.book.closed.fill"
         case .hearing: "checklist"; case .court: "scale.3d"; case .approvals: "checkmark.seal.fill"
-        case .costs: "chart.bar.xaxis"; case .settings: "gearshape.fill"
+        case .costs: "chart.bar.xaxis"; case .settings: "gearshape.fill"; case .canonicalCalendarPrototype: "calendar.badge.clock"
         }
     }
     static var primary: [JusticeDestination] { [.home, .matters, .calendar, .documents, .mail, .radar, .practice, .drafts, .voice, .analytics, .library, .counterparties, .settings] }
@@ -60,6 +60,8 @@ struct JusticeWorkspaceView: View {
                     },
                     onNavigate: selectCanonicalDestination
                 )
+            } else if selection == .canonicalCalendarPrototype {
+                CanonicalCalendarPrototypeView()
             } else {
                 NavigationSplitView {
                     sidebar
@@ -114,6 +116,16 @@ struct JusticeWorkspaceView: View {
                     }.buttonStyle(.plain)
                 }
             }
+            if demoMode {
+                Section("Визуальный approval") {
+                    Button { withAnimation(JafarMotion.normal) { selection = .canonicalCalendarPrototype } } label: {
+                        Label("Canonical Calendar", systemImage: JusticeDestination.canonicalCalendarPrototype.icon).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 3)
+                    .foregroundStyle(selection == .canonicalCalendarPrototype ? JafarPalette.accentGold : JafarPalette.textSecondary)
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(JafarPalette.backgroundSecondary)
@@ -144,6 +156,7 @@ struct JusticeWorkspaceView: View {
         case .position: JusticeModuleBoardView(destination: .position)
         case .hearing: JusticeModuleBoardView(destination: .hearing)
         case .court: JusticeCourtModeView()
+        case .canonicalCalendarPrototype: CanonicalCalendarPrototypeView()
         }
     }
 

@@ -1,66 +1,13 @@
 import SwiftUI
 
-private enum CalendarEventTone: Equatable {
-    case deadline, hearing, investigation, meeting, task, filed, completed
-
-    var color: Color {
-        switch self {
-        case .deadline: JafarPalette.warning
-        case .hearing, .filed: JafarPalette.accentGold
-        case .investigation, .meeting: JafarPalette.accentBlue
-        case .task: JafarPalette.textSecondary
-        case .completed: JafarPalette.success
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .deadline: "exclamationmark.triangle.fill"
-        case .hearing: "building.columns.fill"
-        case .investigation: "magnifyingglass"
-        case .meeting: "person.2.fill"
-        case .task: "checklist"
-        case .filed: "tray.and.arrow.up.fill"
-        case .completed: "checkmark.circle.fill"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .deadline: "Процессуальный срок"
-        case .hearing: "Судебное заседание"
-        case .investigation: "Следственное действие"
-        case .meeting: "Встреча"
-        case .task: "Задача"
-        case .filed: "Подача документа"
-        case .completed: "Выполнено"
-        }
-    }
-}
-
-private struct CalendarPrototypeEvent: Identifiable {
-    let id: String
-    let day: Int
-    let time: String
-    let title: String
-    let caseNumber: String
-    let tone: CalendarEventTone
-}
-
-private struct CriticalDeadline: Identifiable {
-    let id: String
-    let date: String
-    let remaining: String
-    let action: String
-    let matter: String
-    let urgent: Bool
-}
-
 struct CanonicalCalendarPrototypeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var selectedDay = 20
+    private let presentation: CalendarPresentation
+    private let onRefresh: (@MainActor () async -> Void)?
+    @State private var selectedDay: Int
+    @State private var displayedMonth: Date
     @State private var hoveredEventID: String?
-    @State private var selectedEvent: CalendarPrototypeEvent?
+    @State private var selectedEvent: CalendarPresentationEvent?
     @State private var haloBreath = false
     @State private var ringTurn = false
     @State private var syncSweep = false
@@ -68,26 +15,22 @@ struct CanonicalCalendarPrototypeView: View {
     @State private var syncTurn = false
     @State private var calendarMode = "Месяц"
     @State private var urgentPulse = false
+    @State private var showingAddEventNotice = false
 
-    private let events = [
-        CalendarPrototypeEvent(id: "hearing-18", day: 18, time: "10:30", title: "Судебное заседание", caseNumber: "A-1234/2026", tone: .hearing),
-        CalendarPrototypeEvent(id: "meeting-19", day: 19, time: "15:00", title: "Встреча с доверителем", caseNumber: "A-1234/2026", tone: .meeting),
-        CalendarPrototypeEvent(id: "deadline-20", day: 20, time: "до 18:00", title: "Подать возражения", caseNumber: "A-1234/2026", tone: .deadline),
-        CalendarPrototypeEvent(id: "filed-21", day: 21, time: "11:00", title: "Подача документа", caseNumber: "A-1234/2026", tone: .filed),
-        CalendarPrototypeEvent(id: "task-22", day: 22, time: "до 16:00", title: "Подготовить ходатайство", caseNumber: "A-1234/2026", tone: .deadline),
-        CalendarPrototypeEvent(id: "investigation-25", day: 25, time: "09:00", title: "Следственное действие", caseNumber: "A-1234/2026", tone: .investigation),
-        CalendarPrototypeEvent(id: "fee-25", day: 25, time: "до 17:00", title: "Оплата госпошлины", caseNumber: "A-1234/2026", tone: .deadline),
-        CalendarPrototypeEvent(id: "task-27", day: 27, time: "12:00", title: "Проверить приложения", caseNumber: "A-1234/2026", tone: .task),
-        CalendarPrototypeEvent(id: "court-30", day: 30, time: "до 14:00", title: "Ответ на запрос суда", caseNumber: "A-1234/2026", tone: .deadline),
-        CalendarPrototypeEvent(id: "complete-31", day: 31, time: "10:00", title: "Сверить позицию", caseNumber: "A-1234/2026", tone: .completed)
-    ]
+    init(
+        presentation: CalendarPresentation = .prototype,
+        onRefresh: (@MainActor () async -> Void)? = nil
+    ) {
+        self.presentation = presentation
+        self.onRefresh = onRefresh
+        _displayedMonth = State(initialValue: presentation.initialMonth)
+        _selectedDay = State(initialValue: Calendar.current.component(.day, from: presentation.initialMonth))
+    }
 
-    private let deadlines = [
-        CriticalDeadline(id: "critical-20", date: "До 20.05.2026", remaining: "2 дня", action: "Подать возражения", matter: "Дело A-1234/2026", urgent: true),
-        CriticalDeadline(id: "critical-22", date: "До 22.05.2026", remaining: "4 дня", action: "Подготовить ходатайство", matter: "Дело A-1234/2026", urgent: false),
-        CriticalDeadline(id: "critical-25", date: "До 25.05.2026", remaining: "7 дней", action: "Оплата госпошлины", matter: "Дело A-1234/2026", urgent: false),
-        CriticalDeadline(id: "critical-30", date: "До 30.05.2026", remaining: "12 дней", action: "Ответ на запрос суда", matter: "Дело A-1234/2026", urgent: false)
-    ]
+    private var events: [CalendarPresentationEvent] { presentation.events }
+    private var deadlines: [CalendarCriticalDeadline] {
+        CalendarPresentationAdapter.criticalDeadlines(from: events, reference: timelineReferenceDate)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -124,6 +67,11 @@ struct CanonicalCalendarPrototypeView: View {
                 .padding(14)
                 .background(JafarPalette.background)
         }
+        .alert("Добавление события", isPresented: $showingAddEventNotice) {
+            Button("Понятно", role: .cancel) { }
+        } message: {
+            Text("Создание процессуальных событий будет доступно после подключения подтверждённого локального workflow. Событие не будет сохранено автоматически.")
+        }
         .onAppear(perform: startMotion)
     }
 
@@ -156,8 +104,8 @@ struct CanonicalCalendarPrototypeView: View {
                     .overlay(alignment: .leading) { Capsule().fill(item.0 == "Календарь" ? JafarPalette.accentGold : .clear).frame(width: 2, height: 18) }
             }
             Spacer(minLength: 4)
-            CanonicalPanel { HStack(spacing: 8) { Circle().fill(JafarPalette.accentGold).frame(width: 26, height: 26).overlay(Text("ИИ").font(.caption).foregroundStyle(JafarPalette.background)); VStack(alignment: .leading, spacing: 2) { Text("Адвокат Иванов И.И.").font(.caption); Text("Демонстрационный контур").font(.caption2).foregroundStyle(JafarPalette.textMuted) } } }
-            HStack(spacing: 6) { Circle().fill(JafarPalette.success).frame(width: 6, height: 6); VStack(alignment: .leading, spacing: 1) { Text("Система активна").font(.caption); Text("JAFAR AI · прототип календаря").font(.system(size: 9)).foregroundStyle(JafarPalette.textMuted) } }.padding(.horizontal, 6)
+            CanonicalPanel { HStack(spacing: 8) { Circle().fill(JafarPalette.accentGold).frame(width: 26, height: 26).overlay(Text("ИИ").font(.caption).foregroundStyle(JafarPalette.background)); VStack(alignment: .leading, spacing: 2) { Text("Адвокат").font(.caption); Text(isPrototype ? "Демонстрационный контур" : "Рабочий контур").font(.caption2).foregroundStyle(JafarPalette.textMuted) } } }
+            HStack(spacing: 6) { Circle().fill(JafarPalette.success).frame(width: 6, height: 6); VStack(alignment: .leading, spacing: 1) { Text("Система активна").font(.caption); Text(isPrototype ? "JAFAR AI · прототип календаря" : "JAFAR AI · процессуальный календарь").font(.system(size: 9)).foregroundStyle(JafarPalette.textMuted) } }.padding(.horizontal, 6)
         }
         .padding(12)
         .background(Color.black.opacity(0.18))
@@ -168,7 +116,7 @@ struct CanonicalCalendarPrototypeView: View {
             HStack(spacing: 6) {
                 Text("Дела").font(.caption).foregroundStyle(JafarPalette.textSecondary)
                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(JafarPalette.textMuted)
-                Text("Дело A-1234/2026").font(.caption).foregroundStyle(JafarPalette.textSecondary)
+                Text(presentation.context.title).font(.caption).foregroundStyle(JafarPalette.textSecondary).lineLimit(1)
                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(JafarPalette.textMuted)
                 Text("Календарь").font(.caption.weight(.semibold)).foregroundStyle(JafarPalette.accentGold)
             }
@@ -187,15 +135,15 @@ struct CanonicalCalendarPrototypeView: View {
         CanonicalPanel(glow: syncing ? JafarPalette.accentBlue : nil) {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Дело A-1234/2026").font(.system(size: 22, weight: .semibold, design: .serif))
-                    Text("Павлик В.А.").font(.system(size: 14, weight: .medium, design: .serif)).foregroundStyle(JafarPalette.textSecondary)
+                    Text(presentation.context.title).font(.system(size: 22, weight: .semibold, design: .serif)).lineLimit(1)
+                    Text(presentation.context.subtitle).font(.system(size: 14, weight: .medium, design: .serif)).foregroundStyle(JafarPalette.textSecondary).lineLimit(1)
                 }
                 Divider().frame(height: 34).overlay(JafarPalette.divider)
-                Label("Арбитраж", systemImage: "building.columns").font(.caption).foregroundStyle(JafarPalette.textSecondary)
-                Label("АС г. Москвы", systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(JafarPalette.textSecondary)
-                Label("Высокий приоритет", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(JafarPalette.warning)
+                Label(presentation.context.type ?? "Тип дела не указан", systemImage: "building.columns").font(.caption).foregroundStyle(JafarPalette.textSecondary)
+                Label(presentation.context.court ?? "Суд не указан", systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(JafarPalette.textSecondary)
+                Label(presentation.context.priority ?? "Приоритет не указан", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(presentation.context.priority == nil ? JafarPalette.textMuted : JafarPalette.warning)
                 Spacer()
-                Text("В производстве").font(.caption.weight(.semibold)).foregroundStyle(JafarPalette.success).padding(.horizontal, 8).padding(.vertical, 5).background(JafarPalette.success.opacity(0.10), in: Capsule())
+                Text(presentation.context.status ?? "Статус не указан").font(.caption.weight(.semibold)).foregroundStyle(presentation.context.status == nil ? JafarPalette.textMuted : JafarPalette.success).padding(.horizontal, 8).padding(.vertical, 5).background((presentation.context.status == nil ? JafarPalette.textMuted : JafarPalette.success).opacity(0.10), in: Capsule())
             }
         }
     }
@@ -206,7 +154,7 @@ struct CanonicalCalendarPrototypeView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Календарь процессуальных сроков").font(.system(size: 21, weight: .semibold, design: .serif))
-                        Text("Май 2026 · Дело A-1234/2026").font(.caption).foregroundStyle(JafarPalette.textSecondary)
+                        Text("\(monthTitle) · \(presentation.context.title)").font(.caption).foregroundStyle(JafarPalette.textSecondary).lineLimit(1)
                     }
                     Spacer()
                     calendarControls
@@ -218,13 +166,93 @@ struct CanonicalCalendarPrototypeView: View {
         .frame(maxWidth: .infinity, minHeight: 600)
     }
 
+    private var isPrototype: Bool { presentation == .prototype }
+
+    private var calendarModeSelection: Binding<String> {
+        Binding(
+            get: { calendarMode },
+            set: { selection in
+                if selection == "Месяц" { calendarMode = selection }
+            }
+        )
+    }
+
+    private var monthTitle: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "LLLL yyyy"
+        return formatter.string(from: displayedMonth).capitalized
+    }
+
+    private var upcomingHearings: [CalendarPresentationEvent] {
+        CalendarPresentationAdapter.upcomingHearings(from: events, reference: timelineReferenceDate)
+    }
+
+    private var timelineReferenceDate: Date { isPrototype ? presentation.initialMonth : .now }
+
+    private var monthCells: [Int?] {
+        let calendar = Calendar.current
+        guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)),
+              let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
+        let weekday = calendar.component(.weekday, from: monthStart)
+        let leading = (weekday + 5) % 7
+        var cells: [Int?] = Array(repeating: nil, count: leading)
+        cells += dayRange.map { Optional($0) }
+        let trailing = (7 - cells.count % 7) % 7
+        cells += Array(repeating: nil, count: trailing)
+        return cells
+    }
+
+    private func showToday() {
+        withAnimation(reduceMotion ? nil : JafarMotion.normal) {
+            displayedMonth = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: .now)) ?? .now
+            selectedDay = Calendar.current.component(.day, from: .now)
+        }
+    }
+
+    private func shiftMonth(by value: Int) {
+        withAnimation(reduceMotion ? nil : JafarMotion.normal) {
+            displayedMonth = Calendar.current.date(byAdding: .month, value: value, to: displayedMonth) ?? displayedMonth
+            selectedDay = 1
+        }
+    }
+
+    private func isCurrentDay(_ day: Int) -> Bool {
+        if isPrototype { return day == 18 && Calendar.current.isDate(displayedMonth, equalTo: presentation.initialMonth, toGranularity: .month) }
+        guard let date = Calendar.current.date(bySetting: .day, value: day, of: displayedMonth) else { return false }
+        return Calendar.current.isDateInToday(date)
+    }
+
+    private func dueDateText(_ date: Date) -> String { "До \(fullDateText(date))" }
+
+    private func shortDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "dd.MM"
+        return formatter.string(from: date)
+    }
+
+    private func fullDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "dd.MM.yyyy"
+        return formatter.string(from: date)
+    }
+
     private var calendarControls: some View {
         HStack(spacing: 6) {
-            Button("Сегодня") { withAnimation(reduceMotion ? nil : JafarMotion.normal) { selectedDay = 18 } }.buttonStyle(.bordered).controlSize(.small)
-            Button { } label: { Image(systemName: "chevron.left") }.buttonStyle(.bordered).controlSize(.small)
-            Button { } label: { Image(systemName: "chevron.right") }.buttonStyle(.bordered).controlSize(.small)
-            Picker("Вид", selection: $calendarMode) { Text("Месяц").tag("Месяц"); Text("Неделя").tag("Неделя") }.pickerStyle(.segmented).frame(width: 112)
-            Button("+ Добавить событие") { }.buttonStyle(.borderedProminent).controlSize(.small).tint(JafarPalette.accentGold)
+            Button("Сегодня") { showToday() }.buttonStyle(.bordered).controlSize(.small)
+            Button { shiftMonth(by: -1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.bordered).controlSize(.small)
+            Button { shiftMonth(by: 1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.bordered).controlSize(.small)
+            Picker("Вид", selection: calendarModeSelection) {
+                Text("Месяц").tag("Месяц")
+                Text("Неделя").tag("Неделя").disabled(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 112)
+            .help("Недельный вид будет доступен после отдельной реализации.")
+            .accessibilityHint("Неделя пока недоступна.")
+            Button("+ Добавить событие") { showingAddEventNotice = true }.buttonStyle(.borderedProminent).controlSize(.small).tint(JafarPalette.accentGold)
             Button { beginSync() } label: { Image(systemName: syncing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath") }.buttonStyle(.bordered).controlSize(.small).foregroundStyle(syncing ? JafarPalette.accentBlue : JafarPalette.accentGold).rotationEffect(.degrees(syncTurn ? 360 : 0))
         }
     }
@@ -238,7 +266,7 @@ struct CanonicalCalendarPrototypeView: View {
     }
 
     private var monthGrid: some View {
-        let cells: [Int?] = [nil, nil, nil, nil, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, nil, nil, nil, nil, nil, nil]
+        let cells = monthCells
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
             ForEach(Array(cells.enumerated()), id: \.offset) { _, day in
                 calendarCell(day)
@@ -249,11 +277,11 @@ struct CanonicalCalendarPrototypeView: View {
     @ViewBuilder
     private func calendarCell(_ day: Int?) -> some View {
         if let day {
-            let dayEvents = events.filter { $0.day == day }
+            let dayEvents = events.filter { Calendar.current.isDate($0.date, equalTo: displayedMonth, toGranularity: .month) && $0.day == day }
             Button { withAnimation(reduceMotion ? nil : JafarMotion.normal) { selectedDay = day } } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("\(day)").font(day == 18 ? .system(size: 15, weight: .bold, design: .serif) : .system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(day == 18 ? JafarPalette.accentGold : JafarPalette.textPrimary).frame(width: 24, height: 24).background(day == 18 ? JafarPalette.accentGold.opacity(0.12) : .clear, in: Circle()).overlay(Circle().stroke(day == 18 ? JafarPalette.accentGold.opacity(0.8) : .clear, lineWidth: 1))
+                        Text("\(day)").font(isCurrentDay(day) ? .system(size: 15, weight: .bold, design: .serif) : .system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(isCurrentDay(day) ? JafarPalette.accentGold : JafarPalette.textPrimary).frame(width: 24, height: 24).background(isCurrentDay(day) ? JafarPalette.accentGold.opacity(0.12) : .clear, in: Circle()).overlay(Circle().stroke(isCurrentDay(day) ? JafarPalette.accentGold.opacity(0.8) : .clear, lineWidth: 1))
                         Spacer()
                         if dayEvents.contains(where: { $0.tone == .deadline }) { Circle().fill(JafarPalette.warning).frame(width: 4, height: 4) }
                     }
@@ -271,12 +299,16 @@ struct CanonicalCalendarPrototypeView: View {
         }
     }
 
-    private func eventChip(_ event: CalendarPrototypeEvent) -> some View {
+    private func eventChip(_ event: CalendarPresentationEvent) -> some View {
         Button { selectedEvent = event } label: {
             HStack(spacing: 4) {
                 Image(systemName: event.tone.symbol).font(.system(size: 7, weight: .bold))
-                Text(event.time).font(.system(size: 8, weight: .semibold, design: .monospaced))
+                if let time = event.time { Text(time).font(.system(size: 8, weight: .semibold, design: .monospaced)) }
                 Text(event.title).font(.system(size: 8, weight: .medium)).lineLimit(1)
+                if event.verification != .confirmed {
+                    Text("Проверка").font(.system(size: 7, weight: .semibold)).lineLimit(1)
+                    Image(systemName: event.verification.symbol ?? "eye.fill").font(.system(size: 7, weight: .bold))
+                }
             }
             .foregroundStyle(event.tone.color)
             .padding(.horizontal, 4).padding(.vertical, 3)
@@ -294,36 +326,43 @@ struct CanonicalCalendarPrototypeView: View {
             CanonicalPanel(glow: urgentPulse ? JafarPalette.warning : nil) {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("КРИТИЧЕСКИЕ СРОКИ", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(JafarPalette.accentGold)
-                    ForEach(deadlines) { deadline in deadlineRow(deadline) }
+                    if deadlines.isEmpty {
+                        Text("Критических сроков нет").font(.caption).foregroundStyle(JafarPalette.textMuted)
+                    } else {
+                        ForEach(deadlines) { deadline in deadlineRow(deadline) }
+                    }
                 }
             }
             CanonicalPanel {
                 VStack(alignment: .leading, spacing: 7) {
                     Label("БЛИЖАЙШИЕ ЗАСЕДАНИЯ", systemImage: "building.columns").font(.caption).foregroundStyle(JafarPalette.accentGold)
-                    hearingRow("18.05 · 10:30", "Арбитражный суд", "A-1234/2026", "Предварительное")
-                    hearingRow("27.05 · 14:00", "АС г. Москвы", "A-1234/2026", "Основное")
+                    if upcomingHearings.isEmpty {
+                        Text("Ближайших заседаний нет").font(.caption).foregroundStyle(JafarPalette.textMuted)
+                    } else {
+                        ForEach(upcomingHearings) { hearingRow($0) }
+                    }
                 }
             }
             intelligencePanel
         }
     }
 
-    private func deadlineRow(_ deadline: CriticalDeadline) -> some View {
+    private func deadlineRow(_ deadline: CalendarCriticalDeadline) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack { Text(deadline.date).font(.caption2.monospacedDigit()).foregroundStyle(JafarPalette.accentGold); Spacer(); Text(deadline.remaining).font(.caption2.weight(.semibold)).foregroundStyle(deadline.urgent ? JafarPalette.warning : JafarPalette.textSecondary) }
-            Text(deadline.action).font(.caption.weight(.semibold)).lineLimit(1)
-            Text(deadline.matter).font(.caption2).foregroundStyle(JafarPalette.textMuted)
+            HStack { Text(dueDateText(deadline.event.date)).font(.caption2.monospacedDigit()).foregroundStyle(JafarPalette.accentGold); Spacer(); Text(deadline.remaining).font(.caption2.weight(.semibold)).foregroundStyle(deadline.urgency.color) }
+            Text(deadline.event.title).font(.caption.weight(.semibold)).lineLimit(1)
+            Text(deadline.event.caseNumber ?? deadline.event.matter ?? "Дело не указано").font(.caption2).foregroundStyle(JafarPalette.textMuted).lineLimit(1)
             Divider().overlay(JafarPalette.divider)
         }
-        .padding(.vertical, deadline.urgent && urgentPulse ? 1 : 0)
-        .background(deadline.urgent ? JafarPalette.warning.opacity(urgentPulse ? 0.08 : 0.03) : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .padding(.vertical, deadline.urgency == .critical && urgentPulse ? 1 : 0)
+        .background(deadline.urgency == .critical ? JafarPalette.warning.opacity(urgentPulse ? 0.08 : 0.03) : .clear, in: RoundedRectangle(cornerRadius: 5))
     }
 
-    private func hearingRow(_ date: String, _ court: String, _ matter: String, _ type: String) -> some View {
+    private func hearingRow(_ hearing: CalendarPresentationEvent) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack { Text(date).font(.caption2.monospacedDigit()); Spacer(); Text(type).font(.caption2).foregroundStyle(JafarPalette.accentGold) }
-            Text(court).font(.caption).foregroundStyle(JafarPalette.textSecondary)
-            Text(matter).font(.caption2).foregroundStyle(JafarPalette.textMuted)
+            HStack { Text("\(shortDateText(hearing.date))\(hearing.time.map { " · \($0)" } ?? "")").font(.caption2.monospacedDigit()); Spacer(); Text(hearing.verification.label ?? "Подтверждено").font(.caption2).foregroundStyle(JafarPalette.accentGold) }
+            Text(hearing.court ?? "Суд не указан").font(.caption).foregroundStyle(JafarPalette.textSecondary).lineLimit(1)
+            Text(hearing.caseNumber ?? hearing.matter ?? "Дело не указано").font(.caption2).foregroundStyle(JafarPalette.textMuted).lineLimit(1)
         }
     }
 
@@ -334,26 +373,29 @@ struct CanonicalCalendarPrototypeView: View {
                     CanonicalIntelligenceEmblem(isAnalyzing: syncing, isListening: false, hasControlFocus: false, breathing: haloBreath, orbiting: ringTurn, sweeping: syncSweep, reduceMotion: reduceMotion)
                     VStack(alignment: .leading, spacing: 2) { Text("ЮСТИЦИЯ").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); Text("отслеживает сроки").font(.caption).foregroundStyle(JafarPalette.textSecondary) }
                 }
-                ForEach(["Критические сроки", "Возможные пересечения", "Процессуальные риски", "Подготовка к заседаниям"], id: \.self) { Label($0, systemImage: "checkmark").font(.caption2).foregroundStyle(JafarPalette.textSecondary) }
+                ForEach(presentation.intelligenceItems, id: \.self) { Label($0, systemImage: "checkmark").font(.caption2).foregroundStyle(JafarPalette.textSecondary).lineLimit(1) }
             }
         }
     }
 
     private var footer: some View {
-        HStack(spacing: 16) { Label("Шифрование: активно", systemImage: "lock.fill"); Label("Календарь: демонстрационные данные", systemImage: "calendar"); Label("Синхронизация: локально", systemImage: "arrow.triangle.2.circlepath"); Spacer(); Text("JAFAR AI помогает контролировать процессуальные сроки") }
+        HStack(spacing: 16) { Label("Шифрование: активно", systemImage: "lock.fill"); Label(isPrototype ? "Календарь: демонстрационные данные" : "Календарь: данные рабочей сводки", systemImage: "calendar"); Label(onRefresh == nil ? "Синхронизация: локально" : "Синхронизация: обновление сводки", systemImage: "arrow.triangle.2.circlepath"); Spacer(); Text("JAFAR AI помогает контролировать процессуальные сроки") }
             .font(.caption2)
             .foregroundStyle(JafarPalette.textMuted)
             .padding(.horizontal, 14)
             .overlay(alignment: .top) { Rectangle().fill(JafarPalette.divider).frame(height: 1) }
     }
 
-    private func eventDetail(_ event: CalendarPrototypeEvent) -> some View {
+    private func eventDetail(_ event: CalendarPresentationEvent) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(event.tone.label, systemImage: event.tone.symbol).font(.caption).foregroundStyle(event.tone.color)
             Text(event.title).font(.system(size: 19, weight: .semibold, design: .serif))
-            Label("\(event.time) · 20.05.2026", systemImage: "clock").font(.caption).foregroundStyle(JafarPalette.textSecondary)
-            Label(event.caseNumber, systemImage: "briefcase").font(.caption).foregroundStyle(JafarPalette.textSecondary)
-            Text("Синтетическое событие демонстрационного прототипа.").font(.caption).foregroundStyle(JafarPalette.textMuted)
+            Label("\(fullDateText(event.date))\(event.time.map { " · \($0)" } ?? "")", systemImage: "clock").font(.caption).foregroundStyle(JafarPalette.textSecondary)
+            if let matter = event.caseNumber ?? event.matter { Label(matter, systemImage: "briefcase").font(.caption).foregroundStyle(JafarPalette.textSecondary) }
+            if let court = event.court { Label(court, systemImage: "building.columns").font(.caption).foregroundStyle(JafarPalette.textSecondary) }
+            if let source = event.source { Text(source).font(.caption).foregroundStyle(JafarPalette.textMuted).lineLimit(3) }
+            if let verification = event.verification.label { Label(verification, systemImage: event.verification.symbol ?? "exclamationmark.shield.fill").font(.caption.weight(.semibold)).foregroundStyle(JafarPalette.warning) }
+            if isPrototype { Text("Синтетическое событие демонстрационного прототипа.").font(.caption).foregroundStyle(JafarPalette.textMuted) }
         }
     }
 
@@ -371,6 +413,7 @@ struct CanonicalCalendarPrototypeView: View {
             withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { syncTurn = true }
         }
         Task { @MainActor in
+            if let onRefresh { await onRefresh() }
             try? await Task.sleep(for: .seconds(2))
             withAnimation(reduceMotion ? nil : JafarMotion.normal) {
                 syncing = false

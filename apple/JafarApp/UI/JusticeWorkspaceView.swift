@@ -60,6 +60,8 @@ struct JusticeWorkspaceView: View {
                     },
                     onNavigate: selectCanonicalDestination
                 )
+            } else if selection == .calendar {
+                CanonicalCalendarProductionView(dashboard: dashboard, demoMode: demoMode, matter: selectedMatter)
             } else if selection == .canonicalCalendarPrototype {
                 CanonicalCalendarPrototypeView()
             } else {
@@ -147,7 +149,8 @@ struct JusticeWorkspaceView: View {
         case .approvals: JusticeApprovalView()
         case .costs: JusticeCostView()
         case .council: JusticeCouncilView()
-        case .calendar, .mail, .radar, .practice, .drafts, .voice, .analytics, .library, .counterparties: JusticeModuleBoardView(destination: destination)
+        case .calendar: CanonicalCalendarProductionView(dashboard: dashboard, demoMode: demoMode, matter: selectedMatter)
+        case .mail, .radar, .practice, .drafts, .voice, .analytics, .library, .counterparties: JusticeModuleBoardView(destination: destination)
         case .documents: JusticeModuleBoardView(destination: .documents)
         case .evidence: JusticeModuleBoardView(destination: .evidence)
         case .timeline: JusticeModuleBoardView(destination: .timeline)

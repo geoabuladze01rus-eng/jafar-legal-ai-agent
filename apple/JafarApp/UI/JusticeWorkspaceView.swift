@@ -295,6 +295,8 @@ private struct JusticeEmptyState: View { let title: String; let message: String;
 private enum JusticeSamples {
     static let matters = [
         DashboardMatter(id: "demo-1", title: "ООО «Альфа» — поставка", status: "active", matterType: "Арбитраж", clientName: "ООО «Альфа»", caseNumber: "А00-00000/2026", deadlineCount: 3, overdueDeadlineCount: 0, nextDeadlineTitle: "Отзыв на иск", nextDeadlineDate: "20.04.2026"),
-        DashboardMatter(id: "demo-2", title: "Иванов И.И. — защита", status: "active", matterType: "Уголовное", clientName: "Иванов И.И.", caseNumber: "00-000/2026", deadlineCount: 2, overdueDeadlineCount: 1, nextDeadlineTitle: "Заседание", nextDeadlineDate: "18.04.2026")
+        DashboardMatter(id: "demo-2", title: "Павлик В.А. — защита", status: "active", matterType: "Уголовное", clientName: "Павлик В.А.", caseNumber: "00-000/2026", deadlineCount: 2, overdueDeadlineCount: 1, nextDeadlineTitle: "Заседание", nextDeadlineDate: "18.04.2026"),
+        DashboardMatter(id: "demo-3", title: "Екименко А.С. — спор", status: "active", matterType: "Гражданское", clientName: "Екименко А.С.", caseNumber: "А40-1200/2026", deadlineCount: 4, overdueDeadlineCount: 0, nextDeadlineTitle: "Правовая позиция", nextDeadlineDate: "22.04.2026"),
+        DashboardMatter(id: "demo-4", title: "ООО «Ромашка» — поставка", status: "active", matterType: "Арбитраж", clientName: "ООО «Ромашка»", caseNumber: "А56-3301/2026", deadlineCount: 1, overdueDeadlineCount: 0, nextDeadlineTitle: "Проверить договор", nextDeadlineDate: "25.04.2026")
     ]
 }

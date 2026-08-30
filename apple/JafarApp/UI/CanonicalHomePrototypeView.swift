@@ -355,6 +355,26 @@ struct CanonicalHomePrototypeView: View {
                     .overlay(alignment: .leading) { Capsule().fill(item.0 == "Главная" ? JafarPalette.accentGold : .clear).frame(width: 2, height: 18) }
                     .onHover { inside in withAnimation(JafarMotion.fast) { hoverItem = inside ? item.0 : nil } }
             }
+            #if DEBUG
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("РАЗРАБОТКА").font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundStyle(JafarPalette.textMuted)
+                    Button { onNavigate("Canonical Calendar") } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar.badge.clock").frame(width: 16)
+                            Text("Canonical Calendar").font(.system(size: 12, design: .rounded))
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .foregroundStyle(hoverItem == "Canonical Calendar" ? JafarPalette.accentGold : JafarPalette.textSecondary)
+                    .background(hoverItem == "Canonical Calendar" ? JafarPalette.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(alignment: .leading) { Capsule().fill(hoverItem == "Canonical Calendar" ? JafarPalette.accentGold : .clear).frame(width: 2, height: 18) }
+                    .onHover { inside in withAnimation(JafarMotion.fast) { hoverItem = inside ? "Canonical Calendar" : nil } }
+                }
+                .padding(.top, 4)
+            #endif
             Spacer(minLength: 4)
             CanonicalPanel { HStack(spacing: 8) { Circle().fill(JafarPalette.accentGold).frame(width: 26, height: 26).overlay(Text("ИИ").font(.caption).foregroundStyle(JafarPalette.background)); VStack(alignment: .leading, spacing: 2) { Text("Адвокат Иванов И.И.").font(.caption); Text("Профиль").font(.caption).foregroundStyle(JafarPalette.textMuted) } } }
             HStack(spacing: 6) { Circle().fill(systemStatusColor).frame(width: 6, height: 6); VStack(alignment: .leading, spacing: 1) { Text(systemStatusTitle).font(.caption); Text(systemStatusDetail).font(.system(size: 9)).foregroundStyle(JafarPalette.textMuted) } }.padding(.horizontal, 6)

@@ -116,8 +116,8 @@ struct JusticeWorkspaceView: View {
                     }.buttonStyle(.plain)
                 }
             }
-            if demoMode {
-                Section("Визуальный approval") {
+            #if DEBUG
+                Section("РАЗРАБОТКА") {
                     Button { withAnimation(JafarMotion.normal) { selection = .canonicalCalendarPrototype } } label: {
                         Label("Canonical Calendar", systemImage: JusticeDestination.canonicalCalendarPrototype.icon).frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -125,7 +125,7 @@ struct JusticeWorkspaceView: View {
                     .padding(.vertical, 3)
                     .foregroundStyle(selection == .canonicalCalendarPrototype ? JafarPalette.accentGold : JafarPalette.textSecondary)
                 }
-            }
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(JafarPalette.backgroundSecondary)
@@ -161,6 +161,10 @@ struct JusticeWorkspaceView: View {
     }
 
     private func selectCanonicalDestination(_ title: String) {
+        if title == JusticeDestination.canonicalCalendarPrototype.title {
+            withAnimation(JafarMotion.normal) { selection = .canonicalCalendarPrototype }
+            return
+        }
         guard let destination = JusticeDestination.primary.first(where: { $0.title == title }) else { return }
         withAnimation(JafarMotion.normal) { selection = destination }
     }

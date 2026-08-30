@@ -2,7 +2,7 @@ import SwiftUI
 
 private enum JusticeDestination: String, CaseIterable, Identifiable {
     case home, matters, calendar, documents, mail, radar, practice, drafts, voice, analytics, library, counterparties, evidence, timeline, contradictions, authorities
-    case council, position, hearing, court, approvals, costs, settings, canonicalPrototype
+    case council, position, hearing, court, approvals, costs, settings
 
     var id: String { rawValue }
     var title: String {
@@ -12,7 +12,7 @@ private enum JusticeDestination: String, CaseIterable, Identifiable {
         case .contradictions: "Противоречия"; case .authorities: "Судебная практика"
         case .council: "Совет моделей"; case .position: "Правовая позиция"
         case .hearing: "Подготовка к заседанию"; case .court: "Режим суда"
-        case .approvals: "Решения"; case .costs: "Использование AI"; case .settings: "Настройки"; case .canonicalPrototype: "Canonical Prototype"
+        case .approvals: "Решения"; case .costs: "Использование AI"; case .settings: "Настройки"
         }
     }
     var icon: String {
@@ -22,7 +22,7 @@ private enum JusticeDestination: String, CaseIterable, Identifiable {
         case .contradictions: "exclamationmark.triangle.fill"; case .authorities: "building.columns.fill"
         case .council: "person.3.fill"; case .position: "text.book.closed.fill"
         case .hearing: "checklist"; case .court: "scale.3d"; case .approvals: "checkmark.seal.fill"
-        case .costs: "chart.bar.xaxis"; case .settings: "gearshape.fill"; case .canonicalPrototype: "rectangle.on.rectangle"
+        case .costs: "chart.bar.xaxis"; case .settings: "gearshape.fill"
         }
     }
     static var primary: [JusticeDestination] { [.home, .matters, .calendar, .documents, .mail, .radar, .practice, .drafts, .voice, .analytics, .library, .counterparties, .settings] }
@@ -50,8 +50,16 @@ struct JusticeWorkspaceView: View {
 
     private var regularLayout: some View {
         Group {
-            if selection == .canonicalPrototype {
-                CanonicalHomePrototypeView()
+            if selection == .home {
+                CanonicalHomePrototypeView(
+                    dashboard: dashboard,
+                    demoMode: demoMode,
+                    onMatter: { matter in
+                        selectedMatter = matter
+                        selection = .matters
+                    },
+                    onNavigate: selectCanonicalDestination
+                )
             } else {
                 NavigationSplitView {
                     sidebar
@@ -106,11 +114,6 @@ struct JusticeWorkspaceView: View {
                     }.buttonStyle(.plain)
                 }
             }
-            Section("Визуальный approval") {
-                Button { withAnimation(JafarMotion.normal) { selection = .canonicalPrototype } } label: {
-                    Label("Canonical Prototype", systemImage: JusticeDestination.canonicalPrototype.icon).frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain).padding(.vertical, 3).foregroundStyle(selection == .canonicalPrototype ? JafarPalette.accentGold : JafarPalette.textSecondary)
-            }
         }
         .scrollContentBackground(.hidden)
         .background(JafarPalette.backgroundSecondary)
@@ -141,8 +144,12 @@ struct JusticeWorkspaceView: View {
         case .position: JusticeModuleBoardView(destination: .position)
         case .hearing: JusticeModuleBoardView(destination: .hearing)
         case .court: JusticeCourtModeView()
-        case .canonicalPrototype: CanonicalHomePrototypeView()
         }
+    }
+
+    private func selectCanonicalDestination(_ title: String) {
+        guard let destination = JusticeDestination.primary.first(where: { $0.title == title }) else { return }
+        withAnimation(JafarMotion.normal) { selection = destination }
     }
 }
 
@@ -321,7 +328,7 @@ private struct JusticeCourtModeView: View { var body: some View { JusticePage(ti
 private struct JusticeSafetyNotice: View { let text: String; var body: some View { Label(text, systemImage: "hand.raised.fill").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary).padding(JusticeSpacing.md).background(JafarPalette.accentGold.opacity(0.10), in: RoundedRectangle(cornerRadius: JusticeRadius.small)) } }
 private struct JusticeEmptyState: View { let title: String; let message: String; let icon: String; var body: some View { VStack(spacing: JusticeSpacing.md) { Image(systemName: icon).font(.system(size: 38)).foregroundStyle(JafarPalette.accentGold); Text(title).font(JusticeTypography.title); Text(message).font(JusticeTypography.body).foregroundStyle(JafarPalette.textSecondary).multilineTextAlignment(.center) }.frame(maxWidth: .infinity).padding(JusticeSpacing.xxl).jafarCard() } }
 
-private enum JusticeSamples {
+enum JusticeSamples {
     static let matters = [
         DashboardMatter(id: "demo-1", title: "ООО «Альфа» — поставка", status: "active", matterType: "Арбитраж", clientName: "ООО «Альфа»", caseNumber: "А00-00000/2026", deadlineCount: 3, overdueDeadlineCount: 0, nextDeadlineTitle: "Отзыв на иск", nextDeadlineDate: "20.04.2026"),
         DashboardMatter(id: "demo-2", title: "Павлик В.А. — защита", status: "active", matterType: "Уголовное", clientName: "Павлик В.А.", caseNumber: "00-000/2026", deadlineCount: 2, overdueDeadlineCount: 1, nextDeadlineTitle: "Заседание", nextDeadlineDate: "18.04.2026"),

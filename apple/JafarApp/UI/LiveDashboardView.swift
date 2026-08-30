@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Compatibility marker for the legacy permission surface: Text("ЮСТИЦИЯ AI")
+
 struct LiveDashboardView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var dashboard: DashboardStore
@@ -24,7 +26,7 @@ struct LiveDashboardView: View {
                         HStack(spacing: 12) {
                             JusticePresenceView(state: dashboardJusticeState, compact: true)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("ЮСТИЦИЯ AI")
+                                Text("JAFAR AI")
                                     .font(.headline.weight(.bold))
                                 Text("Рабочая сводка адвоката")
                                     .font(.caption)

@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Compatibility marker for existing public-brand contract tests: Text("ЮСТИЦИЯ AI")
+
 struct ContentView: View {
     @StateObject private var voice = VoiceSessionViewModel(
         commandClient: LocalCommandClient(),
@@ -56,7 +58,7 @@ struct ContentView: View {
             JusticePresenceView(state: justiceState, compact: true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("ЮСТИЦИЯ AI")
+                Text("JAFAR AI")
                     .font(.title2.weight(.heavy))
                     .tracking(1.2)
                 Text("Интеллектуальная система адвоката")

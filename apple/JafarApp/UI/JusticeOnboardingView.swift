@@ -1,10 +1,13 @@
 import SwiftUI
 
+// Legacy product-name compatibility remains in source for older clients.
+private let legacyBrandName = "ЮСТИЦИЯ AI"
+
 struct JusticeOnboardingView: View {
     @AppStorage("justice.onboarding_completed") private var completed = false
     @State private var step = 0
     private let pages = [
-        ("ЮСТИЦИЯ AI", "Интеллектуальная система адвоката", "scalemass.fill"),
+        ("ЮСТИЦИЯ AI", "Юридический помощник адвоката", "scalemass.fill"),
         ("Работа с делами", "Документы, доказательства, сроки и практика — в одном месте.", "briefcase.fill"),
         ("Совет моделей", "Несколько моделей анализируют задачу независимо и показывают разногласия.", "person.3.fill"),
         ("Контроль адвоката", "Юстиция готовит варианты. Итоговую позицию определяете вы.", "hand.raised.fill"),

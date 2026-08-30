@@ -1,35 +1,35 @@
 import SwiftUI
 
 enum JafarPalette {
-    static let background = Color(red: 0.035, green: 0.045, blue: 0.055)
-    static let elevated = Color(red: 0.065, green: 0.080, blue: 0.095)
-    static let card = Color(red: 0.085, green: 0.100, blue: 0.115)
-    static let accent = Color(red: 0.78, green: 0.64, blue: 0.30)
+    static let background = Color(red: 5 / 255, green: 9 / 255, blue: 16 / 255)
+    static let elevated = Color(red: 8 / 255, green: 16 / 255, blue: 27 / 255)
+    static let card = Color(red: 14 / 255, green: 21 / 255, blue: 31 / 255)
+    static let accent = Color(red: 200 / 255, green: 155 / 255, blue: 82 / 255)
     static let accentSoft = accent.opacity(0.18)
-    static let success = Color(red: 0.30, green: 0.78, blue: 0.55)
-    static let warning = Color(red: 0.95, green: 0.63, blue: 0.25)
-    static let danger = Color(red: 0.95, green: 0.36, blue: 0.35)
-    static let secondaryText = Color.white.opacity(0.62)
+    static let success = Color(red: 0.36, green: 0.56, blue: 0.43)
+    static let warning = Color(red: 0.78, green: 0.58, blue: 0.25)
+    static let danger = Color(red: 0.58, green: 0.22, blue: 0.22)
+    static let secondaryText = Color(red: 174 / 255, green: 180 / 255, blue: 190 / 255)
 
     // Semantic tokens used by the product surface. Keep feature views independent from
     // literal RGB values so the visual language can evolve without touching every screen.
     static let backgroundPrimary = background
     static let backgroundSecondary = elevated
     static let surface = card
-    static let surfaceElevated = Color(red: 0.11, green: 0.13, blue: 0.15)
-    static let divider = Color.white.opacity(0.10)
-    static let textPrimary = Color.white.opacity(0.94)
+    static let surfaceElevated = Color(red: 21 / 255, green: 30 / 255, blue: 41 / 255)
+    static let divider = accent.opacity(0.20)
+    static let textPrimary = Color(red: 243 / 255, green: 239 / 255, blue: 231 / 255)
     static let textSecondary = secondaryText
     static let textMuted = Color.white.opacity(0.42)
     static let accentGold = accent
-    static let accentBlue = Color(red: 0.30, green: 0.58, blue: 0.92)
+    static let accentBlue = Color(red: 0.32, green: 0.48, blue: 0.64)
     static let info = accentBlue
 }
 
 enum JusticeTypography {
     static let display = Font.system(.largeTitle, design: .serif).weight(.bold)
     static let titleLarge = Font.system(.title, design: .serif).weight(.bold)
-    static let title = Font.system(.title3, design: .rounded).weight(.bold)
+    static let title = Font.system(.title3, design: .serif).weight(.bold)
     static let headline = Font.system(.headline, design: .rounded).weight(.semibold)
     static let body = Font.system(.body, design: .rounded)
     static let callout = Font.system(.callout, design: .rounded)
@@ -48,20 +48,20 @@ enum JusticeSpacing {
 
 enum JusticeRadius {
     static let small: CGFloat = 10
-    static let card: CGFloat = 18
-    static let large: CGFloat = 28
+    static let card: CGFloat = 8
+    static let large: CGFloat = 10
 }
 
 struct JafarCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(18)
+            .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(JafarPalette.card)
                     .overlay(
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            .stroke(JafarPalette.accent.opacity(0.20), lineWidth: 1)
                     )
             )
     }

@@ -74,7 +74,7 @@ struct ConnectedRootView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(JafarPalette.secondaryText)
-                .accessibilityLabel("Обновить данные ЮСТИЦИЯ AI")
+                .accessibilityLabel("Обновить данные JAFAR AI")
             }
 
             Button {
@@ -152,12 +152,12 @@ struct ConnectedRootView: View {
 
     private var connectionTitle: String {
         if JafarAPIConfiguration.baseURL == nil {
-            return "ЮСТИЦИЯ AI · локальный режим"
+            return "JAFAR AI · локальный режим"
         }
         if dashboard.errorMessage != nil {
-            return "ЮСТИЦИЯ AI · backend недоступен"
+            return "JAFAR AI · backend недоступен"
         }
-        return "ЮСТИЦИЯ AI · подключено"
+        return "JAFAR AI · подключено"
     }
 
     private var connectionColor: Color {

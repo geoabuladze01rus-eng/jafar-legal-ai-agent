@@ -6,6 +6,7 @@ from typing import Any
 
 from .cross_document_contradictions import CrossDocumentContradiction
 from .evidence_graph import CaseEvidenceGraph, EvidenceClaim, EvidenceSource
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 from .timeline_contradictions import TimelineContradiction
 
 
@@ -145,6 +146,10 @@ class CaseTheoryEngine:
             },
             "requires_human_review": report.requires_human_review,
         }
+
+    def persist(self, report: CaseTheoryReport, *, writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        payload = {"draft": "\n".join(item.statement for item in report.issues), "state": "DRAFT", "reviewed": False, "lawyer_approved": False, "issues": self.snapshot(report)["issues"]}
+        return writer.write(owner_id=owner_id, matter_id=matter_id, kind="position", payload=payload, analysis_run_id=analysis_run_id)
 
     @staticmethod
     def _source_refs(

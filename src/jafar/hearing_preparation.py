@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from .defense_action_planner import DefenseAction, DefenseActionPlan, DefenseActionType
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 
 
 class PreparationMode(StrEnum):
@@ -112,6 +113,10 @@ class HearingPreparationEngine:
             "document_index": list(plan.document_index),
             "requires_lawyer_approval": plan.requires_lawyer_approval,
         }
+
+    def persist(self, plan: HearingPreparationPlan, *, writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        snapshot = self.snapshot(plan)
+        return writer.write(owner_id=owner_id, matter_id=matter_id, kind="hearing", payload={"goal": plan.steps[0].objective if plan.steps else None, "theses": [step.topic for step in plan.steps], "questions": [question for step in plan.steps for question in (*step.primary_questions, *step.fallback_questions)], "documents": [str(item.get("evidence_id", item.get("document_name", ""))) for item in plan.document_index], "available": True, "mode": snapshot["mode"], "steps": snapshot["steps"], "document_index": snapshot["document_index"]}, analysis_run_id=analysis_run_id)
 
     @staticmethod
     def _objective(actions: list[DefenseAction], mode: PreparationMode) -> str:

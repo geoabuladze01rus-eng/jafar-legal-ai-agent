@@ -7,6 +7,7 @@ from typing import Any
 from .attack_surface import AttackSurfaceReport
 from .case_theory import CaseTheoryReport, TheoryStatus
 from .hearing_preparation import HearingPreparationPlan
+from .matter_intelligence_writer import MatterIntelligenceWriter, PersistenceOutcome
 
 
 class OutlineKind(StrEnum):
@@ -152,6 +153,10 @@ class CourtOutlineGenerator:
             "requires_source_verification": outline.requires_source_verification,
             "requires_lawyer_approval": outline.requires_lawyer_approval,
         }
+
+    def persist(self, outline: CourtOutline, *, writer: MatterIntelligenceWriter, owner_id: str, matter_id: str, analysis_run_id: str) -> PersistenceOutcome:
+        data = self.snapshot(outline)
+        return writer.write(owner_id=owner_id, matter_id=matter_id, kind="hearing", payload={"goal": outline.title, "theses": [section.thesis for section in outline.sections], "questions": [question for section in outline.sections for question in section.hearing_questions], "documents": [str(ref.get("evidence_id", "")) for section in outline.sections for ref in section.evidence_refs], "available": True, "outline": data, "kind": data["kind"]}, analysis_run_id=analysis_run_id)
 
     @staticmethod
     def _legal_questions(status: TheoryStatus, attacked: bool) -> tuple[str, ...]:

@@ -51,6 +51,9 @@ class EvidenceProjection(BaseModel):
     supports: str | None = None
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     verification_state: str = "requires_review"
+    provenance: dict[str, object] = Field(default_factory=dict)
+    evidence_id: str | None = None
+    proposition_ref: str | None = None
 
 
 class TimelineProjection(BaseModel):
@@ -76,6 +79,8 @@ class ContradictionProjection(BaseModel):
     significance: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     verification_state: str = "requires_review"
+    left_sources: list[dict[str, object]] = Field(default_factory=list)
+    right_sources: list[dict[str, object]] = Field(default_factory=list)
 
 
 class AuthorityProjection(BaseModel):
@@ -92,6 +97,10 @@ class AuthorityProjection(BaseModel):
     applicability: str | None = None
     freshness: str | None = None
     source_url: str | None = None
+    authority_identity: str | None = None
+    topic: str | None = None
+    superseded: bool = False
+    conflict: bool = False
 
 
 class CouncilProjection(BaseModel):
@@ -100,6 +109,9 @@ class CouncilProjection(BaseModel):
     participating_models: list[str] = Field(default_factory=list)
     conclusions: list[str] = Field(default_factory=list)
     unresolved_issues: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    authority_refs: list[str] = Field(default_factory=list)
+    agreements: list[str] = Field(default_factory=list)
     available: bool = False
     verification_state: str = "not_generated"
 
@@ -121,6 +133,11 @@ class HearingProjection(BaseModel):
     questions: list[str] = Field(default_factory=list)
     documents: list[str] = Field(default_factory=list)
     available: bool = False
+    mode: str | None = None
+    steps: list[dict[str, object]] = Field(default_factory=list)
+    document_index: list[dict[str, object]] = Field(default_factory=list)
+    outline: dict[str, object] | None = None
+    kind: str | None = None
 
 
 class CostProjection(BaseModel):
@@ -178,7 +195,7 @@ class CostResponse(IntelligenceEnvelope):
     result: CostProjection = CostProjection()
 
 
-def build_router(matter_store: MatterRepository, intelligence_store: MatterIntelligenceRepository | None = None, owner_id: str = "local-development-user") -> APIRouter:
+def build_router(matter_store: MatterRepository, intelligence_store: MatterIntelligenceRepository | None = None, owner_id: str = "local-development-user", cost_snapshot_provider: object | None = None) -> APIRouter:
     def matter_or_404(matter_id: str) -> Matter:
         matter = matter_store.get(matter_id)
         if matter is None:
@@ -231,21 +248,38 @@ def build_router(matter_store: MatterRepository, intelligence_store: MatterIntel
     @router.get("/{matter_id}/intelligence/council", response_model=CouncilResponse)
     def council(matter_id: MatterId) -> CouncilResponse:
         matter_or_404(matter_id)
-        return CouncilResponse(matter_id=matter_id)
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="council", limit=1) if intelligence_store else []
+        result = CouncilProjection.model_validate(records[0].payload) if records else CouncilProjection()
+        return CouncilResponse(matter_id=matter_id, result=result)
 
     @router.get("/{matter_id}/intelligence/position", response_model=PositionResponse)
     def position(matter_id: MatterId) -> PositionResponse:
         matter_or_404(matter_id)
-        return PositionResponse(matter_id=matter_id)
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="position", limit=1) if intelligence_store else []
+        result = PositionProjection.model_validate(records[0].payload) if records else PositionProjection()
+        return PositionResponse(matter_id=matter_id, result=result)
 
     @router.get("/{matter_id}/intelligence/hearing", response_model=HearingResponse)
     def hearing(matter_id: MatterId) -> HearingResponse:
         matter_or_404(matter_id)
-        return HearingResponse(matter_id=matter_id)
+        records = intelligence_store.list(owner_id=owner_id, matter_id=matter_id, kind="hearing", limit=1) if intelligence_store else []
+        result = HearingProjection.model_validate(records[0].payload) if records else HearingProjection()
+        return HearingResponse(matter_id=matter_id, result=result)
 
     @router.get("/{matter_id}/intelligence/cost", response_model=CostResponse)
     def cost(matter_id: MatterId) -> CostResponse:
         matter_or_404(matter_id)
+        if callable(cost_snapshot_provider):
+            snapshot = cost_snapshot_provider(matter_id)
+            result = CostProjection(
+                today_usd=float(getattr(snapshot, "matter_today_spend_usd", 0) or 0),
+                month_usd=float(getattr(snapshot, "matter_month_spend_usd", 0) or 0),
+                reserved_usd=float(getattr(snapshot, "reserved_spend_usd", 0) or 0),
+                settled_usd=float(getattr(snapshot, "settled_spend_usd", 0) or 0),
+                remaining_usd=float(getattr(snapshot, "budget_remaining_usd", 0)) if getattr(snapshot, "budget_remaining_usd", None) is not None else None,
+                provider_breakdown=[{"provider": item.provider, "model": item.model, "settled_usd": float(item.settled_usd)} for item in getattr(snapshot, "provider_breakdown", ())],
+            )
+            return CostResponse(matter_id=matter_id, result=result)
         return CostResponse(matter_id=matter_id)
 
     return router

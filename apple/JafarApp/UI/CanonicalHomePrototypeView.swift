@@ -34,14 +34,97 @@ private struct CanonicalPanel<Content: View>: View {
     }
 }
 
+private struct CanonicalIntelligenceEmblem: View {
+    let isAnalyzing: Bool
+    let isListening: Bool
+    let hasControlFocus: Bool
+    let breathing: Bool
+    let orbiting: Bool
+    let sweeping: Bool
+    let reduceMotion: Bool
+
+    private var emphasis: Color {
+        hasControlFocus ? JafarPalette.goldHighlight : JafarPalette.accentGold
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [emphasis.opacity(isAnalyzing ? 0.24 : 0.16), JafarPalette.accentBlue.opacity(0.10), .clear],
+                        center: .center,
+                        startRadius: 2,
+                        endRadius: 34
+                    )
+                )
+                .scaleEffect(breathing ? 1.10 : 0.90)
+
+            Circle()
+                .stroke(JafarPalette.accentBlue.opacity(0.42), lineWidth: 0.7)
+                .padding(2)
+
+            Circle()
+                .trim(from: 0.07, to: 0.68)
+                .stroke(emphasis, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .padding(5)
+                .rotationEffect(.degrees(orbiting ? 360 : 0))
+
+            if isAnalyzing {
+                Circle()
+                    .trim(from: 0.42, to: 0.92)
+                    .stroke(JafarPalette.accentBlue.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                    .padding(8)
+                    .rotationEffect(.degrees(orbiting ? -360 : 0))
+            }
+
+            neuralGlyph
+        }
+        .frame(width: 52, height: 52)
+        .accessibilityLabel("Интеллектуальный модуль JAFAR AI")
+    }
+
+    private var neuralGlyph: some View {
+        ZStack {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 25, weight: .medium))
+                .foregroundStyle(emphasis)
+                .shadow(color: emphasis.opacity(0.62), radius: 5)
+
+            if isAnalyzing {
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.9), JafarPalette.accentBlue, .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 20, height: 30)
+                .offset(x: sweeping ? 25 : -25)
+                .mask(
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 25, weight: .medium))
+                )
+            }
+
+            Group {
+                Circle().frame(width: 2.5, height: 2.5).offset(x: -8, y: -8)
+                Circle().frame(width: 2.5, height: 2.5).offset(x: 7, y: -5)
+                Circle().frame(width: 2.5, height: 2.5).offset(x: 5, y: 8)
+            }
+            .foregroundStyle(JafarPalette.accentBlue.opacity(isAnalyzing ? 0.9 : 0.55))
+        }
+        .scaleEffect(isListening ? 0.96 : (breathing ? 1.04 : 0.98))
+    }
+}
+
 struct CanonicalHomePrototypeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var haloBreath = false
     @State private var ringTurn = false
-    @State private var aiPulse = false
     @State private var sweepPhase = false
     @State private var selectedQuickAction: String?
     @State private var listening = false
+    @State private var listeningPulse = false
+    @State private var analyzing = false
     @State private var hoverItem: String?
 
     private let matters = [
@@ -94,10 +177,10 @@ struct CanonicalHomePrototypeView: View {
 
     private var prototypeSidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) { Image(systemName: "shield.lefthalf.filled").foregroundStyle(JafarPalette.accentGold); VStack(alignment: .leading, spacing: 1) { Text("JAFAR AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.textPrimary); Text("ЮРИДИЧЕСКИЙ ПОМОЩНИК АДВОКАТА").font(.system(size: 8, weight: .medium, design: .rounded)).foregroundStyle(JafarPalette.textSecondary) } }
+            HStack(spacing: 8) { Image(systemName: "shield.lefthalf.filled").foregroundStyle(JafarPalette.accentGold); VStack(alignment: .leading, spacing: 1) { Text("JAFAR AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.textPrimary); Text("ЮРИДИЧЕСКИЙ ПОМОЩНИК АДВОКАТА").font(.system(size: 9, weight: .medium, design: .rounded)).foregroundStyle(JafarPalette.textSecondary) } }
                 .padding(.bottom, 7)
             ForEach([("Главная", "house.fill"), ("Дела", "briefcase.fill"), ("Календарь", "calendar"), ("Документы", "doc.text.fill"), ("Почта", "envelope.fill"), ("Правовой радар", "dot.radiowaves.left.and.right"), ("Практика", "books.vertical"), ("Черновики", "square.and.pencil"), ("Голосовые материалы", "waveform"), ("Аналитика", "chart.bar.xaxis"), ("Библиотека норм", "books.vertical.fill"), ("Проверка контрагентов", "person.crop.rectangle"), ("Настройки", "gearshape.fill")], id: \.0) { item in
-                HStack(spacing: 8) { Image(systemName: item.1).frame(width: 16); Text(item.0).font(.system(size: 11, design: .rounded)); Spacer() }
+                HStack(spacing: 8) { Image(systemName: item.1).frame(width: 16); Text(item.0).font(.system(size: 12, design: .rounded)); Spacer() }
                     .padding(.horizontal, 8).padding(.vertical, 5)
                     .foregroundStyle(item.0 == "Главная" || hoverItem == item.0 ? JafarPalette.accentGold : JafarPalette.textSecondary)
                     .background(item.0 == "Главная" ? JafarPalette.accent.opacity(0.18) : hoverItem == item.0 ? JafarPalette.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -105,8 +188,8 @@ struct CanonicalHomePrototypeView: View {
                     .onHover { inside in withAnimation(JafarMotion.fast) { hoverItem = inside ? item.0 : nil } }
             }
             Spacer(minLength: 4)
-            CanonicalPanel { HStack(spacing: 8) { Circle().fill(JafarPalette.accentGold).frame(width: 26, height: 26).overlay(Text("ИИ").font(.caption2).foregroundStyle(JafarPalette.background)); VStack(alignment: .leading, spacing: 2) { Text("Адвокат Иванов И.И.").font(.caption2); Text("Профиль").font(.caption2).foregroundStyle(JafarPalette.textMuted) } } }
-            HStack(spacing: 6) { Circle().fill(JafarPalette.success).frame(width: 6, height: 6); VStack(alignment: .leading, spacing: 1) { Text("Система активна").font(.caption2); Text("JAFAR AI v1.0.0 · Все сервисы работают").font(.system(size: 8)).foregroundStyle(JafarPalette.textMuted) } }.padding(.horizontal, 6)
+            CanonicalPanel { HStack(spacing: 8) { Circle().fill(JafarPalette.accentGold).frame(width: 26, height: 26).overlay(Text("ИИ").font(.caption).foregroundStyle(JafarPalette.background)); VStack(alignment: .leading, spacing: 2) { Text("Адвокат Иванов И.И.").font(.caption); Text("Профиль").font(.caption).foregroundStyle(JafarPalette.textMuted) } } }
+            HStack(spacing: 6) { Circle().fill(JafarPalette.success).frame(width: 6, height: 6); VStack(alignment: .leading, spacing: 1) { Text("Система активна").font(.caption); Text("JAFAR AI v1.0.0 · Все сервисы работают").font(.system(size: 9)).foregroundStyle(JafarPalette.textMuted) } }.padding(.horizontal, 6)
         }
         .padding(12)
         .background(Color.black.opacity(0.18))
@@ -114,7 +197,7 @@ struct CanonicalHomePrototypeView: View {
 
     private var prototypeHeader: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) { Text("Доброе утро, Иван Иванович").font(JusticeTypography.titleLarge); Text("JAFAR AI готов служить вашей практике").font(.caption).foregroundStyle(JafarPalette.textSecondary) }
+            VStack(alignment: .leading, spacing: 2) { Text("Доброе утро, Иван Иванович").font(.system(size: 24, weight: .semibold, design: .serif)); Text("JAFAR AI готов служить вашей практике").font(.system(size: 13)).foregroundStyle(JafarPalette.textSecondary) }
             Spacer()
             HStack(spacing: 8) { HStack { Image(systemName: "magnifyingglass"); Text("Поиск по делам и документам"); Text("⌘K").font(JusticeTypography.mono) }.font(.caption2).foregroundStyle(JafarPalette.textMuted).padding(8).frame(width: 230).background(JafarPalette.surface, in: RoundedRectangle(cornerRadius: 6)); Button { } label: { Image(systemName: "bell").overlay(alignment: .topTrailing) { Circle().fill(JafarPalette.danger).frame(width: 5, height: 5).offset(x: 3, y: -3) } }.buttonStyle(.plain).foregroundStyle(JafarPalette.accentGold); Button { } label: { Image(systemName: "gearshape") }.buttonStyle(.plain).foregroundStyle(JafarPalette.textSecondary); Button("+ Создать") { }.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold) }
         }.padding(.horizontal, 16).overlay(alignment: .bottom) { Rectangle().fill(JafarPalette.divider).frame(height: 1) }
@@ -123,15 +206,121 @@ struct CanonicalHomePrototypeView: View {
     private var topMainGrid: some View {
         HStack(alignment: .top, spacing: 10) {
             CanonicalPanel(glow: JafarPalette.goldGlow) { VStack(alignment: .leading, spacing: 8) { Text("ФОКУС ДНЯ").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); focusRow("Требуют внимания", "3", "exclamationmark.triangle.fill", JafarPalette.warning); focusRow("Новые письма", "1", "envelope.fill", JafarPalette.accentBlue); focusRow("Новые документы", "2", "doc.text.fill", JafarPalette.accentGold); focusRow("Заседание завтра", "10:30", "calendar", JafarPalette.success) } }.frame(width: 190, height: 238)
-            CanonicalPanel(glow: JafarPalette.goldGlow) { ZStack { Circle().fill(JafarPalette.goldGlow.opacity(0.16)).blur(radius: 22).scaleEffect(haloBreath ? 1.07 : 0.92); Circle().stroke(JafarPalette.accent.opacity(0.45), lineWidth: 1).frame(width: 190, height: 190).rotationEffect(.degrees(ringTurn ? 360 : 0)); Image("JusticeHero").resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 220).mask(RadialGradient(colors: [.clear, .white, .white, .clear], center: .center, startRadius: 55, endRadius: 170)); LinearGradient(colors: [.clear, JafarPalette.goldHighlight.opacity(0.12), JafarPalette.accentBlue.opacity(0.08), .clear], startPoint: .topLeading, endPoint: .bottomTrailing).frame(width: 90).offset(x: sweepPhase ? 190 : -190).blur(radius: 8); VStack(alignment: .leading) { Spacer(); Text("ЮСТИЦИЯ").font(JusticeTypography.titleLarge); Text("Система активна").font(.caption2).foregroundStyle(JafarPalette.accentGold) }.frame(maxWidth: .infinity, alignment: .leading) }.frame(maxWidth: .infinity, maxHeight: .infinity) }.frame(maxWidth: .infinity, minHeight: 238)
-            CanonicalPanel(glow: aiPulse ? JafarPalette.accentBlue : nil) { VStack(alignment: .leading, spacing: 7) { ZStack { Circle().stroke(JafarPalette.accentBlue.opacity(0.4), lineWidth: 1); Circle().trim(from: 0.08, to: 0.76).stroke(JafarPalette.accentGold, style: StrokeStyle(lineWidth: 2, lineCap: .round)).rotationEffect(.degrees(aiPulse ? 360 : 0)); Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold) }.frame(width: 48, height: 48); Text("JAFAR AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); Text("Анализирует ваши дела").font(JusticeTypography.headline); ForEach(["Правовой анализ", "Процессуальные риски", "Стратегию защиты", "Черновики документов"], id: \.self) { Text($0).font(.caption2).foregroundStyle(JafarPalette.textSecondary) }; Button("Начать диалог") { }.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold) } }.frame(width: 210, height: 238)
+            CanonicalPanel(glow: analyzing ? JafarPalette.accentBlue : JafarPalette.goldGlow) {
+                ZStack {
+                    Circle().fill(JafarPalette.goldGlow.opacity(analyzing ? 0.24 : 0.16)).blur(radius: 22).scaleEffect(haloBreath ? 1.07 : 0.92)
+                    Circle().stroke(JafarPalette.accent.opacity(0.45), lineWidth: 1).frame(width: 190, height: 190).rotationEffect(.degrees(ringTurn ? 360 : 0))
+                    if analyzing {
+                        Circle().trim(from: 0.10, to: 0.61).stroke(JafarPalette.accentBlue.opacity(0.82), style: StrokeStyle(lineWidth: 1, lineCap: .round)).frame(width: 174, height: 174).rotationEffect(.degrees(ringTurn ? -360 : 0))
+                    }
+                    Image("JusticeHero")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 220)
+                        // The mask fades only the image perimeter. Its centre remains fully opaque.
+                        .mask {
+                            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.10), .init(color: .white, location: 0.90), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing)
+                                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.08), .init(color: .white, location: 0.92), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                        }
+                    if analyzing {
+                        LinearGradient(colors: [.clear, JafarPalette.goldHighlight.opacity(0.18), JafarPalette.accentBlue.opacity(0.12), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            .frame(width: 90)
+                            .offset(x: sweepPhase ? 190 : -190)
+                            .blur(radius: 8)
+                            .allowsHitTesting(false)
+                    }
+                    VStack(alignment: .leading) { Spacer(); Text("ЮСТИЦИЯ").font(JusticeTypography.titleLarge); Text("Система активна").font(.caption).foregroundStyle(JafarPalette.accentGold) }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, minHeight: 238)
+            CanonicalPanel(glow: analyzing ? JafarPalette.accentBlue : nil) {
+                VStack(alignment: .leading, spacing: 7) {
+                    CanonicalIntelligenceEmblem(isAnalyzing: analyzing, isListening: listening, hasControlFocus: selectedQuickAction != nil, breathing: haloBreath, orbiting: ringTurn, sweeping: sweepPhase, reduceMotion: reduceMotion)
+                    Text("JAFAR AI").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold)
+                    Text(analyzing ? "Анализирует ваши дела" : "Готов к диалогу").font(JusticeTypography.headline)
+                    ForEach(["Правовой анализ", "Процессуальные риски", "Стратегию защиты", "Черновики документов"], id: \.self) { Text($0).font(.caption).foregroundStyle(JafarPalette.textSecondary) }
+                    Button("Начать диалог") { beginAnalysis() }.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold)
+                }
+            }
+            .frame(width: 210, height: 238)
         }
-        .onAppear { guard !reduceMotion else { return }; withAnimation(JafarMotion.ambient) { haloBreath = true }; withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) { ringTurn = true }; withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { aiPulse = true }; withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) { sweepPhase = true } }
+        .onAppear { guard !reduceMotion else { return }; withAnimation(JafarMotion.ambient) { haloBreath = true }; withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) { ringTurn = true }; withAnimation(.easeInOut(duration: 2.8).repeatForever(autoreverses: true)) { sweepPhase = true } }
     }
 
-    private func focusRow(_ title: String, _ value: String, _ icon: String, _ color: Color) -> some View { HStack(spacing: 7) { Image(systemName: icon).font(.caption).foregroundStyle(color); VStack(alignment: .leading, spacing: 1) { Text(title).font(.caption2).foregroundStyle(JafarPalette.textSecondary); Text(value).font(JusticeTypography.headline).foregroundStyle(JafarPalette.textPrimary) } } }
+    private func focusRow(_ title: String, _ value: String, _ icon: String, _ color: Color) -> some View { HStack(spacing: 7) { Image(systemName: icon).font(.caption).foregroundStyle(color); VStack(alignment: .leading, spacing: 1) { Text(title).font(.caption).foregroundStyle(JafarPalette.textSecondary); Text(value).font(JusticeTypography.headline).foregroundStyle(JafarPalette.textPrimary) } } }
 
-    private var commandBar: some View { VStack(spacing: 6) { HStack { Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold); Text("Спросите Джафара...").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textMuted); Spacer(); Button { withAnimation(JafarMotion.normal) { listening.toggle() } } label: { ZStack { Circle().fill(listening ? JafarPalette.accentGold.opacity(0.3) : JafarPalette.accent.opacity(0.13)); Image(systemName: "mic.fill").foregroundStyle(JafarPalette.accentGold); if listening && !reduceMotion { Circle().stroke(JafarPalette.accentGold, lineWidth: 1).scaleEffect(1.4).opacity(0.2) } }.frame(width: 27, height: 27) }.buttonStyle(.plain) }.padding(9).background(JafarPalette.surface, in: Capsule()).overlay(Capsule().stroke(listening ? JafarPalette.accentGold : JafarPalette.accent.opacity(0.34), lineWidth: listening ? 1.5 : 1)); HStack(spacing: 5) { ForEach(["Что требует моего внимания?", "Разбери последнее письмо", "Что нового по делу?", "Подготовь правовую позицию"], id: \.self) { action in Button { withAnimation(JafarMotion.fast) { selectedQuickAction = action } } label: { Text(action).font(.caption2).foregroundStyle(selectedQuickAction == action ? JafarPalette.textPrimary : JafarPalette.accentGold).padding(.horizontal, 8).padding(.vertical, 4).background(selectedQuickAction == action ? JafarPalette.accent.opacity(0.27) : .clear, in: Capsule()).overlay(Capsule().stroke(JafarPalette.accent.opacity(selectedQuickAction == action ? 0.8 : 0.4))) }.buttonStyle(.plain) } } .overlay(alignment: .top) { if !reduceMotion { LinearGradient(colors: [.clear, JafarPalette.accentBlue.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 60, height: 1).offset(x: sweepPhase ? 240 : -240).allowsHitTesting(false) } } } }
+    private var commandBar: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Image(systemName: "scalemass.fill").foregroundStyle(JafarPalette.accentGold)
+                Text("Спросите Джафара...").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textMuted)
+                Spacer()
+                Button { toggleListening() } label: {
+                    ZStack {
+                        Circle().fill(listening ? JafarPalette.accentGold.opacity(0.30) : JafarPalette.accent.opacity(0.13))
+                        Image(systemName: "mic.fill").foregroundStyle(JafarPalette.accentGold)
+                        if listening && !reduceMotion {
+                            Circle().stroke(JafarPalette.accentGold, lineWidth: 1)
+                                .scaleEffect(listeningPulse ? 1.58 : 1)
+                                .opacity(listeningPulse ? 0.08 : 0.42)
+                        }
+                    }
+                    .frame(width: 27, height: 27)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(9)
+            .background(JafarPalette.surface, in: Capsule())
+            .overlay {
+                Capsule().stroke(listening ? JafarPalette.accentGold : (analyzing ? JafarPalette.accentBlue : JafarPalette.accent.opacity(0.34)), lineWidth: listening ? 1.5 : 1)
+                if analyzing && !reduceMotion {
+                    LinearGradient(colors: [.clear, JafarPalette.accentBlue.opacity(0.9), JafarPalette.goldHighlight.opacity(0.8), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 80, height: 1.5)
+                        .offset(x: sweepPhase ? 260 : -260)
+                        .clipShape(Capsule())
+                        .allowsHitTesting(false)
+                }
+            }
+
+            HStack(spacing: 5) {
+                ForEach(["Что требует моего внимания?", "Разбери последнее письмо", "Что нового по делу?", "Подготовь правовую позицию"], id: \.self) { action in
+                    Button {
+                        withAnimation(reduceMotion ? nil : JafarMotion.fast) { selectedQuickAction = action }
+                        beginAnalysis()
+                    } label: {
+                        Text(action).font(.caption)
+                            .foregroundStyle(selectedQuickAction == action ? JafarPalette.textPrimary : JafarPalette.accentGold)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(selectedQuickAction == action ? JafarPalette.accent.opacity(0.27) : .clear, in: Capsule())
+                            .overlay(Capsule().stroke(JafarPalette.accent.opacity(selectedQuickAction == action ? 0.8 : 0.4)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func beginAnalysis() {
+        withAnimation(reduceMotion ? nil : JafarMotion.normal) { analyzing = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !listening else { return }
+            withAnimation(reduceMotion ? nil : JafarMotion.normal) { analyzing = false }
+        }
+    }
+
+    private func toggleListening() {
+        withAnimation(reduceMotion ? nil : JafarMotion.normal) {
+            listening.toggle()
+            analyzing = false
+        }
+        guard !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+            listeningPulse = listening
+        }
+        if !listening { listeningPulse = false }
+    }
 
     private var mattersActivity: some View { HStack(alignment: .top, spacing: 10) { VStack(alignment: .leading, spacing: 6) { Text("МОИ ДЕЛА").font(JusticeTypography.title).foregroundStyle(JafarPalette.textPrimary); HStack(spacing: 7) { ForEach(matters) { matter in CanonicalMatterCard(matter: matter) }; NewCanonicalMatterCard() } }.frame(maxWidth: .infinity); CanonicalPanel { VStack(alignment: .leading, spacing: 7) { Text("АКТИВНОСТЬ").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); ForEach([("Проанализирован документ", "Павлик В.А.", "10 мин"), ("Найден процессуальный риск", "Екименко А.С.", "1 ч"), ("Подготовлен черновик", "ООО «Ромашка»", "вчера"), ("Обновлена позиция", "Общий обзор", "вчера")], id: \.0) { row in HStack(alignment: .top, spacing: 6) { Image(systemName: "checkmark.circle").font(.caption2).foregroundStyle(JafarPalette.accentGold); VStack(alignment: .leading, spacing: 1) { Text(row.0).font(.caption2); Text(row.1).font(.caption2).foregroundStyle(JafarPalette.textSecondary); Text(row.2).font(.caption2).foregroundStyle(JafarPalette.textMuted) } } } } }.frame(width: 220, height: 150) } }
 
@@ -145,7 +334,7 @@ struct CanonicalHomePrototypeView: View {
 private struct CanonicalMatterCard: View {
     let matter: CanonicalMatter
     @State private var fill = false
-    var body: some View { CanonicalPanel(glow: matter.progress > 0.7 ? JafarPalette.warning : .clear) { VStack(alignment: .leading, spacing: 5) { HStack { Text(matter.client).font(JusticeTypography.title).lineLimit(1); Spacer(); Text(matter.priority.replacingOccurrences(of: " приоритет", with: "")).font(.system(size: 8, weight: .semibold)).foregroundStyle(matter.progress > 0.7 ? JafarPalette.warning : JafarPalette.accentGold) }; Text(matter.number).font(JusticeTypography.mono).foregroundStyle(JafarPalette.textSecondary); HStack { Text("\(Int(matter.progress * 100))%").font(.caption2).foregroundStyle(JafarPalette.accentGold); ProgressView(value: fill ? matter.progress : 0).tint(JafarPalette.accentGold) }; Text("Следующее действие").font(.caption2).foregroundStyle(JafarPalette.textMuted); Text(matter.action).font(.caption2); HStack { Text("До \(matter.deadline)"); Spacer(); Text(matter.meta) }.font(.caption2).foregroundStyle(JafarPalette.textMuted) }.frame(width: 148, alignment: .leading) }.onAppear { withAnimation(JafarMotion.slow) { fill = true } }.frame(height: 150) }
+    var body: some View { CanonicalPanel(glow: matter.progress > 0.7 ? JafarPalette.warning : .clear) { VStack(alignment: .leading, spacing: 5) { HStack { Text(matter.client).font(JusticeTypography.title).lineLimit(1).minimumScaleFactor(0.70).allowsTightening(true); Spacer(minLength: 2); Text(matter.priority.replacingOccurrences(of: " приоритет", with: "")).font(.system(size: 9, weight: .semibold)).foregroundStyle(matter.progress > 0.7 ? JafarPalette.warning : JafarPalette.accentGold) }; Text(matter.number).font(JusticeTypography.mono).foregroundStyle(JafarPalette.textSecondary); HStack { Text("\(Int(matter.progress * 100))%").font(.caption).foregroundStyle(JafarPalette.accentGold); ProgressView(value: fill ? matter.progress : 0).tint(JafarPalette.accentGold) }; Text("Следующее действие").font(.caption).foregroundStyle(JafarPalette.textMuted); Text(matter.action).font(.caption); HStack { Text("До \(matter.deadline)"); Spacer(); Text(matter.meta) }.font(.caption).foregroundStyle(JafarPalette.textMuted) }.frame(width: 148, alignment: .leading) }.onAppear { withAnimation(JafarMotion.slow) { fill = true } }.frame(height: 150) }
 }
 
 private struct NewCanonicalMatterCard: View {

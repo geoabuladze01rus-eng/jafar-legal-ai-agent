@@ -34,6 +34,7 @@ struct JusticeWorkspaceView: View {
     @State private var selection: JusticeDestination = .home
     @State private var selectedMatter: DashboardMatter?
     @State private var searchText = ""
+    @AppStorage("justice.demo_mode") private var demoMode = false
 
     var body: some View {
         Group {
@@ -103,9 +104,9 @@ struct JusticeWorkspaceView: View {
     @ViewBuilder
     private func destinationView(_ destination: JusticeDestination) -> some View {
         switch destination {
-        case .home: JusticeHomeView(dashboard: dashboard, onMatter: { selectedMatter = $0; selection = .matters })
-        case .matters: JusticeMattersView(dashboard: dashboard, selectedMatter: $selectedMatter)
-        case .settings: JusticeSettingsView()
+        case .home: JusticeHomeView(dashboard: dashboard, demoMode: demoMode, onMatter: { selectedMatter = $0; selection = .matters })
+        case .matters: JusticeMattersView(dashboard: dashboard, demoMode: demoMode, selectedMatter: $selectedMatter)
+        case .settings: JusticeSettingsView(demoMode: $demoMode)
         case .approvals: JusticeApprovalView()
         case .costs: JusticeCostView()
         case .council: JusticeCouncilView()
@@ -145,8 +146,9 @@ private struct JusticePage<Content: View>: View {
 
 private struct JusticeHomeView: View {
     @ObservedObject var dashboard: DashboardStore
+    let demoMode: Bool
     let onMatter: (DashboardMatter) -> Void
-    private var matters: [DashboardMatter] { dashboard.snapshot.matters.isEmpty ? JusticeSamples.matters : dashboard.snapshot.matters }
+    private var matters: [DashboardMatter] { demoMode ? JusticeSamples.matters : dashboard.snapshot.matters }
     var body: some View {
         JusticePage(title: "Добрый день, адвокат", subtitle: "Командный центр: что требует вашего внимания сейчас") {
             HStack(spacing: JusticeSpacing.sm) {
@@ -213,10 +215,11 @@ private struct MatterCard: View {
 
 private struct JusticeMattersView: View {
     @ObservedObject var dashboard: DashboardStore
+    let demoMode: Bool
     @Binding var selectedMatter: DashboardMatter?
     @State private var query = ""
     @State private var showArchived = false
-    private var matters: [DashboardMatter] { (dashboard.snapshot.matters.isEmpty ? JusticeSamples.matters : dashboard.snapshot.matters).filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || ($0.clientName ?? "").localizedCaseInsensitiveContains(query) } }
+    private var matters: [DashboardMatter] { (demoMode ? JusticeSamples.matters : dashboard.snapshot.matters).filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || ($0.clientName ?? "").localizedCaseInsensitiveContains(query) } }
     var body: some View {
         JusticePage(title: "Дела", subtitle: "Рабочая карта позиций, сроков и рисков") {
             HStack { Image(systemName: "magnifyingglass"); TextField("Поиск по названию или клиенту", text: $query); Spacer(); Toggle("Архив", isOn: $showArchived).toggleStyle(.switch).font(JusticeTypography.caption) }.foregroundStyle(JafarPalette.textSecondary).padding(JusticeSpacing.md).background(JafarPalette.surface, in: RoundedRectangle(cornerRadius: JusticeRadius.small))
@@ -254,7 +257,8 @@ private struct JusticeCostView: View {
 }
 
 private struct JusticeSettingsView: View {
-    var body: some View { JusticePage(title: "Настройки", subtitle: "Среда, безопасность и предпочтения ЮСТИЦИЯ AI") { settingsSection("Подключение", icon: "network") { setting("Среда", "Private Beta"); setting("Состояние backend", "Проверяется при открытии") }; settingsSection("AI и конфиденциальность", icon: "lock.shield.fill") { setting("Провайдеры", "Только доверенные"); setting("Стоимость", "Лимиты включены") }; settingsSection("Безопасность", icon: "faceid") { setting("Подтверждение решений", "Face ID / Touch ID / код-пароль"); setting("Хранилище токена", "Защищённая связка ключей") }; settingsSection("О приложении", icon: "info.circle") { setting("ЮСТИЦИЯ AI", "Интеллектуальная система адвоката"); setting("Версия", "0.9.12") } } }
+    @Binding var demoMode: Bool
+    var body: some View { JusticePage(title: "Настройки", subtitle: "Среда, безопасность и предпочтения ЮСТИЦИЯ AI") { settingsSection("Подключение", icon: "network") { setting("Среда", "Private Beta"); setting("Состояние backend", "Проверяется при открытии") }; settingsSection("Демо и данные", icon: "theatermasks.fill") { Toggle("Демонстрационный режим", isOn: $demoMode).tint(JafarPalette.accentGold); Text("Синтетические дела изолированы от live backend и не могут вызвать одобрение или внешнее действие.").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }; settingsSection("AI и конфиденциальность", icon: "lock.shield.fill") { setting("Провайдеры", "Только доверенные"); setting("Стоимость", "Лимиты включены") }; settingsSection("Безопасность", icon: "faceid") { setting("Подтверждение решений", "Face ID / Touch ID / код-пароль"); setting("Хранилище токена", "Защищённая связка ключей") }; settingsSection("О приложении", icon: "info.circle") { setting("ЮСТИЦИЯ AI", "Интеллектуальная система адвоката"); setting("Версия", "0.9.12") } } }
     private func settingsSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: JusticeSpacing.md) { Label(title, systemImage: icon).font(JusticeTypography.title); VStack(spacing: 0) { content() }.padding(JusticeSpacing.md).jafarCard() } }
     private func setting(_ key: String, _ value: String) -> some View { HStack { Text(key).font(JusticeTypography.callout); Spacer(); Text(value).font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }.padding(.vertical, JusticeSpacing.sm) }
 }

@@ -20,6 +20,7 @@ from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
+from .matter_intelligence_api import build_router as build_matter_intelligence_router
 from .rate_limit_runtime import RateLimiter, build_ai_rate_limiter
 from .storage import build_runtime_repositories, validate_storage_security
 from .structured_analysis_runtime import MeteredStructuredLegalAnalyzer
@@ -118,6 +119,7 @@ document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 dashboard_service = DashboardService(matter_store)
 action_approval_engine = LegalActionApprovalEngine(action_approval_store)
+app.include_router(build_matter_intelligence_router(matter_store))
 
 
 def _analyze(request: AnalysisRequest) -> LegalAnalysis:

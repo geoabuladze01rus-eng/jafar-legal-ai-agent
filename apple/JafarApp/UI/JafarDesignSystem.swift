@@ -24,6 +24,9 @@ enum JafarPalette {
     static let accentGold = accent
     static let accentBlue = Color(red: 0.32, green: 0.48, blue: 0.64)
     static let info = accentBlue
+    static let goldBase = Color(red: 184 / 255, green: 138 / 255, blue: 71 / 255)
+    static let goldHighlight = Color(red: 226 / 255, green: 189 / 255, blue: 116 / 255)
+    static let goldGlow = Color(red: 218 / 255, green: 168 / 255, blue: 91 / 255)
 }
 
 enum JusticeTypography {
@@ -52,17 +55,26 @@ enum JusticeRadius {
     static let large: CGFloat = 10
 }
 
+enum JafarMotion {
+    static let fast = Animation.easeOut(duration: 0.20)
+    static let normal = Animation.easeInOut(duration: 0.35)
+    static let slow = Animation.easeInOut(duration: 0.8)
+    static let ambient = Animation.easeInOut(duration: 8).repeatForever(autoreverses: true)
+}
+
 struct JafarCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(JafarPalette.card)
+                    .fill(LinearGradient(colors: [JafarPalette.surfaceElevated, JafarPalette.card], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(JafarPalette.accent.opacity(0.20), lineWidth: 1)
                     )
+                    .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.horizontal, 10) }
+                    .shadow(color: .black.opacity(0.40), radius: 18, y: 8)
             )
     }
 }

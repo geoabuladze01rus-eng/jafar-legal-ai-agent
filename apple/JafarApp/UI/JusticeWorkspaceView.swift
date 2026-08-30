@@ -141,7 +141,13 @@ private struct JusticePage<Content: View>: View {
             .padding(.vertical, JusticeSpacing.xl)
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .background(JafarPalette.backgroundPrimary)
+        .background {
+            ZStack {
+                LinearGradient(colors: [Color(red: 3 / 255, green: 7 / 255, blue: 13 / 255), JafarPalette.backgroundPrimary], startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [JafarPalette.accent.opacity(0.12), .clear], center: .center, startRadius: 20, endRadius: 620)
+                RadialGradient(colors: [JafarPalette.accentBlue.opacity(0.12), .clear], center: .topLeading, startRadius: 10, endRadius: 500)
+            }.ignoresSafeArea()
+        }
     }
 }
 
@@ -149,6 +155,8 @@ private struct JusticeHomeView: View {
     @ObservedObject var dashboard: DashboardStore
     let demoMode: Bool
     let onMatter: (DashboardMatter) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var heroBreath = false
     private var matters: [DashboardMatter] { demoMode ? JusticeSamples.matters : dashboard.snapshot.matters }
     var body: some View {
         JusticePage(title: "Доброе утро", subtitle: "JAFAR AI готов служить вашей практике") {
@@ -159,6 +167,7 @@ private struct JusticeHomeView: View {
                 intelligenceCard.frame(maxWidth: 250)
             }
             commandBar
+            HStack(alignment: .top, spacing: JusticeSpacing.md) { rightRailCard(title: "ЗАДАЧИ И СРОКИ", icon: "calendar.badge.clock", items: ["Отзыв на иск · 3 дня", "Проверить источник · сегодня", "Подготовить вопросы · 5 дней"]); rightRailCard(title: "БЛИЖАЙШИЕ ЗАСЕДАНИЯ", icon: "building.columns", items: ["18 апреля · 10:30", "А00-00000/2026", "Арбитражный суд"]); quoteCard }.frame(maxWidth: .infinity)
             priorityGrid
             section("Активные дела", "Последние изменения и ближайший следующий шаг") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: JusticeSpacing.md)], spacing: JusticeSpacing.md) {
@@ -172,11 +181,15 @@ private struct JusticeHomeView: View {
                         .font(JusticeTypography.callout).foregroundStyle(JafarPalette.textSecondary)
                 }.padding(JusticeSpacing.lg).jafarCard()
             }
+            lowerModules
         }
     }
+    private func rightRailCard(title: String, icon: String, items: [String]) -> some View { VStack(alignment: .leading, spacing: 9) { Label(title, systemImage: icon).font(JusticeTypography.caption).foregroundStyle(JafarPalette.accentGold); ForEach(items, id: \.self) { Text($0).font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary).lineLimit(1) } }.frame(maxWidth: .infinity, alignment: .leading).padding(14).jafarCard() }
+    private var quoteCard: some View { VStack(alignment: .leading, spacing: 8) { Text("«Право требует ясности, а не спешки.»").font(JusticeTypography.callout).italic().foregroundStyle(JafarPalette.textPrimary); Text("JAFAR AI · контроль адвоката").font(.caption2).foregroundStyle(JafarPalette.textMuted) }.frame(maxWidth: .infinity, alignment: .leading).padding(14).jafarCard() }
+    private var lowerModules: some View { HStack(alignment: .top, spacing: JusticeSpacing.md) { VStack(alignment: .leading, spacing: 8) { Label("ПРАВОВОЙ РАДАР", systemImage: "dot.radiowaves.left.and.right").foregroundStyle(JafarPalette.accentGold); Text("12 обновлений").font(JusticeTypography.title); Text("ВС РФ · Пленум · изменения ГПК/УПК").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard(); VStack(alignment: .leading, spacing: 8) { Label("AI-АНАЛИТИКА", systemImage: "chart.pie.fill").foregroundStyle(JafarPalette.accentGold); HStack { ZStack { Circle().stroke(JafarPalette.divider, lineWidth: 8); Circle().trim(from: 0, to: 0.57).stroke(JafarPalette.accentGold, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90)); Text("57%").font(JusticeTypography.headline) }.frame(width: 56, height: 56); Text("Средний риск").font(JusticeTypography.callout) } }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard(); VStack(alignment: .leading, spacing: 8) { Label("ГОЛОСОВЫЕ МАТЕРИАЛЫ", systemImage: "waveform").foregroundStyle(JafarPalette.accentGold); HStack(alignment: .bottom, spacing: 3) { ForEach(0..<18, id: \.self) { index in Capsule().fill(JafarPalette.accent.opacity(0.7)).frame(width: 3, height: CGFloat(8 + (index % 5) * 5)) } }; Text("3 записи · 42 мин").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(16).jafarCard() } }
     private var focusCard: some View { VStack(alignment: .leading, spacing: 12) { Text("ФОКУС ДНЯ").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); focusRow("Требуют внимания", dashboard.snapshot.pendingApprovals, "exclamationmark.triangle"); focusRow("Новые документы", dashboard.snapshot.totalMatters, "doc.text"); focusRow("Заседание завтра", dashboard.snapshot.deadlinesNext7Days, "calendar") }.padding(16).jafarCard() }
     private func focusRow(_ title: String, _ value: Int, _ icon: String) -> some View { HStack { Image(systemName: icon).foregroundStyle(JafarPalette.accentGold); VStack(alignment: .leading) { Text(title).font(JusticeTypography.caption); Text("(value)").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textPrimary) } } }
-    private var heroCard: some View { ZStack(alignment: .bottomLeading) { RoundedRectangle(cornerRadius: 8).fill(JafarPalette.surfaceElevated); Image("JusticeHero").resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 300).opacity(0.92); VStack(alignment: .leading) { Text("ЮСТИЦИЯ").font(JusticeTypography.display).foregroundStyle(JafarPalette.textPrimary); Text("Статус: \(dashboard.errorMessage == nil ? "Система активна" : "Требуется решение")").font(JusticeTypography.callout).foregroundStyle(JafarPalette.accentGold) }.padding(18) }.overlay(RoundedRectangle(cornerRadius: 8).stroke(JafarPalette.accent.opacity(0.35))) }
+    private var heroCard: some View { ZStack(alignment: .bottomLeading) { RoundedRectangle(cornerRadius: 8).fill(Color.clear); Circle().fill(JafarPalette.goldGlow.opacity(0.14)).blur(radius: 28).scaleEffect(heroBreath ? 1.12 : 0.94); Circle().stroke(JafarPalette.accent.opacity(0.20), lineWidth: 1).frame(width: 230, height: 230).overlay(Circle().stroke(JafarPalette.accent.opacity(0.08), lineWidth: 1).frame(width: 270, height: 270)); Image("JusticeHero").resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 300).opacity(0.92); VStack(alignment: .leading) { Text("ЮСТИЦИЯ").font(JusticeTypography.display).foregroundStyle(JafarPalette.textPrimary); Text("Статус: \(dashboard.errorMessage == nil ? "Система активна" : "Требуется решение")").font(JusticeTypography.callout).foregroundStyle(JafarPalette.accentGold) }.padding(18) }.frame(minHeight: 300).overlay(RoundedRectangle(cornerRadius: 8).stroke(JafarPalette.accent.opacity(0.35))).onAppear { guard !reduceMotion else { return }; withAnimation(JafarMotion.ambient) { heroBreath = true } } }
     private var intelligenceCard: some View { VStack(alignment: .leading, spacing: 12) { Label("JAFAR AI", systemImage: "scalemass.fill").font(JusticeTypography.title).foregroundStyle(JafarPalette.accentGold); Text("Анализирует ваши дела").font(JusticeTypography.headline); ForEach(["Правовой анализ", "Процессуальные риски", "Стратегию защиты", "Черновики документов"], id: \.self) { item in Label(item, systemImage: "checkmark").font(JusticeTypography.caption).foregroundStyle(JafarPalette.textSecondary) }; Button("Начать диалог") {}.buttonStyle(.borderedProminent).tint(JafarPalette.accentGold) }.padding(16).jafarCard() }
     private var commandBar: some View { VStack(alignment: .leading, spacing: 8) { HStack { Image(systemName: "hammer").foregroundStyle(JafarPalette.accentGold); Text("Спросите Джафара...").font(JusticeTypography.headline).foregroundStyle(JafarPalette.textMuted); Spacer(); Image(systemName: "mic.fill").foregroundStyle(JafarPalette.accentGold) }.padding(14).background(JafarPalette.surface, in: Capsule()).overlay(Capsule().stroke(JafarPalette.accent.opacity(0.35))); HStack { ForEach(["Что требует моего внимания?", "Разбери последнее письмо", "Что нового по делу?", "Подготовь правовую позицию"], id: \.self) { Text($0).font(JusticeTypography.caption).foregroundStyle(JafarPalette.accentGold).padding(.horizontal, 10).padding(.vertical, 6).overlay(Capsule().stroke(JafarPalette.accent.opacity(0.45))) } } } }
     private var priorityGrid: some View {

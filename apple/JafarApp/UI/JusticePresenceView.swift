@@ -31,6 +31,7 @@ struct JusticePresenceView: View {
     var compact = false
 
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: compact ? 5 : 9) {
@@ -48,12 +49,12 @@ struct JusticePresenceView: View {
                         Circle()
                             .stroke(JafarPalette.accent.opacity(0.36), lineWidth: 1)
                     }
-                    .shadow(
+                        .shadow(
                         color: state == .control
                             ? JafarPalette.warning.opacity(0.24)
                             : JafarPalette.accent.opacity(0.22),
                         radius: state == .analyzing ? 18 : 10
-                    )
+                        )
 
                 Image(systemName: state.systemImage)
                     .font(.system(size: compact ? 20 : 29, weight: .semibold))
@@ -105,7 +106,7 @@ struct JusticePresenceView: View {
 
     private func updateAnimation() {
         pulse = false
-        guard state == .analyzing else { return }
+        guard state == .analyzing, !reduceMotion else { return }
         withAnimation(
             .easeInOut(duration: 1.25)
                 .repeatForever(autoreverses: true)

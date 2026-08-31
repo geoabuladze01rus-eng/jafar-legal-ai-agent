@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { semanticLegalChunks } from "../_shared/legal_chunking.ts";
 
 const MODEL = "gpt-5.6-luna";
 const EMBED_MODEL = "text-embedding-3-small";
@@ -29,6 +30,17 @@ function isInternal(req: Request): boolean {
   const auth = req.headers.get("Authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
+}
+
+async function stableChunkId(pageNumber: number, chunk: {
+  content: string;
+  sourceStart: number;
+  sourceEnd: number;
+}): Promise<string> {
+  const payload = `v1:${pageNumber}:${chunk.sourceStart}:${chunk.sourceEnd}:${chunk.content}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `v1:${hash}`;
 }
 
 Deno.serve(async (req) => {
@@ -80,17 +92,22 @@ Deno.serve(async (req) => {
       await db.from("document_chunks").delete().eq("document_id", doc.id);
       const rows: any[] = [];
       let chunkIndex = 0;
-      const size = 3500;
-      const overlap = 350;
 
       for (const page of pages) {
         const text = String(page.extracted_text ?? "").replace(/\r\n/g, "\n").trim();
         if (!text) continue;
-        for (let start = 0; start < text.length;) {
-          const end = Math.min(text.length, start + size);
-          rows.push({ document_id: doc.id, chunk_index: chunkIndex++, content: text.slice(start, end), source_page: page.page_number });
-          if (end === text.length) break;
-          start = Math.max(start + 1, end - overlap);
+        for (const chunk of semanticLegalChunks(text)) {
+          const stableChunk = await stableChunkId(page.page_number, chunk);
+          rows.push({
+            document_id: doc.id,
+            chunk_index: chunkIndex++,
+            content: chunk.content,
+            source_page: page.page_number,
+            stable_chunk_id: stableChunk,
+            source_section: chunk.section,
+            source_start: chunk.sourceStart,
+            source_end: chunk.sourceEnd,
+          });
         }
       }
       if (!rows.length) throw new Error("empty_document_text");

@@ -16,6 +16,9 @@ from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .legal_research_api import router as legal_research_router
 from .legal_research_runtime import build_legal_research_service_from_env
 from .matter_runtime import build_matter_repository_from_env
+from .memory_command_router import NaturalLanguageMemoryRouter
+from .memory_commands import MemoryCommandExecutor
+from .memory_runtime import build_memory_service_from_env
 from .persistent_matter_catalog import PersistentMatterCatalog
 from .telegram_runtime import TelegramRuntime
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
@@ -41,7 +44,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.9.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.10.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
 heuristic_analyzer = LegalAnalyzer()
@@ -51,6 +54,10 @@ document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 persistent_matter_catalog = PersistentMatterCatalog(matter_store)
+memory_router = NaturalLanguageMemoryRouter()
+_memory_service = build_memory_service_from_env()
+memory_executor = MemoryCommandExecutor(_memory_service) if _memory_service is not None else None
+app.state.memory_service = _memory_service
 _legal_research_service = build_legal_research_service_from_env()
 app.state.legal_research_service_factory = (
     (lambda _matter_id: _legal_research_service) if _legal_research_service is not None else None
@@ -100,6 +107,41 @@ def command(request: CommandRequest) -> CommandResponse:
     elif any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
         intent = "list_matters"
     else:
+        memory_route = memory_router.route(request.text)
+        if memory_route.intent is not None:
+            if memory_executor is None:
+                return CommandResponse(
+                    message="Долговременная память пока не настроена на этом сервере.",
+                    intent="memory_unavailable",
+                    request_id=str(uuid4()),
+                )
+            matter_reference = persistent_matter_catalog.resolve_reference(request.text)
+            if matter_reference.ambiguous:
+                return CommandResponse(
+                    message="Не удалось однозначно определить дело для этой записи памяти. Укажите номер дела или фамилию клиента.",
+                    intent="memory_needs_matter",
+                    request_id=str(uuid4()),
+                )
+            try:
+                memory_result = memory_executor.execute(
+                    memory_route,
+                    approved=request.approved,
+                    matter_id=matter_reference.matter_id,
+                )
+            except (ValueError, RuntimeError):
+                return CommandResponse(
+                    message="Не удалось выполнить операцию с долговременной памятью.",
+                    intent="memory_failed",
+                    request_id=str(uuid4()),
+                )
+            return CommandResponse(
+                message=memory_result.message,
+                intent=memory_result.intent,
+                approval_required=memory_result.approval_required,
+                request_id=str(uuid4()),
+                data=memory_result.data,
+            )
+
         route = persistent_matter_catalog.route(request.text)
         if route.is_research:
             if route.matter_id is None:

@@ -31,6 +31,61 @@ function isInternal(req: Request): boolean {
   return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
 }
 
+function splitOversizedBlock(block: string, maxChars = 3400): string[] {
+  if (block.length <= maxChars) return [block];
+  const sentences = block.split(/(?<=[.!?;:])\s+(?=[А-ЯЁA-Z0-9])/u);
+  const parts: string[] = [];
+  let current = "";
+  for (const sentenceRaw of sentences) {
+    const sentence = sentenceRaw.trim();
+    if (!sentence) continue;
+    const candidate = current ? `${current} ${sentence}` : sentence;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+      continue;
+    }
+    if (current) parts.push(current);
+    current = "";
+    if (sentence.length <= maxChars) {
+      current = sentence;
+      continue;
+    }
+    for (let start = 0; start < sentence.length; start += maxChars) {
+      const hard = sentence.slice(start, start + maxChars).trim();
+      if (hard) parts.push(hard);
+    }
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function semanticLegalChunks(text: string, targetChars = 2600, maxChars = 3400): string[] {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  const blocks = normalized
+    .split(/\n\s*\n/u)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .flatMap((block) => splitOversizedBlock(block, maxChars));
+  const chunks: string[] = [];
+  let current: string[] = [];
+  for (const block of blocks) {
+    const candidate = [...current, block].join("\n\n");
+    if (current.length && candidate.length > maxChars) {
+      chunks.push(current.join("\n\n"));
+      current = [];
+    }
+    current.push(block);
+    const joined = current.join("\n\n");
+    if (joined.length >= targetChars && /[.;:]$/u.test(block)) {
+      chunks.push(joined);
+      current = [];
+    }
+  }
+  if (current.length) chunks.push(current.join("\n\n"));
+  return chunks;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isInternal(req)) return json({ error: "unauthorized_worker" }, 401);
@@ -80,17 +135,17 @@ Deno.serve(async (req) => {
       await db.from("document_chunks").delete().eq("document_id", doc.id);
       const rows: any[] = [];
       let chunkIndex = 0;
-      const size = 3500;
-      const overlap = 350;
 
       for (const page of pages) {
         const text = String(page.extracted_text ?? "").replace(/\r\n/g, "\n").trim();
         if (!text) continue;
-        for (let start = 0; start < text.length;) {
-          const end = Math.min(text.length, start + size);
-          rows.push({ document_id: doc.id, chunk_index: chunkIndex++, content: text.slice(start, end), source_page: page.page_number });
-          if (end === text.length) break;
-          start = Math.max(start + 1, end - overlap);
+        for (const content of semanticLegalChunks(text)) {
+          rows.push({
+            document_id: doc.id,
+            chunk_index: chunkIndex++,
+            content,
+            source_page: page.page_number,
+          });
         }
       }
       if (!rows.length) throw new Error("empty_document_text");

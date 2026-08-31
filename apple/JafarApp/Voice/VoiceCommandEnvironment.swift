@@ -8,8 +8,9 @@ struct VoiceCommandEnvironment: Sendable {
         let environment = processInfo.environment
         let endpointString = environment["JAFAR_COMMAND_ENDPOINT"]
             ?? bundle.object(forInfoDictionaryKey: "JAFARCommandEndpoint") as? String
+        // Static bearer tokens must never be shipped in Info.plist. Environment token is dev-only;
+        // production authentication should come from a user session / Keychain-backed credential.
         let authorizationToken = environment["JAFAR_COMMAND_TOKEN"]
-            ?? bundle.object(forInfoDictionaryKey: "JAFARCommandToken") as? String
         let userId = environment["JAFAR_USER_ID"]
             ?? bundle.object(forInfoDictionaryKey: "JAFARUserId") as? String
             ?? "apple-user"

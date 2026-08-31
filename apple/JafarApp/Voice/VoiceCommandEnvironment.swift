@@ -8,12 +8,16 @@ struct VoiceCommandEnvironment: Sendable {
         let environment = processInfo.environment
         let endpointString = environment["JAFAR_COMMAND_ENDPOINT"]
             ?? bundle.object(forInfoDictionaryKey: "JAFARCommandEndpoint") as? String
-        // Static bearer tokens must never be shipped in Info.plist. Environment token is dev-only;
-        // production authentication should come from a user session / Keychain-backed credential.
-        let authorizationToken = environment["JAFAR_COMMAND_TOKEN"]
         let userId = environment["JAFAR_USER_ID"]
             ?? bundle.object(forInfoDictionaryKey: "JAFARUserId") as? String
             ?? "apple-user"
+        let tokenStore = KeychainTokenStore()
+
+        // Development/bootstrap path only: migrate a supplied token into Keychain.
+        // Remote requests always read credentials from Keychain afterwards.
+        if let bootstrapToken = environment["JAFAR_COMMAND_TOKEN"], !bootstrapToken.isEmpty {
+            _ = tokenStore.save(bootstrapToken)
+        }
 
         guard
             let endpointString,
@@ -24,7 +28,7 @@ struct VoiceCommandEnvironment: Sendable {
         }
 
         return VoiceCommandEnvironment(
-            client: RemoteCommandClient(endpoint: endpoint, authorizationToken: authorizationToken),
+            client: RemoteCommandClient(endpoint: endpoint, tokenStore: tokenStore),
             userId: userId
         )
     }

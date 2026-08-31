@@ -63,26 +63,27 @@ class NativeDocumentParser:
 
 
 class DoclingDocumentParser:
-    """Local-first rich parser for layout-aware PDF/DOCX ingestion.
+    """Local-first rich parser for layout-aware legal-document ingestion.
 
     Docling is imported lazily so the base Jafar install and CI remain lightweight.
-    The optional dependency can be installed with `pip install -e '.[docling]'`.
+    Install it with ``pip install -e '.[docling]'`` when local rich parsing is enabled.
     """
 
     SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm"}
 
-    def __init__(self, converter=None) -> None:
+    def __init__(self, converter=None, stream_factory=None) -> None:
         self._converter = converter
+        self._stream_factory = stream_factory
 
     def supports(self, filename: str, media_type: str | None = None) -> bool:
         return Path(filename).suffix.lower() in self.SUPPORTED_EXTENSIONS
 
     def parse(self, filename: str, content: bytes, media_type: str | None = None) -> str:
         converter = self._converter or self._build_converter()
+        stream_factory = self._stream_factory or self._build_stream_factory()
         try:
-            source = BytesIO(content)
-            source.name = filename
-            result = converter.convert(source)
+            source = stream_factory(name=filename, stream=BytesIO(content))
+            result = converter.convert(source, max_file_size=len(content))
             document = result.document
             if hasattr(document, "export_to_markdown"):
                 return document.export_to_markdown()
@@ -103,6 +104,16 @@ class DoclingDocumentParser:
                 "Docling support is not installed; install the 'docling' optional dependency"
             ) from exc
         return DocumentConverter()
+
+    @staticmethod
+    def _build_stream_factory():
+        try:
+            from docling.datamodel.base_models import DocumentStream
+        except ImportError as exc:
+            raise DocumentParserError(
+                "Docling support is not installed; install the 'docling' optional dependency"
+            ) from exc
+        return DocumentStream
 
 
 @dataclass(slots=True)

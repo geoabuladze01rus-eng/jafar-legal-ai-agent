@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
-from .cross_document_analysis import CrossDocumentAnalyzer, SourcedClaim
+from .cross_document_analysis import (
+    CrossDocumentContradictionService,
+    CrossDocumentReport,
+    DocumentClaim,
+)
 from .matter_rag import MatterRAGContext
 
 
@@ -33,7 +37,7 @@ class LegalResearchResult:
     question: str
     answer: str
     citations: tuple[str, ...]
-    contradictions: tuple[dict, ...]
+    contradiction_report: CrossDocumentReport | None
     context: MatterRAGContext
 
 
@@ -42,7 +46,7 @@ class LegalResearchService:
     embeddings: EmbeddingProvider
     retrieval: MatterRAGProvider
     answers: ResearchAnswerProvider
-    contradiction_analyzer: CrossDocumentAnalyzer | None = None
+    contradictions: CrossDocumentContradictionService | None = None
 
     def research(
         self,
@@ -51,7 +55,7 @@ class LegalResearchService:
         question: str,
         limit: int = 8,
         min_similarity: float = 0.0,
-        claims: list[SourcedClaim] | None = None,
+        claims: Sequence[DocumentClaim] | None = None,
     ) -> LegalResearchResult:
         if not matter_id.strip():
             raise ValueError("matter_id is required")
@@ -68,10 +72,11 @@ class LegalResearchService:
         )
         answer = self.answers.answer(question=question, context=context)
 
-        contradiction_rows: tuple[dict, ...] = ()
-        if self.contradiction_analyzer is not None and claims:
-            contradiction_rows = tuple(
-                self.contradiction_analyzer.analyze(claims)
+        contradiction_report = None
+        if self.contradictions is not None and claims:
+            contradiction_report = self.contradictions.compare(
+                matter_id=matter_id,
+                claims=claims,
             )
 
         return LegalResearchResult(
@@ -79,6 +84,6 @@ class LegalResearchService:
             question=question,
             answer=answer,
             citations=context.citations,
-            contradictions=contradiction_rows,
+            contradiction_report=contradiction_report,
             context=context,
         )

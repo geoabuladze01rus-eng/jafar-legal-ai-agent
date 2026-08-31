@@ -11,6 +11,7 @@ RESEARCH_MARKERS = (
     "что следует", "что известно", "проверь дело", "исследуй",
     "сравни показан", "найди в деле", "по материалам дела",
 )
+GENERIC_REFERENCE_TOKENS = {"дело", "документ", "материал"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,20 @@ class NaturalLanguageResearchRouter:
     def _tokens(value: str) -> set[str]:
         return set(re.findall(r"[а-яa-z0-9-]{4,}", value.casefold().replace("ё", "е")))
 
+    @classmethod
+    def _reference_score(cls, value: str, query_tokens: set[str]) -> int:
+        value_tokens = cls._tokens(value) - GENERIC_REFERENCE_TOKENS
+        exact = value_tokens & query_tokens
+        score = 5 * len(exact)
+        unmatched = value_tokens - exact
+        for candidate in unmatched:
+            if len(candidate) < 5:
+                continue
+            stem = candidate[:5]
+            if any(token.startswith(stem) or candidate.startswith(token[:5]) for token in query_tokens):
+                score += 5
+        return score
+
     def route(self, text: str, matters: list[Matter]) -> ResearchRoute:
         normalized = self._normalize(text)
         if not any(marker in normalized for marker in RESEARCH_MARKERS):
@@ -50,8 +65,7 @@ class NaturalLanguageResearchRouter:
                 if candidate and candidate in normalized:
                     score += 50
                 else:
-                    overlap = self._tokens(value) & self._tokens(normalized)
-                    score += min(20, 5 * len(overlap))
+                    score += min(20, self._reference_score(value, self._tokens(normalized)))
 
             if score:
                 scored.append((score, matter.id))
@@ -61,6 +75,6 @@ class NaturalLanguageResearchRouter:
         scored.sort(reverse=True)
         top_score = scored[0][0]
         top = [matter_id for score, matter_id in scored if score == top_score]
-        if len(top) != 1 or top_score < 20:
+        if len(top) != 1 or top_score < 10:
             return ResearchRoute(is_research=True, ambiguous=True)
         return ResearchRoute(is_research=True, matter_id=top[0])

@@ -11,6 +11,8 @@ from .config import settings
 from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .google_workspace import NaturalLanguageWorkspaceRouter
+from .google_workspace_http import build_google_workspace_service_from_env
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
@@ -45,7 +47,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.11.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.12.0", lifespan=lifespan)
 app.middleware("http")(api_auth_middleware)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
@@ -56,6 +58,8 @@ document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 persistent_matter_catalog = PersistentMatterCatalog(matter_store)
+workspace_router = NaturalLanguageWorkspaceRouter()
+_google_workspace_service = build_google_workspace_service_from_env()
 memory_router = NaturalLanguageMemoryRouter()
 _memory_service = build_memory_service_from_env()
 memory_executor = MemoryCommandExecutor(_memory_service) if _memory_service is not None else None
@@ -109,6 +113,38 @@ def command(request: CommandRequest) -> CommandResponse:
     elif any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
         intent = "list_matters"
     else:
+        workspace_route = workspace_router.route(request.text)
+        if workspace_route.intent is not None:
+            if _google_workspace_service is None:
+                return CommandResponse(
+                    message="Google Workspace пока не подключён к этому серверу.",
+                    intent="google_workspace_unavailable",
+                    request_id=str(uuid4()),
+                )
+            try:
+                if workspace_route.intent == "gmail_inbox":
+                    workspace_data = _google_workspace_service.inbox(
+                        unread_only=workspace_route.unread_only,
+                        limit=10,
+                    )
+                else:
+                    workspace_data = _google_workspace_service.calendar_events(
+                        window=workspace_route.window or "week",
+                        limit=20,
+                    )
+            except (RuntimeError, ValueError, OSError):
+                return CommandResponse(
+                    message="Не удалось получить данные Google Workspace.",
+                    intent="google_workspace_failed",
+                    request_id=str(uuid4()),
+                )
+            return CommandResponse(
+                message=str(workspace_data.get("message", "Данные получены.")),
+                intent=workspace_route.intent,
+                request_id=str(uuid4()),
+                data=workspace_data,
+            )
+
         memory_route = memory_router.route(request.text)
         if memory_route.intent is not None:
             if memory_executor is None:

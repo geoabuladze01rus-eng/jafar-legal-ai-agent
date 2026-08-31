@@ -56,6 +56,10 @@ def test_preserves_article_heading_and_stable_source_traceability():
     assert len(first) == 1
     assert first[0].section == "Статья 159.4 УК РФ"
     assert first[0].stable_id == second[0].stable_id
+    changed = semantic_legal_chunks(
+        text.replace("конкретным", "обоснованным"), source_page=8, target_chars=500, max_chars=800
+    )
+    assert first[0].stable_id != changed[0].stable_id
     assert text[first[0].source_start:first[0].source_end] == first[0].content
 
 

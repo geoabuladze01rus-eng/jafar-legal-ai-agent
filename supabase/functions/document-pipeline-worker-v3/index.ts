@@ -32,6 +32,17 @@ function isInternal(req: Request): boolean {
   return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
 }
 
+async function stableChunkId(pageNumber: number, chunk: {
+  content: string;
+  sourceStart: number;
+  sourceEnd: number;
+}): Promise<string> {
+  const payload = `v1:${pageNumber}:${chunk.sourceStart}:${chunk.sourceEnd}:${chunk.content}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `v1:${hash}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isInternal(req)) return json({ error: "unauthorized_worker" }, 401);
@@ -86,12 +97,13 @@ Deno.serve(async (req) => {
         const text = String(page.extracted_text ?? "").replace(/\r\n/g, "\n").trim();
         if (!text) continue;
         for (const chunk of semanticLegalChunks(text)) {
+          const stableChunk = await stableChunkId(page.page_number, chunk);
           rows.push({
             document_id: doc.id,
             chunk_index: chunkIndex++,
             content: chunk.content,
             source_page: page.page_number,
-            stable_chunk_id: `v1:${page.page_number}:${chunk.sourceStart}:${chunk.sourceEnd}`,
+            stable_chunk_id: stableChunk,
             source_section: chunk.section,
             source_start: chunk.sourceStart,
             source_end: chunk.sourceEnd,

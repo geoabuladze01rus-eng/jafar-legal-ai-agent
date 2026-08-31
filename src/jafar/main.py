@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from .api_auth import api_auth_middleware
 from .config import settings
 from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
@@ -44,7 +45,8 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.10.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.11.0", lifespan=lifespan)
+app.middleware("http")(api_auth_middleware)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
 heuristic_analyzer = LegalAnalyzer()

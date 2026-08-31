@@ -210,15 +210,21 @@ class CrossDocumentContradictionService:
                 kind = "numeric_mismatch"
                 confidence = 0.88
                 explanation = "Источники указывают разные числовые значения для одного контекста."
-            elif (
-                self._normalized(left.modality) == "categorical"
-                and self._normalized(right.modality) == "categorical"
-                and self._strong_context(left, right)
-                and self._normalized(left.position) != self._normalized(right.position)
+            elif self._normalized(left.position) != self._normalized(right.position) and (
+                not require_explicit_context
+                or (
+                    self._normalized(left.modality) == "categorical"
+                    and self._normalized(right.modality) == "categorical"
+                    and self._strong_context(left, right)
+                )
             ):
                 kind = "position_conflict"
-                confidence = 0.72
-                explanation = "Источники занимают несовместимые позиции в явно совпадающем контексте."
+                confidence = 0.55 if not require_explicit_context else 0.72
+                explanation = (
+                    "Legacy-источники имеют разные явно заданные позиции; требуется ручная проверка контекста."
+                    if not require_explicit_context
+                    else "Источники занимают несовместимые позиции в явно совпадающем контексте."
+                )
         if kind is None:
             return None
 

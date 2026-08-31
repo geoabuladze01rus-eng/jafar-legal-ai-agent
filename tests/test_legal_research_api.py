@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+from jafar.contradiction_detector import Contradiction
+from jafar.cross_document_analysis import CrossDocumentReport
 from jafar.legal_research_service import LegalResearchResult
 from jafar.main import app
 from jafar.matter_rag import MatterChunk, MatterRAGContext, RetrievedChunk
@@ -34,7 +36,19 @@ class StubResearchService:
             question=question,
             answer=f"Ответ [{chunk.citation}]",
             citations=(chunk.citation,),
-            contradictions=({"topic": "time", "severity": "high"},),
+            contradiction_report=CrossDocumentReport(
+                matter_id=matter_id,
+                contradictions=(
+                    Contradiction(
+                        topic="time",
+                        left="12:41",
+                        right="17:09",
+                        evidence_ids=(chunk.citation,),
+                        severity="high",
+                    ),
+                ),
+                documents_considered=(chunk.document_id,),
+            ),
             context=context,
         )
 

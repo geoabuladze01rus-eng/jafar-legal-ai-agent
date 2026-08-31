@@ -6,13 +6,21 @@ import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .api_auth import api_auth_middleware
 from .config import settings
 from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .google_oauth_api import router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
-from .google_workspace_http import build_google_workspace_service_from_env
+from .google_workspace_http import (
+    GoogleWorkspaceAPIError,
+    GoogleWorkspaceAuthRequiredError,
+    GoogleWorkspaceError,
+    GoogleWorkspaceNetworkError,
+    build_google_workspace_service_from_env,
+)
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
@@ -47,10 +55,11 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.12.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 app.middleware("http")(api_auth_middleware)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
+app.include_router(google_oauth_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 matter_store = build_matter_repository_from_env()
@@ -59,7 +68,6 @@ document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 persistent_matter_catalog = PersistentMatterCatalog(matter_store)
 workspace_router = NaturalLanguageWorkspaceRouter()
-_google_workspace_service = build_google_workspace_service_from_env()
 memory_router = NaturalLanguageMemoryRouter()
 _memory_service = build_memory_service_from_env()
 memory_executor = MemoryCommandExecutor(_memory_service) if _memory_service is not None else None
@@ -115,28 +123,67 @@ def command(request: CommandRequest) -> CommandResponse:
     else:
         workspace_route = workspace_router.route(request.text)
         if workspace_route.intent is not None:
-            if _google_workspace_service is None:
+            google_workspace_service = build_google_workspace_service_from_env(request.user_id)
+            if google_workspace_service is None:
                 return CommandResponse(
-                    message="Google Workspace пока не подключён к этому серверу.",
+                    message="Google Workspace пока не подключён. Откройте /v1/oauth/google/start?subject=" + request.user_id,
                     intent="google_workspace_unavailable",
                     request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
                 )
             try:
                 if workspace_route.intent == "gmail_inbox":
-                    workspace_data = _google_workspace_service.inbox(
+                    workspace_data = google_workspace_service.inbox(
                         unread_only=workspace_route.unread_only,
                         limit=10,
                     )
                 else:
-                    workspace_data = _google_workspace_service.calendar_events(
+                    workspace_data = google_workspace_service.calendar_events(
                         window=workspace_route.window or "week",
                         limit=20,
                     )
+            except GoogleWorkspaceAuthRequiredError:
+                return CommandResponse(
+                    message="Google Workspace не авторизован. Выполните OAuth-подключение.",
+                    intent="google_workspace_auth_required",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
+            except GoogleWorkspaceNetworkError:
+                return CommandResponse(
+                    message="Не удалось связаться с Google Workspace. Попробуйте повторить запрос.",
+                    intent="google_workspace_network_error",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
+            except GoogleWorkspaceAPIError as exc:
+                messages = {
+                    "api_disabled": "Нужный Google API не включён для этого проекта.",
+                    "insufficient_scope": "У OAuth-подключения недостаточно разрешений Google.",
+                }
+                return CommandResponse(
+                    message=messages.get(exc.kind, "Google Workspace вернул ошибку при чтении данных."),
+                    intent="google_workspace_api_error",
+                    request_id=str(uuid4()),
+                    data={
+                        "oauth_subject": request.user_id,
+                        "google_error_kind": exc.kind,
+                        "google_status_code": exc.status_code,
+                    },
+                )
+            except GoogleWorkspaceError:
+                return CommandResponse(
+                    message="Google Workspace вернул недопустимый ответ. Данные не использованы.",
+                    intent="google_workspace_error",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
             except (RuntimeError, ValueError, OSError):
                 return CommandResponse(
-                    message="Не удалось получить данные Google Workspace.",
-                    intent="google_workspace_failed",
+                    message="Не удалось обработать ответ Google Workspace. Данные не использованы.",
+                    intent="google_workspace_error",
                     request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
                 )
             return CommandResponse(
                 message=str(workspace_data.get("message", "Данные получены.")),

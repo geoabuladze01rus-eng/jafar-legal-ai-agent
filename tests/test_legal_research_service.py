@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from jafar.cross_document_analysis import CrossDocumentContradictionService, DocumentClaim
 from jafar.legal_research_service import LegalResearchService
 from jafar.matter_rag import MatterChunk, MatterRAGContext, RetrievedChunk

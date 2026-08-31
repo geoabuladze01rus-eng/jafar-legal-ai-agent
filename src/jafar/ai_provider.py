@@ -81,7 +81,8 @@ class OpenAILegalAnalyzer:
                     break
                 time.sleep(self.config.retry_backoff_seconds * (2**attempt))
 
-        raise RuntimeError("OpenAI legal analysis failed after retries") from last_error
+        detail = f": {last_error}" if last_error is not None else ""
+        raise RuntimeError(f"OpenAI legal analysis failed after retries{detail}") from last_error
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         try:

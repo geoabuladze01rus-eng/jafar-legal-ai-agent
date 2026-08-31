@@ -1,9 +1,11 @@
 import re
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
+
+from pydantic import ValidationError
 
 from .domains import DocumentTask, MatterType
 from .legal_models import Deadline, LegalAnalysis, LegalIssue, RiskLevel
-
+from .model_provider import ModelProvider
 
 DATE_PATTERNS = (
     re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b"),
@@ -20,7 +22,19 @@ class LegalAnalyzer:
     structured output contract.
     """
 
+    def __init__(self, provider: ModelProvider | None = None) -> None:
+        self.provider = provider
+
     def analyze(self, text: str, task: DocumentTask, matter_type: MatterType) -> LegalAnalysis:
+        if self.provider is not None:
+            payload = self.provider.analyze(text, task, matter_type)
+            if isinstance(payload, dict):
+                enriched = {**payload, "task": task, "matter_type": matter_type}
+                try:
+                    return LegalAnalysis.model_validate(enriched)
+                except (TypeError, ValidationError):
+                    pass
+
         normalized = " ".join(text.split())
         issues = self._find_risk_signals(normalized)
         deadlines = self._extract_dates(normalized)
@@ -39,7 +53,7 @@ class LegalAnalyzer:
             key_facts=facts,
             missing_information=missing,
             confidence=confidence,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
         )
 
     def _summary(self, text: str) -> str:

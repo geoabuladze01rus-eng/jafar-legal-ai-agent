@@ -88,12 +88,12 @@ struct LocalCommandClient: CommandClient {
 struct RemoteCommandClient: CommandClient {
     let endpoint: URL
     let session: URLSession
-    let authorizationToken: String?
+    let tokenStore: KeychainTokenStore
 
-    init(endpoint: URL, session: URLSession = .shared, authorizationToken: String? = nil) {
+    init(endpoint: URL, session: URLSession = .shared, tokenStore: KeychainTokenStore = KeychainTokenStore()) {
         self.endpoint = endpoint
         self.session = session
-        self.authorizationToken = authorizationToken
+        self.tokenStore = tokenStore
     }
 
     func send(request: CommandRequest) async throws -> CommandResponse {
@@ -102,14 +102,17 @@ struct RemoteCommandClient: CommandClient {
         urlRequest.timeoutInterval = 60
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let authorizationToken, !authorizationToken.isEmpty {
-            urlRequest.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
+        if let token = tokenStore.read(), !token.isEmpty {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CommandClientError.invalidResponse
+        }
+        if httpResponse.statusCode == 401 {
+            throw CommandClientError.unauthorized
         }
         guard (200...299).contains(httpResponse.statusCode) else {
             throw CommandClientError.httpStatus(httpResponse.statusCode)
@@ -125,12 +128,14 @@ struct RemoteCommandClient: CommandClient {
 enum CommandClientError: LocalizedError, Sendable {
     case invalidResponse
     case invalidPayload
+    case unauthorized
     case httpStatus(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: "Сервер Джафара вернул некорректный ответ."
         case .invalidPayload: "Не удалось прочитать ответ Джафара."
+        case .unauthorized: "Требуется авторизация Джафара. Проверьте защищённый токен доступа."
         case .httpStatus(let status): "Сервер Джафара ответил с ошибкой \(status)."
         }
     }

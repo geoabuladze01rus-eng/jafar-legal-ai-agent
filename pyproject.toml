@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+docling = ["docling>=2.118,<3"]
 
 [tool.ruff]
 line-length = 100

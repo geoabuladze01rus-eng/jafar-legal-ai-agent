@@ -107,9 +107,12 @@ class LegalEntityIntelligence:
 
     @staticmethod
     def _risk_level(risks: list[RiskFinding]) -> str:
-        if any(r.severity == "critical" for r in risks): return "critical"
-        if any(r.severity == "high" for r in risks): return "high"
-        if any(r.severity == "medium" for r in risks): return "medium"
+        if any(r.severity == "critical" for r in risks):
+            return "critical"
+        if any(r.severity == "high" for r in risks):
+            return "high"
+        if any(r.severity == "medium" for r in risks):
+            return "medium"
         return "low" if risks else "unknown"
 
     def run(self, query: EntityQuery) -> InvestigationResult:

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from jafar.document_intake import DocumentExtractor
+from jafar.document_intake import DocumentExtractionError, DocumentExtractor
 from jafar.document_parsers import (
     DoclingDocumentParser,
     DocumentParserError,
@@ -20,10 +20,12 @@ class FakeConverter:
     def __init__(self):
         self.source = None
         self.max_file_size = None
+        self.max_num_pages = None
 
-    def convert(self, source, *, max_file_size):
+    def convert(self, source, *, max_file_size, max_num_pages):
         self.source = source
         self.max_file_size = max_file_size
+        self.max_num_pages = max_num_pages
         return SimpleNamespace(document=FakeDocument())
 
 
@@ -50,7 +52,15 @@ def test_docling_parser_uses_in_memory_document_stream():
     assert text.startswith("# Постановление")
     assert converter.source.name == "ruling.pdf"
     assert converter.source.stream.read() == b"pdf-bytes"
-    assert converter.max_file_size == len(b"pdf-bytes")
+    assert converter.max_file_size == parser.MAX_BYTES
+    assert converter.max_num_pages == parser.MAX_PAGES
+
+
+def test_docling_parser_rejects_oversized_input_before_initializing_converter():
+    parser = DoclingDocumentParser(converter=FakeConverter(), stream_factory=FakeStream)
+
+    with pytest.raises(DocumentParserError, match="20 MB"):
+        parser.parse("ruling.pdf", b"x" * (parser.MAX_BYTES + 1))
 
 
 def test_docling_supports_rich_office_formats():
@@ -75,6 +85,18 @@ def test_document_extractor_accepts_injected_docling_parser():
     result = DocumentExtractor(parser=parser).extract("ruling.pdf", b"pdf-bytes", "application/pdf")
 
     assert "Суд установил" in result.text
+
+
+def test_document_extractor_limits_text_from_a_parser():
+    class LargeTextParser:
+        def supports(self, filename, media_type=None):
+            return True
+
+        def parse(self, filename, content, media_type=None):
+            return "x" * (DocumentExtractor.MAX_TEXT_CHARS + 1)
+
+    with pytest.raises(DocumentExtractionError, match="5,000,000"):
+        DocumentExtractor(parser=LargeTextParser()).extract("ruling.pdf", b"pdf-bytes")
 
 
 def test_docling_dependency_error_is_explicit(monkeypatch):

@@ -20,13 +20,19 @@ class GoogleHTTPClient:
             self.client = httpx.Client(timeout=20.0)
 
     def get(self, url: str, *, params: dict | None = None) -> dict:
-        response = self.client.get(
-            url,
-            params=params,
-            headers={"Authorization": f"Bearer {self.access_token}", "Accept": "application/json"},
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.client.get(
+                url,
+                params=params,
+                headers={"Authorization": f"Bearer {self.access_token}", "Accept": "application/json"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeError("Google API request failed") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("Google API returned an invalid payload")
+        return payload
 
 
 @dataclass(slots=True)

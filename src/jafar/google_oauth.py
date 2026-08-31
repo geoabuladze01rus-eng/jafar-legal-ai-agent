@@ -21,6 +21,18 @@ DEFAULT_SCOPES = (
 )
 
 
+class GoogleOAuthError(RuntimeError):
+    """Base error for OAuth broker failures safe to surface as a category only."""
+
+
+class GoogleOAuthAuthorizationError(GoogleOAuthError):
+    """Google rejected or revoked the persisted authorization."""
+
+
+class GoogleOAuthProviderError(GoogleOAuthError):
+    """Google OAuth service or network failed without exposing token details."""
+
+
 @dataclass(frozen=True, slots=True)
 class GoogleOAuthConfig:
     client_id: str
@@ -95,18 +107,15 @@ class GoogleOAuthBroker:
 
     def exchange_code(self, *, code: str, state: str) -> str:
         subject = self._verify_state(state)
-        response = self.client.post(
-            GOOGLE_TOKEN_URL,
-            data={
+        payload = self._token_request(
+            {
                 "code": code,
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
                 "redirect_uri": self.config.redirect_uri,
                 "grant_type": "authorization_code",
-            },
+            }
         )
-        response.raise_for_status()
-        payload = response.json()
         token_set = self._token_set_from_payload(payload)
         self.token_store.save(subject, token_set)
         return subject
@@ -124,24 +133,49 @@ class GoogleOAuthBroker:
         return refreshed.access_token
 
     def _refresh(self, refresh_token: str) -> GoogleTokenSet:
-        response = self.client.post(
-            GOOGLE_TOKEN_URL,
-            data={
+        payload = self._token_request(
+            {
                 "refresh_token": refresh_token,
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
                 "grant_type": "refresh_token",
-            },
+            }
         )
-        response.raise_for_status()
-        payload = response.json()
         return self._token_set_from_payload(payload, fallback_refresh_token=refresh_token)
+
+    def _token_request(self, data: dict[str, str]) -> dict:
+        try:
+            response = self.client.post(GOOGLE_TOKEN_URL, data=data)
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            if self._is_authorization_error(exc.response):
+                raise GoogleOAuthAuthorizationError("Google authorization is no longer valid") from exc
+            raise GoogleOAuthProviderError("Google OAuth token request failed") from exc
+        except httpx.RequestError as exc:
+            raise GoogleOAuthProviderError("Google OAuth network request failed") from exc
+        except ValueError as exc:
+            raise GoogleOAuthProviderError("Google OAuth returned an invalid response") from exc
+        if not isinstance(payload, dict):
+            raise GoogleOAuthProviderError("Google OAuth returned an invalid response")
+        return payload
+
+    @staticmethod
+    def _is_authorization_error(response: httpx.Response) -> bool:
+        if response.status_code not in {400, 401}:
+            return False
+        try:
+            payload = response.json()
+        except ValueError:
+            return response.status_code == 401
+        error = str(payload.get("error", "")).casefold() if isinstance(payload, dict) else ""
+        return response.status_code == 401 or error in {"invalid_grant", "invalid_token"}
 
     @staticmethod
     def _token_set_from_payload(payload: dict, *, fallback_refresh_token: str | None = None) -> GoogleTokenSet:
         access_token = str(payload.get("access_token", "")).strip()
         if not access_token:
-            raise RuntimeError("Google token response did not include access_token")
+            raise GoogleOAuthProviderError("Google token response did not include an access token")
         expires_in = int(payload.get("expires_in", 3600))
         return GoogleTokenSet(
             access_token=access_token,

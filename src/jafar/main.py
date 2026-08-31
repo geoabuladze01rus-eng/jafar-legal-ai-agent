@@ -13,7 +13,13 @@ from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .google_oauth_api import router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
-from .google_workspace_http import build_google_workspace_service_from_env
+from .google_workspace_http import (
+    GoogleWorkspaceAPIError,
+    GoogleWorkspaceAuthRequiredError,
+    GoogleWorkspaceError,
+    GoogleWorkspaceNetworkError,
+    build_google_workspace_service_from_env,
+)
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
@@ -135,10 +141,46 @@ def command(request: CommandRequest) -> CommandResponse:
                         window=workspace_route.window or "week",
                         limit=20,
                     )
+            except GoogleWorkspaceAuthRequiredError:
+                return CommandResponse(
+                    message="Google Workspace не авторизован. Выполните OAuth-подключение.",
+                    intent="google_workspace_auth_required",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
+            except GoogleWorkspaceNetworkError:
+                return CommandResponse(
+                    message="Не удалось связаться с Google Workspace. Попробуйте повторить запрос.",
+                    intent="google_workspace_network_error",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
+            except GoogleWorkspaceAPIError as exc:
+                messages = {
+                    "api_disabled": "Нужный Google API не включён для этого проекта.",
+                    "insufficient_scope": "У OAuth-подключения недостаточно разрешений Google.",
+                }
+                return CommandResponse(
+                    message=messages.get(exc.kind, "Google Workspace вернул ошибку при чтении данных."),
+                    intent="google_workspace_api_error",
+                    request_id=str(uuid4()),
+                    data={
+                        "oauth_subject": request.user_id,
+                        "google_error_kind": exc.kind,
+                        "google_status_code": exc.status_code,
+                    },
+                )
+            except GoogleWorkspaceError:
+                return CommandResponse(
+                    message="Google Workspace вернул недопустимый ответ. Данные не использованы.",
+                    intent="google_workspace_error",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": request.user_id},
+                )
             except (RuntimeError, ValueError, OSError):
                 return CommandResponse(
-                    message="Google Workspace не авторизован либо временно недоступен. Выполните OAuth-подключение.",
-                    intent="google_workspace_auth_required",
+                    message="Не удалось обработать ответ Google Workspace. Данные не использованы.",
+                    intent="google_workspace_error",
                     request_id=str(uuid4()),
                     data={"oauth_subject": request.user_id},
                 )

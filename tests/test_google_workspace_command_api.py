@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from jafar import main
+from jafar.google_workspace_http import GoogleWorkspaceAPIError, GoogleWorkspaceAuthRequiredError
 
 
 class FakeWorkspaceService:
@@ -39,10 +40,10 @@ def test_command_routes_calendar(monkeypatch):
 def test_command_reports_oauth_required(monkeypatch):
     class UnauthenticatedWorkspace:
         def inbox(self, **kwargs):
-            raise RuntimeError("not connected")
+            raise GoogleWorkspaceAuthRequiredError("not connected")
 
         def calendar_events(self, **kwargs):
-            raise RuntimeError("not connected")
+            raise GoogleWorkspaceAuthRequiredError("not connected")
 
     monkeypatch.setattr(main, "build_google_workspace_service_from_env", lambda subject=None: UnauthenticatedWorkspace())
     response = TestClient(main.app).post(
@@ -51,3 +52,20 @@ def test_command_reports_oauth_required(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["intent"] == "google_workspace_auth_required"
+
+
+def test_command_reports_google_api_error_without_requesting_oauth_again(monkeypatch):
+    class DisabledGoogleAPI:
+        def inbox(self, **kwargs):
+            raise GoogleWorkspaceAPIError(status_code=403, kind="api_disabled")
+
+    monkeypatch.setattr(main, "build_google_workspace_service_from_env", lambda subject=None: DisabledGoogleAPI())
+    response = TestClient(main.app).post(
+        "/v1/command",
+        json={"text": "Проверь почту", "user_id": "u1", "source_device": "test"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent"] == "google_workspace_api_error"
+    assert payload["data"]["google_error_kind"] == "api_disabled"

@@ -16,6 +16,7 @@ from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .legal_research_api import router as legal_research_router
 from .legal_research_runtime import build_legal_research_service_from_env
 from .matters import MatterStore
+from .natural_language_research import NaturalLanguageResearchRouter
 from .telegram_runtime import TelegramRuntime
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.8.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
 heuristic_analyzer = LegalAnalyzer()
@@ -49,6 +50,7 @@ matter_store = MatterStore()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
+natural_research_router = NaturalLanguageResearchRouter()
 _legal_research_service = build_legal_research_service_from_env()
 app.state.legal_research_service_factory = (
     (lambda _matter_id: _legal_research_service) if _legal_research_service is not None else None
@@ -98,6 +100,50 @@ def command(request: CommandRequest) -> CommandResponse:
     elif any(phrase in normalized for phrase in ("покажи мои дела", "список дел", "мои дела")):
         intent = "list_matters"
     else:
+        route = natural_research_router.route(request.text, matter_store.list_matters())
+        if route.is_research:
+            if route.matter_id is None:
+                message = (
+                    "Не удалось однозначно определить дело. Укажите фамилию клиента или номер дела."
+                    if route.ambiguous
+                    else "Укажите дело: фамилию клиента или номер дела."
+                )
+                return CommandResponse(
+                    message=message,
+                    intent="legal_research_needs_matter",
+                    request_id=str(uuid4()),
+                )
+            if _legal_research_service is None:
+                return CommandResponse(
+                    message="Контур исследования дела пока не настроен на этом сервере.",
+                    intent="legal_research_unavailable",
+                    request_id=str(uuid4()),
+                    data={"matter_id": route.matter_id},
+                )
+            try:
+                research = _legal_research_service.research(
+                    matter_id=route.matter_id,
+                    question=request.text,
+                )
+            except (ValueError, RuntimeError):
+                return CommandResponse(
+                    message="Не удалось выполнить исследование материалов дела.",
+                    intent="legal_research_failed",
+                    request_id=str(uuid4()),
+                    data={"matter_id": route.matter_id},
+                )
+            return CommandResponse(
+                message=research.answer,
+                intent="legal_research",
+                request_id=str(uuid4()),
+                data={
+                    "matter_id": route.matter_id,
+                    "citations": list(research.citations),
+                    "contradictions": list(research.contradictions),
+                    "retrieved_chunks": len(research.context.results),
+                },
+            )
+
         return CommandResponse(
             message="Команда получена. Для выполнения действия требуется дальнейшая маршрутизация intent.",
             intent="natural_language_command",

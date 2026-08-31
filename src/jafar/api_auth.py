@@ -3,7 +3,8 @@ from __future__ import annotations
 import hmac
 import os
 
-from fastapi import HTTPException, Request
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 
 def configured_api_token() -> str | None:
@@ -21,6 +22,7 @@ def validate_bearer_value(authorization: str | None) -> bool:
     return bool(supplied) and hmac.compare_digest(supplied, expected)
 
 
-def require_api_auth(request: Request) -> None:
-    if not validate_bearer_value(request.headers.get("Authorization")):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+async def api_auth_middleware(request: Request, call_next):
+    if request.url.path.startswith("/v1/") and not validate_bearer_value(request.headers.get("Authorization")):
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)

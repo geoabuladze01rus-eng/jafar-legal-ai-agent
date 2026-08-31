@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 import os
+from typing import Callable
 
 import httpx
 
@@ -12,19 +13,27 @@ from .google_workspace import WorkspaceEvent, WorkspaceMail
 
 @dataclass(slots=True)
 class GoogleHTTPClient:
-    access_token: str
+    access_token: str | None = None
+    access_token_provider: Callable[[], str | None] | None = None
     client: httpx.Client | None = None
 
     def __post_init__(self) -> None:
         if self.client is None:
             self.client = httpx.Client(timeout=20.0)
 
+    def _current_access_token(self) -> str:
+        token = self.access_token_provider() if self.access_token_provider is not None else self.access_token
+        token = (token or "").strip()
+        if not token:
+            raise RuntimeError("Google Workspace is not connected")
+        return token
+
     def get(self, url: str, *, params: dict | None = None) -> dict:
         try:
             response = self.client.get(
                 url,
                 params=params,
-                headers={"Authorization": f"Bearer {self.access_token}", "Accept": "application/json"},
+                headers={"Authorization": f"Bearer {self._current_access_token()}", "Accept": "application/json"},
             )
             response.raise_for_status()
             payload = response.json()
@@ -113,8 +122,19 @@ class GoogleCalendarHTTPProvider:
         return result
 
 
-def build_google_workspace_service_from_env():
+def build_google_workspace_service_from_env(subject: str | None = None):
     from .google_workspace import GoogleWorkspaceService
+
+    if subject:
+        from .google_oauth_api import google_oauth_broker
+
+        broker = google_oauth_broker()
+        if broker is not None:
+            transport = GoogleHTTPClient(access_token_provider=lambda: broker.access_token(subject))
+            return GoogleWorkspaceService(
+                gmail=GmailHTTPProvider(transport),
+                calendar=GoogleCalendarHTTPProvider(transport),
+            )
 
     gmail_token = os.getenv("JAFAR_GMAIL_ACCESS_TOKEN", "").strip()
     calendar_token = os.getenv("JAFAR_GOOGLE_CALENDAR_ACCESS_TOKEN", "").strip()
@@ -123,9 +143,9 @@ def build_google_workspace_service_from_env():
     gmail = None
     calendar = None
     if gmail_token or shared_token:
-        gmail = GmailHTTPProvider(GoogleHTTPClient(gmail_token or shared_token))
+        gmail = GmailHTTPProvider(GoogleHTTPClient(access_token=gmail_token or shared_token))
     if calendar_token or shared_token:
-        calendar = GoogleCalendarHTTPProvider(GoogleHTTPClient(calendar_token or shared_token))
+        calendar = GoogleCalendarHTTPProvider(GoogleHTTPClient(access_token=calendar_token or shared_token))
     if gmail is None and calendar is None:
         return None
     return GoogleWorkspaceService(gmail=gmail, calendar=calendar)

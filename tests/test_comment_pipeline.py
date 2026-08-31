@@ -6,7 +6,7 @@ def _update(text: str) -> dict:
         "update_id": 100,
         "message": {
             "message_id": 7,
-            "chat": {"id": 12345},
+            "chat": {"id": 12345, "type": "supergroup"},
             "from": {"id": 77, "username": "reader"},
             "text": text,
         },

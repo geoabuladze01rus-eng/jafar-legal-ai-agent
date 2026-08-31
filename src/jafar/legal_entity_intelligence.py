@@ -11,8 +11,27 @@ class EntityQuery:
     ogrn: str | None = None
     kpp: str | None = None
 
-    def normalized(self) -> "EntityQuery":
+    def normalized(self) -> EntityQuery:
         return EntityQuery(*(value.strip() if value else None for value in (self.name, self.inn, self.ogrn, self.kpp)))
+
+    @classmethod
+    def from_value(cls, value: str, query_type: str) -> EntityQuery:
+        if query_type not in {"name", "inn", "ogrn", "kpp"}:
+            raise ValueError(f"Unsupported entity query type: {query_type}")
+        return cls(**{query_type: value}).normalized()
+
+    @property
+    def query_type(self) -> str:
+        for key in ("inn", "ogrn", "kpp", "name"):
+            if getattr(self, key):
+                return key
+        raise ValueError("At least one entity identifier is required")
+
+    @property
+    def value(self) -> str:
+        value = getattr(self, self.query_type)
+        assert value is not None
+        return value
 
 
 @dataclass(frozen=True)
@@ -59,7 +78,7 @@ class LegalEntityIntelligence:
         for source in self.sources:
             try:
                 findings.append(source.lookup(q))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - source isolation is the registry contract.
                 findings.append(SourceFinding(source.source_key, "error", source.source_key, {}, error_to_details(exc)))
         return self.build_profile(findings)
 
@@ -107,9 +126,12 @@ class LegalEntityIntelligence:
 
     @staticmethod
     def _risk_level(risks: list[RiskFinding]) -> str:
-        if any(r.severity == "critical" for r in risks): return "critical"
-        if any(r.severity == "high" for r in risks): return "high"
-        if any(r.severity == "medium" for r in risks): return "medium"
+        if any(r.severity == "critical" for r in risks):
+            return "critical"
+        if any(r.severity == "high" for r in risks):
+            return "high"
+        if any(r.severity == "medium" for r in risks):
+            return "medium"
         return "low" if risks else "unknown"
 
     def run(self, query: EntityQuery) -> InvestigationResult:

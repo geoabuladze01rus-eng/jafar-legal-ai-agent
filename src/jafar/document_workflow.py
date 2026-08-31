@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-
 from .document_intake import ExtractedDocument
 from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
@@ -21,7 +19,7 @@ class DocumentWorkflowResult:
 
 
 class DocumentWorkflow:
-    """Orchestrates extraction, matter matching, analysis and event capture."""
+    """Analyze untrusted documents without persisting conclusions until lawyer approval."""
 
     def __init__(self, store: MatterRepository, analyzer: LegalAnalyzer,
                  matcher: MatterMatcher | None = None) -> None:
@@ -36,18 +34,5 @@ class DocumentWorkflow:
         matter = self.store.get(match.matter_id) if match else None
         effective_type = matter.matter_type if matter else matter_type
         analysis = self.analyzer.analyze(extracted.text, task, effective_type)
-        event = None
-
-        if matter:
-            event = self.store.record_document_event(
-                matter_id=matter.id,
-                title=f"Анализ документа: {document_name}",
-                event_date=datetime.now(timezone.utc),
-                description=analysis.summary,
-                source_document=document_name,
-                document_fingerprint=extracted.fingerprint,
-                deadlines=analysis.deadlines,
-            )
-
         return DocumentWorkflowResult(document_name=document_name, extracted=extracted,
-                                      match=match, analysis=analysis, event=event)
+                                      match=match, analysis=analysis, event=None)

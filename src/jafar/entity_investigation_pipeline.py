@@ -22,10 +22,11 @@ class EntityInvestigationPipeline:
         self.registry = registry
 
     def run(self, query: EntityQuery) -> InvestigationRun:
-        results = tuple(self.registry.search_all(query))
+        normalized = query.normalized()
+        results = tuple(self.registry.search_all(normalized))
         successful = sum(1 for item in results if item.status in {"success", "found"})
         failed = sum(1 for item in results if item.status in {"error", "unavailable"})
-        return InvestigationRun(query, results, successful, failed)
+        return InvestigationRun(normalized, results, successful, failed)
 
     @staticmethod
     def to_report_input(run: InvestigationRun) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 [project]
 name = "jafar-legal-ai-agent"
-version = "0.3.1"
+version = "0.13.0"
 description = "Jafar AI legal agent: document analysis, email triage, voice workflows and legal work automation."
 requires-python = ">=3.11"
 dependencies = [
@@ -17,9 +17,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+docling = ["docling>=2.118,<3"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Keep the project baseline stable across Ruff releases; stricter rule families are introduced deliberately.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/jafar"]

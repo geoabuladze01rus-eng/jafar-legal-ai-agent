@@ -76,6 +76,28 @@ class MatterRetriever:
 
     MAX_LIMIT = 50
 
+    @classmethod
+    def normalize_pre_scored(
+        cls,
+        results: Iterable[RetrievedChunk],
+        *,
+        limit: int,
+        per_document_limit: int | None = None,
+    ) -> tuple[RetrievedChunk, ...]:
+        """Apply the canonical deterministic/deduplication policy to RPC-ranked rows."""
+        bounded_limit = min(max(limit, 0), cls.MAX_LIMIT)
+        if bounded_limit == 0:
+            return ()
+        ranked = sorted(results, key=cls._ranking_key)
+        deduplicated = cls._deduplicate(ranked)
+        return tuple(
+            cls._diversify(
+                deduplicated,
+                limit=bounded_limit,
+                per_document_limit=per_document_limit,
+            )
+        )
+
     def retrieve(
         self,
         *,
@@ -121,10 +143,8 @@ class MatterRetriever:
             if score >= min_relevance:
                 ranked.append(RetrievedChunk(chunk=chunk, score=score))
 
-        ranked.sort(key=self._ranking_key)
-        deduplicated = self._deduplicate(ranked)
-        selected = self._diversify(
-            deduplicated,
+        selected = self.normalize_pre_scored(
+            ranked,
             limit=bounded_limit,
             per_document_limit=per_document_limit,
         )
@@ -132,7 +152,7 @@ class MatterRetriever:
             owner_user_id=owner_user_id,
             matter_id=matter_id,
             query=query,
-            results=tuple(selected),
+            results=selected,
         )
 
     def _score(

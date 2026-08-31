@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import os
 
-from fastapi import Header, HTTPException
+from fastapi import HTTPException, Request
 
 
 def configured_api_token() -> str | None:
@@ -11,12 +11,16 @@ def configured_api_token() -> str | None:
     return token or None
 
 
-def require_api_auth(authorization: str | None = Header(default=None)) -> None:
+def validate_bearer_value(authorization: str | None) -> bool:
     expected = configured_api_token()
     if expected is None:
-        return
+        return True
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
+        return False
     supplied = authorization.removeprefix("Bearer ").strip()
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    return bool(supplied) and hmac.compare_digest(supplied, expected)
+
+
+def require_api_auth(request: Request) -> None:
+    if not validate_bearer_value(request.headers.get("Authorization")):
+        raise HTTPException(status_code=401, detail="Unauthorized")

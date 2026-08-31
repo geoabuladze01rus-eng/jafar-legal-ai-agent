@@ -97,9 +97,9 @@ class GroundedContradiction:
 @dataclass(frozen=True, slots=True)
 class CrossDocumentReport:
     matter_id: str
-    owner_user_id: str
     contradictions: tuple[GroundedContradiction, ...]
     documents_considered: tuple[str, ...]
+    owner_user_id: str | None = None
     read_only: bool = True
 
 
@@ -109,29 +109,46 @@ class CrossDocumentContradictionService:
     def compare(
         self,
         *,
-        owner_user_id: str,
+        owner_user_id: str | None = None,
         matter_id: str,
         claims: Iterable[DocumentClaim],
     ) -> CrossDocumentReport:
-        if not owner_user_id.strip():
+        if owner_user_id is not None and not owner_user_id.strip():
             raise ValueError("owner_user_id is required")
         if not matter_id.strip():
             raise ValueError("matter_id is required")
+        supplied_claims = list(claims)
+        explicit_owners = {claim.owner_user_id for claim in supplied_claims if claim.owner_user_id}
+        if owner_user_id is None and len(explicit_owners) > 1:
+            raise ValueError("owner_user_id is required for mixed-owner claims")
+        effective_owner = owner_user_id or next(iter(explicit_owners), None)
         scoped = self._deduplicate(
             claim
-            for claim in claims
-            if claim.owner_user_id == owner_user_id and claim.matter_id == matter_id
+            for claim in supplied_claims
+            if claim.matter_id == matter_id
+            and (
+                claim.owner_user_id == effective_owner
+                if effective_owner is not None
+                else claim.owner_user_id is None
+            )
         )
         documents = tuple(sorted({claim.document_id for claim in scoped}))
         contradictions = [
             finding
             for left, right in combinations(scoped, 2)
             if left.document_id != right.document_id
-            if (finding := self._compare_pair(left, right)) is not None
+            if (
+                finding := self._compare_pair(
+                    left,
+                    right,
+                    require_explicit_context=owner_user_id is not None,
+                )
+            )
+            is not None
         ]
         contradictions.sort(key=lambda item: item.evidence_ids)
         return CrossDocumentReport(
-            owner_user_id=owner_user_id,
+            owner_user_id=effective_owner,
             matter_id=matter_id,
             contradictions=tuple(contradictions),
             documents_considered=documents,
@@ -159,6 +176,8 @@ class CrossDocumentContradictionService:
         self,
         left: DocumentClaim,
         right: DocumentClaim,
+        *,
+        require_explicit_context: bool,
     ) -> GroundedContradiction | None:
         if self._normalized(left.topic) != self._normalized(right.topic):
             return None
@@ -168,7 +187,7 @@ class CrossDocumentContradictionService:
             return None
         if not self._same_optional_context(left.event_time, right.event_time):
             return None
-        if not self._shared_explicit_context(left, right):
+        if require_explicit_context and not self._shared_explicit_context(left, right):
             return None
         if self._different_inline_dates(left.statement, right.statement):
             return None

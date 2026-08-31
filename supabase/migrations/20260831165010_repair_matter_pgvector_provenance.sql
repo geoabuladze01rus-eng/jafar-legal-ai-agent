@@ -1,5 +1,43 @@
 -- Recreate the service-only RPC after the source-traceability columns exist.
 -- The prior 12:30 migration remains valid for databases replaying the full history.
+do $$
+declare
+  vector_version text;
+  vector_major integer;
+  vector_minor integer;
+  embedding_type text;
+begin
+  select extversion into vector_version
+  from pg_extension
+  where extname = 'vector';
+
+  if vector_version is null then
+    raise exception 'pgvector extension is required for matter RAG';
+  end if;
+
+  vector_major := split_part(vector_version, '.', 1)::integer;
+  vector_minor := split_part(vector_version, '.', 2)::integer;
+  if vector_major = 0 and vector_minor < 8 then
+    raise exception 'pgvector 0.8 or newer is required for filtered iterative scans; found %',
+      vector_version;
+  end if;
+
+  select format_type(attribute.atttypid, attribute.atttypmod)
+  into embedding_type
+  from pg_attribute attribute
+  join pg_class relation on relation.oid = attribute.attrelid
+  join pg_namespace namespace on namespace.oid = relation.relnamespace
+  where namespace.nspname = 'public'
+    and relation.relname = 'document_chunks'
+    and attribute.attname = 'embedding'
+    and not attribute.attisdropped;
+
+  if embedding_type <> 'vector(1536)' then
+    raise exception 'document_chunks.embedding must be vector(1536); found %', embedding_type;
+  end if;
+end
+$$;
+
 drop function if exists public.match_matter_document_chunks(
   text,
   text,

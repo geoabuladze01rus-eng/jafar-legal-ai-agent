@@ -19,6 +19,8 @@ def test_provenance_repair_runs_after_chunk_traceability_migration():
 def test_rpc_returns_canonical_provenance_with_deterministic_ordering():
     sql = migration_sql()
 
+    assert "pgvector 0.8 or newer is required" in sql
+    assert "document_chunks.embedding must be vector(1536)" in sql
     for field in (
         "stable_chunk_id text",
         "owner_user_id text",

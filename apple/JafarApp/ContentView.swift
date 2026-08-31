@@ -1,10 +1,16 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var voice = VoiceSessionViewModel(
-        commandClient: LocalCommandClient(),
-        userId: "local-user"
-    )
+    @StateObject private var voice: VoiceSessionViewModel
+
+    init(environment: VoiceCommandEnvironment = .current()) {
+        _voice = StateObject(
+            wrappedValue: VoiceSessionViewModel(
+                commandClient: environment.client,
+                userId: environment.userId
+            )
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,16 +28,35 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Button(voice.isListening ? "Остановить" : "Голосовая команда") {
-                    Task {
-                        if voice.isListening {
-                            await voice.stopAndSend()
-                        } else {
-                            await voice.start()
+                if voice.approvalRequired {
+                    HStack {
+                        Button("Отмена") {
+                            voice.cancelPendingCommand()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Подтвердить") {
+                            Task { await voice.confirmPendingCommand() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    Button(voice.isListening ? "Остановить" : "Голосовая команда") {
+                        Task {
+                            if voice.isListening {
+                                await voice.stopAndSend()
+                            } else {
+                                await voice.start()
+                            }
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(voice.isSending)
                 }
-                .buttonStyle(.borderedProminent)
+
+                if voice.isSending {
+                    ProgressView("Джафар выполняет команду…")
+                }
 
                 if let error = voice.errorMessage {
                     Text(error)
@@ -46,5 +71,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(environment: VoiceCommandEnvironment(client: LocalCommandClient(), userId: "preview-user"))
 }

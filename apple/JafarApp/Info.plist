@@ -6,5 +6,9 @@
     <string>Джафар использует микрофон для голосовых команд.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Джафар использует распознавание речи для выполнения голосовых команд.</string>
+    <key>JAFARCommandEndpoint</key>
+    <string>$(JAFAR_COMMAND_ENDPOINT)</string>
+    <key>JAFARUserId</key>
+    <string>$(JAFAR_USER_ID)</string>
 </dict>
 </plist>

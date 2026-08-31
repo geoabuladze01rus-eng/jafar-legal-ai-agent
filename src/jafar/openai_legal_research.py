@@ -6,6 +6,7 @@ from openai import OpenAI
 
 from .config import settings
 from .matter_rag import MatterRAGContext
+from .memory_service import LongTermMemoryService
 
 
 @dataclass(slots=True)
@@ -31,14 +32,40 @@ class OpenAIEmbeddingProvider:
 class OpenAIResearchAnswerProvider:
     client: OpenAI | None = None
     model: str = settings.model_name
+    memory_service: LongTermMemoryService | None = None
+    memory_limit: int = 6
 
     def __post_init__(self) -> None:
         if self.client is None:
             self.client = OpenAI(api_key=settings.openai_api_key)
 
+    def _memory_context(self, question: str, matter_id: str) -> str:
+        if self.memory_service is None:
+            return ""
+        try:
+            memories = self.memory_service.recall(
+                question,
+                matter_id=matter_id,
+                limit=self.memory_limit,
+                min_similarity=0.20,
+            )
+        except (ValueError, RuntimeError):
+            return ""
+        if not memories:
+            return ""
+        return "\n".join(
+            f"[memory:{item.memory.id}] kind={item.memory.kind.value}; {item.memory.content}"
+            for item in memories
+        )
+
     def answer(self, *, question: str, context: MatterRAGContext) -> str:
         if not context.results:
             return "В материалах выбранного дела недостаточно данных для подтвержденного ответа."
+
+        memory_context = self._memory_context(question, context.matter_id)
+        user_content = f"QUESTION:\n{question}\n\nMATTER CONTEXT:\n{context.render()}"
+        if memory_context:
+            user_content += f"\n\nLONG-TERM MEMORY:\n{memory_context}"
 
         response = self.client.responses.create(
             model=self.model,
@@ -46,15 +73,18 @@ class OpenAIResearchAnswerProvider:
                 {
                     "role": "system",
                     "content": (
-                        "You are Jafar Legal Research. Answer only from the supplied matter context. "
+                        "You are Jafar Legal Research. Answer factual and legal questions only from the supplied matter context. "
                         "Do not invent facts, law, citations, dates, or procedural events. "
-                        "Every factual proposition must cite one or more supplied citation tokens exactly. "
+                        "Every factual proposition about the matter must cite one or more supplied document citation tokens exactly. "
+                        "Long-term memory may contain user preferences, prior strategic decisions, workflow rules, or notes. "
+                        "Use it only to preserve continuity and preferences; never treat memory as documentary evidence or as proof of a legal fact. "
+                        "If memory conflicts with documents, the documents control and you must state the conflict. "
                         "If evidence conflicts or is insufficient, say so explicitly."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"QUESTION:\n{question}\n\nMATTER CONTEXT:\n{context.render()}",
+                    "content": user_content,
                 },
             ],
         )

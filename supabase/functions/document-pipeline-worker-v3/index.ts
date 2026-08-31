@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { semanticLegalChunks } from "../_shared/legal_chunking.ts";
 
 const MODEL = "gpt-5.6-luna";
 const EMBED_MODEL = "text-embedding-3-small";
@@ -31,59 +32,15 @@ function isInternal(req: Request): boolean {
   return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
 }
 
-function splitOversizedBlock(block: string, maxChars = 3400): string[] {
-  if (block.length <= maxChars) return [block];
-  const sentences = block.split(/(?<=[.!?;:])\s+(?=[А-ЯЁA-Z0-9])/u);
-  const parts: string[] = [];
-  let current = "";
-  for (const sentenceRaw of sentences) {
-    const sentence = sentenceRaw.trim();
-    if (!sentence) continue;
-    const candidate = current ? `${current} ${sentence}` : sentence;
-    if (candidate.length <= maxChars) {
-      current = candidate;
-      continue;
-    }
-    if (current) parts.push(current);
-    current = "";
-    if (sentence.length <= maxChars) {
-      current = sentence;
-      continue;
-    }
-    for (let start = 0; start < sentence.length; start += maxChars) {
-      const hard = sentence.slice(start, start + maxChars).trim();
-      if (hard) parts.push(hard);
-    }
-  }
-  if (current) parts.push(current);
-  return parts;
-}
-
-function semanticLegalChunks(text: string, targetChars = 2600, maxChars = 3400): string[] {
-  const normalized = text.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-  const blocks = normalized
-    .split(/\n\s*\n/u)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .flatMap((block) => splitOversizedBlock(block, maxChars));
-  const chunks: string[] = [];
-  let current: string[] = [];
-  for (const block of blocks) {
-    const candidate = [...current, block].join("\n\n");
-    if (current.length && candidate.length > maxChars) {
-      chunks.push(current.join("\n\n"));
-      current = [];
-    }
-    current.push(block);
-    const joined = current.join("\n\n");
-    if (joined.length >= targetChars && /[.;:]$/u.test(block)) {
-      chunks.push(joined);
-      current = [];
-    }
-  }
-  if (current.length) chunks.push(current.join("\n\n"));
-  return chunks;
+async function stableChunkId(pageNumber: number, chunk: {
+  content: string;
+  sourceStart: number;
+  sourceEnd: number;
+}): Promise<string> {
+  const payload = `v1:${pageNumber}:${chunk.sourceStart}:${chunk.sourceEnd}:${chunk.content}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `v1:${hash}`;
 }
 
 Deno.serve(async (req) => {
@@ -139,12 +96,17 @@ Deno.serve(async (req) => {
       for (const page of pages) {
         const text = String(page.extracted_text ?? "").replace(/\r\n/g, "\n").trim();
         if (!text) continue;
-        for (const content of semanticLegalChunks(text)) {
+        for (const chunk of semanticLegalChunks(text)) {
+          const stableChunk = await stableChunkId(page.page_number, chunk);
           rows.push({
             document_id: doc.id,
             chunk_index: chunkIndex++,
-            content,
+            content: chunk.content,
             source_page: page.page_number,
+            stable_chunk_id: stableChunk,
+            source_section: chunk.section,
+            source_start: chunk.sourceStart,
+            source_end: chunk.sourceEnd,
           });
         }
       }

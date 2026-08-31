@@ -38,6 +38,7 @@ class DocumentExtractor:
     """
 
     MAX_BYTES = 20 * 1024 * 1024
+    MAX_TEXT_CHARS = 5_000_000
     SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
     def __init__(
@@ -63,6 +64,8 @@ class DocumentExtractor:
             text = self.parser.parse(filename, content, media_type)
         except DocumentParserError as exc:
             raise DocumentExtractionError(str(exc)) from exc
+        if len(text) > self.MAX_TEXT_CHARS:
+            raise DocumentExtractionError("Extracted document text exceeds the 5,000,000 character limit")
         text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
         if not text:
             raise DocumentExtractionError("No text could be extracted from the document")

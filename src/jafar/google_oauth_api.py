@@ -3,12 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
-from .google_oauth import GoogleOAuthBroker, GoogleOAuthConfig, InMemoryGoogleTokenStore
+from .google_oauth import GoogleOAuthBroker, GoogleOAuthConfig
+from .supabase_google_token_store import build_google_token_store_from_env
 
 router = APIRouter(prefix="/v1/oauth/google", tags=["google-oauth"])
 
 _config = GoogleOAuthConfig.from_env()
-_token_store = InMemoryGoogleTokenStore()
+_token_store = build_google_token_store_from_env()
 _broker = GoogleOAuthBroker(_config, _token_store) if _config is not None else None
 
 

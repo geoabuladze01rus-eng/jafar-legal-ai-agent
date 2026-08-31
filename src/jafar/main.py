@@ -13,6 +13,8 @@ from .document_workflow import DocumentWorkflow
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
+from .legal_research_api import router as legal_research_router
+from .legal_research_runtime import build_legal_research_service_from_env
 from .matters import MatterStore
 from .telegram_runtime import TelegramRuntime
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
@@ -38,14 +40,19 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
 app.include_router(legal_entity_router)
+app.include_router(legal_research_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
+_legal_research_service = build_legal_research_service_from_env()
+app.state.legal_research_service_factory = (
+    (lambda _matter_id: _legal_research_service) if _legal_research_service is not None else None
+)
 
 
 class HealthResponse(BaseModel):

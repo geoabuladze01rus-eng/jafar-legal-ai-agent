@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-from io import BytesIO
 from pathlib import Path
+
+from .document_parsers import (
+    DocumentParser,
+    DocumentParserError,
+    NativeDocumentParser,
+    build_document_parser,
+)
 
 
 @dataclass(frozen=True)
@@ -24,52 +30,60 @@ class DocumentExtractionError(ValueError):
 
 
 class DocumentExtractor:
-    """Extract text from legal documents supported by Jafar."""
+    """Extract text from legal documents through a replaceable parser provider.
+
+    The default remains the dependency-light native parser for backwards compatibility.
+    Set ``prefer_docling=True`` (or inject a parser) to use local layout-aware parsing with
+    automatic native fallback.
+    """
 
     MAX_BYTES = 20 * 1024 * 1024
     SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
-    def extract(self, filename: str, content: bytes, media_type: str | None = None) -> ExtractedDocument:
+    def __init__(
+        self,
+        parser: DocumentParser | None = None,
+        *,
+        prefer_docling: bool = False,
+    ) -> None:
+        self.parser = parser or build_document_parser(prefer_docling=prefer_docling)
+
+    def extract(
+        self,
+        filename: str,
+        content: bytes,
+        media_type: str | None = None,
+    ) -> ExtractedDocument:
         if len(content) > self.MAX_BYTES:
             raise DocumentExtractionError("Document exceeds the 20 MB limit")
         extension = Path(filename).suffix.lower()
-        if extension not in self.SUPPORTED_EXTENSIONS:
+        if not self.parser.supports(filename, media_type):
             raise DocumentExtractionError(f"Unsupported document format: {extension or 'unknown'}")
-        if extension in {".txt", ".md", ".markdown"}:
-            text = content.decode("utf-8-sig", errors="replace")
-        elif extension == ".pdf":
-            text = self._extract_pdf(content)
-        else:
-            text = self._extract_docx(content)
+        try:
+            text = self.parser.parse(filename, content, media_type)
+        except DocumentParserError as exc:
+            raise DocumentExtractionError(str(exc)) from exc
         text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
         if not text:
             raise DocumentExtractionError("No text could be extracted from the document")
-        return ExtractedDocument(filename=filename, media_type=media_type or "application/octet-stream", text=text)
+        return ExtractedDocument(
+            filename=filename,
+            media_type=media_type or "application/octet-stream",
+            text=text,
+        )
 
     @staticmethod
     def _extract_pdf(content: bytes) -> str:
+        """Compatibility shim for callers using the former private helper."""
         try:
-            from pypdf import PdfReader
-        except ImportError as exc:
-            raise DocumentExtractionError("PDF support is not installed") from exc
-        try:
-            reader = PdfReader(BytesIO(content))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception as exc:
-            raise DocumentExtractionError("Unable to read PDF document") from exc
+            return NativeDocumentParser._extract_pdf(content)
+        except DocumentParserError as exc:
+            raise DocumentExtractionError(str(exc)) from exc
 
     @staticmethod
     def _extract_docx(content: bytes) -> str:
+        """Compatibility shim for callers using the former private helper."""
         try:
-            from docx import Document
-        except ImportError as exc:
-            raise DocumentExtractionError("DOCX support is not installed") from exc
-        try:
-            document = Document(BytesIO(content))
-            paragraphs = [paragraph.text for paragraph in document.paragraphs]
-            for table in document.tables:
-                for row in table.rows:
-                    paragraphs.append(" | ".join(cell.text for cell in row.cells))
-            return "\n".join(paragraphs)
-        except Exception as exc:
-            raise DocumentExtractionError("Unable to read DOCX document") from exc
+            return NativeDocumentParser._extract_docx(content)
+        except DocumentParserError as exc:
+            raise DocumentExtractionError(str(exc)) from exc

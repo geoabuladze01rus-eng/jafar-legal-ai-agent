@@ -5,6 +5,7 @@ import os
 from supabase import create_client
 
 from .legal_research_service import LegalResearchService
+from .memory_runtime import build_memory_service_from_env
 from .openai_legal_research import OpenAIEmbeddingProvider, OpenAIResearchAnswerProvider
 from .supabase_matter_rag import SupabaseMatterRAG
 
@@ -24,8 +25,9 @@ def build_legal_research_service_from_env() -> LegalResearchService | None:
         return None
 
     client = create_client(url, service_role_key)
+    memory_service = build_memory_service_from_env()
     return LegalResearchService(
         embeddings=OpenAIEmbeddingProvider(),
         retrieval=SupabaseMatterRAG(client=client, owner_user_id=owner_user_id),
-        answers=OpenAIResearchAnswerProvider(),
+        answers=OpenAIResearchAnswerProvider(memory_service=memory_service),
     )

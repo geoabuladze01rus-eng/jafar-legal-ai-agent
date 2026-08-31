@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from .contradiction_detector import ContradictionGapDetector
 from .cross_document_analysis import (
     CrossDocumentContradictionService,
     CrossDocumentReport,
@@ -39,6 +40,13 @@ class LegalResearchResult:
     citations: tuple[str, ...]
     contradiction_report: CrossDocumentReport | None
     context: MatterRAGContext
+
+    @property
+    def contradictions(self) -> tuple[dict, ...]:
+        if self.contradiction_report is None:
+            return ()
+        rows = ContradictionGapDetector.serialize(list(self.contradiction_report.contradictions))
+        return tuple(rows)
 
 
 @dataclass(slots=True)

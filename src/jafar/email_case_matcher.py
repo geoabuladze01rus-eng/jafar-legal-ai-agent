@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +15,16 @@ class CaseCandidate:
 
 class EmailCaseMatcher:
     """Ranks existing cases against an email without silently attaching it."""
+
+    @staticmethod
+    def _keyword_matches(keyword: str, tokens: set[str]) -> bool:
+        normalized = keyword.lower().strip()
+        if normalized in tokens:
+            return True
+        if len(normalized) < 6 or not normalized.isalpha():
+            return False
+        stem = normalized[:-2]
+        return any(token.startswith(stem) for token in tokens)
 
     def match(self, *, subject: str, body: str, cases: Iterable[dict[str, Any]]) -> list[CaseCandidate]:
         text = f"{subject}\n{body}".lower()
@@ -29,7 +40,7 @@ class EmailCaseMatcher:
                     score += 0.7
                     reasons.append(f"exact:{key}")
             for value in case.get("keywords", []):
-                if str(value).lower() in tokens:
+                if self._keyword_matches(str(value), tokens):
                     score += 0.1
                     reasons.append(f"keyword:{value}")
             if score:

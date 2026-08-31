@@ -27,7 +27,7 @@ def test_status_store_records_stored_processing_completed():
     message = InboxMessage(
         message_id="msg-status-test", sender="client@example.test", subject="Contract",
         received_at=datetime.now(timezone.utc), body_text="Review",
-        attachments=(InboxAttachment("contract.pdf", b"contract", "application/pdf"),),
+        attachments=(InboxAttachment("contract.txt", b"contract", "text/plain"),),
     )
 
     processor.process_message(message)
@@ -35,4 +35,4 @@ def test_status_store_records_stored_processing_completed():
     assert [call[2] for call in statuses.calls] == [
         DocumentStatus.STORED, DocumentStatus.PROCESSING, DocumentStatus.COMPLETED
     ]
-    assert all(call[1] == "msg-status-test/contract.pdf" for call in statuses.calls)
+    assert all(call[1] == "msg-status-test/contract.txt" for call in statuses.calls)

@@ -70,6 +70,8 @@ class DoclingDocumentParser:
     """
 
     SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm"}
+    MAX_BYTES = 20 * 1024 * 1024
+    MAX_PAGES = 250
 
     def __init__(self, converter=None, stream_factory=None) -> None:
         self._converter = converter
@@ -79,11 +81,17 @@ class DoclingDocumentParser:
         return Path(filename).suffix.lower() in self.SUPPORTED_EXTENSIONS
 
     def parse(self, filename: str, content: bytes, media_type: str | None = None) -> str:
+        if len(content) > self.MAX_BYTES:
+            raise DocumentParserError("Document exceeds the 20 MB limit")
         converter = self._converter or self._build_converter()
         stream_factory = self._stream_factory or self._build_stream_factory()
         try:
-            source = stream_factory(name=filename, stream=BytesIO(content))
-            result = converter.convert(source, max_file_size=len(content))
+            source = stream_factory(name=Path(filename).name, stream=BytesIO(content))
+            result = converter.convert(
+                source,
+                max_file_size=self.MAX_BYTES,
+                max_num_pages=self.MAX_PAGES,
+            )
             document = result.document
             if hasattr(document, "export_to_markdown"):
                 return document.export_to_markdown()

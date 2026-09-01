@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .command_runtime import JafarCommandRuntime
@@ -14,10 +14,11 @@ from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
-from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
+from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
-from .model_router import ModelRequest, ModelRouter
+from .model_router import ModelRouter
 from .ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
+from .routed_legal_analyzer import RoutedLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
@@ -49,9 +50,10 @@ model_providers = {"ollama": ollama_analyzer}
 if openai_analyzer is not None:
     model_providers["openai"] = openai_analyzer
 model_router = ModelRouter(model_providers)
+routed_analyzer = RoutedLegalAnalyzer(model_router, heuristic_analyzer)
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()
-document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
+document_workflow = DocumentWorkflow(matter_store, routed_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 
 
@@ -117,41 +119,9 @@ def command(request: CommandRequest) -> CommandResponse:
     )
 
 
-def _provider_analyze(
-    text: str,
-    task: DocumentTask,
-    matter_type: MatterType,
-) -> LegalAnalysis | None:
-    request = ModelRequest(
-        prompt=text,
-        task=task.value,
-        matter_type=matter_type.value,
-        confidential=True,
-    )
-    try:
-        responses = model_router.run(request)
-    except RuntimeError:
-        return None
-
-    payload = responses[0].metadata.get("legal_analysis")
-    if not isinstance(payload, dict):
-        return None
-    try:
-        return LegalAnalysis.model_validate(payload)
-    except ValidationError:
-        return None
-
-
-def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
-    provider_analysis = _provider_analyze(text, task, matter_type)
-    if provider_analysis is not None:
-        return provider_analysis
-    return heuristic_analyzer.analyze(text, task, matter_type)
-
-
 @app.post("/v1/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalysisRequest) -> AnalysisResponse:
-    analysis = _analyze(request.text, request.task, request.matter_type)
+    analysis = routed_analyzer.analyze(request.text, request.task, request.matter_type)
     if request.matter_id:
         matter = matter_store.get(request.matter_id)
         if matter is None:
@@ -184,10 +154,6 @@ async def analyze_document(
 
     if matter_id and matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
-
-    provider_analysis = _provider_analyze(extracted, document_task, matter_type)
-    if provider_analysis is not None:
-        return AnalysisResponse(analysis=provider_analysis, matter_id=matter_id)
 
     result = document_workflow.process(
         file.filename or "document",

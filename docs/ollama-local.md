@@ -30,11 +30,12 @@ OLLAMA_TIMEOUT_SECONDS=120
 OLLAMA_HEALTH_TIMEOUT_SECONDS=0.35
 OLLAMA_KEEP_ALIVE=5m
 OLLAMA_THINK=false
+CONFIDENTIAL_CLOUD_FALLBACK=false
 ```
 
 For the confidential local route, `OLLAMA_BASE_URL` must resolve to a loopback host: `127.0.0.1`, `localhost`, or `::1`. Jafar fails closed instead of treating a LAN or remote Ollama server as local.
 
-An OpenAI API key is optional for local-only development. When configured, OpenAI is an allowed fallback for confidential legal analysis if the local Ollama model is unavailable.
+Confidential legal text stays local by default. If Ollama is unavailable, Jafar uses the deterministic local analyzer instead of silently sending the document to a cloud provider. Set `CONFIDENTIAL_CLOUD_FALLBACK=true` only when cloud fallback for confidential text has been explicitly approved and an OpenAI API key is configured.
 
 ## 3. Start Jafar
 
@@ -63,9 +64,10 @@ curl -X POST http://127.0.0.1:8000/v1/analyze \
 ## Routing rules
 
 - Confidential text: loopback Ollama first.
-- If Ollama is disabled, unavailable, remote, or the configured model is not installed: OpenAI may be used when configured and permitted.
-- If no permitted AI provider is available: Jafar falls back to the existing heuristic analyzer.
+- Ollama unavailable, disabled, remote, or model missing: deterministic local analyzer.
+- Confidential OpenAI fallback: only with `CONFIDENTIAL_CLOUD_FALLBACK=true`.
 - Non-confidential specialist tasks keep the existing provider routing rules.
+- Document uploads always continue through Jafar's matter matching and event/deadline capture workflow after model selection.
 
 ## Structured output
 

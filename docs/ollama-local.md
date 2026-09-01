@@ -32,6 +32,8 @@ OLLAMA_KEEP_ALIVE=5m
 OLLAMA_THINK=false
 ```
 
+For the confidential local route, `OLLAMA_BASE_URL` must resolve to a loopback host: `127.0.0.1`, `localhost`, or `::1`. Jafar fails closed instead of treating a LAN or remote Ollama server as local.
+
 An OpenAI API key is optional for local-only development. When configured, OpenAI is an allowed fallback for confidential legal analysis if the local Ollama model is unavailable.
 
 ## 3. Start Jafar
@@ -60,8 +62,8 @@ curl -X POST http://127.0.0.1:8000/v1/analyze \
 
 ## Routing rules
 
-- Confidential text: Ollama first.
-- If Ollama is disabled, unavailable, or the configured model is not installed: OpenAI may be used when configured and permitted.
+- Confidential text: loopback Ollama first.
+- If Ollama is disabled, unavailable, remote, or the configured model is not installed: OpenAI may be used when configured and permitted.
 - If no permitted AI provider is available: Jafar falls back to the existing heuristic analyzer.
 - Non-confidential specialist tasks keep the existing provider routing rules.
 

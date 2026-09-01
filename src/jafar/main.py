@@ -10,6 +10,7 @@ from .config import settings
 from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .google_oauth_api import router as google_oauth_router
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
@@ -38,8 +39,9 @@ async def lifespan(app: FastAPI):
             telegram_runtime = None
 
 
-app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.6.1", lifespan=lifespan)
 app.include_router(legal_entity_router)
+app.include_router(google_oauth_router)
 heuristic_analyzer = LegalAnalyzer()
 openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
 matter_store = MatterStore()

@@ -8,6 +8,8 @@ import hmac
 import json
 import os
 import secrets
+import threading
+import time
 from urllib.parse import urlencode
 
 import httpx
@@ -19,6 +21,7 @@ DEFAULT_SCOPES = (
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
 )
+OAUTH_STATE_TTL_SECONDS = 600
 
 
 class GoogleOAuthError(RuntimeError):
@@ -85,14 +88,62 @@ class InMemoryGoogleTokenStore(GoogleTokenStore):
         self._tokens[subject] = token_set
 
 
+class GoogleOAuthStateStore:
+    """One-time CSRF state contract.
+
+    Multi-instance production deployments should replace the in-memory implementation
+    with a shared atomic store. The signed state remains independently verifiable.
+    """
+
+    def remember(self, state: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def consume(self, state: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+
+class InMemoryGoogleOAuthStateStore(GoogleOAuthStateStore):
+    def __init__(self, ttl_seconds: int = OAUTH_STATE_TTL_SECONDS) -> None:
+        self.ttl_seconds = ttl_seconds
+        self._states: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def remember(self, state: str) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self._purge_expired(now)
+            self._states[state] = now + self.ttl_seconds
+
+    def consume(self, state: str) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self._purge_expired(now)
+            expires_at = self._states.pop(state, None)
+        if expires_at is None or expires_at < now:
+            raise ValueError("OAuth state is unknown, expired, or already consumed")
+
+    def _purge_expired(self, now: float) -> None:
+        for state, expires_at in tuple(self._states.items()):
+            if expires_at < now:
+                self._states.pop(state, None)
+
+
 class GoogleOAuthBroker:
-    def __init__(self, config: GoogleOAuthConfig, token_store: GoogleTokenStore, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        config: GoogleOAuthConfig,
+        token_store: GoogleTokenStore,
+        client: httpx.Client | None = None,
+        state_store: GoogleOAuthStateStore | None = None,
+    ) -> None:
         self.config = config
         self.token_store = token_store
         self.client = client or httpx.Client(timeout=20.0)
+        self.state_store = state_store or InMemoryGoogleOAuthStateStore()
 
     def authorization_url(self, subject: str) -> str:
         state = self._sign_state(subject)
+        self.state_store.remember(state)
         params = {
             "client_id": self.config.client_id,
             "redirect_uri": self.config.redirect_uri,
@@ -205,11 +256,12 @@ class GoogleOAuthBroker:
                 raise ValueError("invalid state signature")
             payload = json.loads(base64.urlsafe_b64decode(encoded_text + "=" * (-len(encoded_text) % 4)))
             issued_at = datetime.fromtimestamp(int(payload["iat"]), tz=timezone.utc)
-            if issued_at < datetime.now(timezone.utc) - timedelta(minutes=10):
+            if issued_at < datetime.now(timezone.utc) - timedelta(seconds=OAUTH_STATE_TTL_SECONDS):
                 raise ValueError("expired state")
             subject = str(payload["sub"]).strip()
             if not subject:
                 raise ValueError("empty subject")
+            self.state_store.consume(state)
             return subject
         except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            raise ValueError("Invalid or expired Google OAuth state") from exc
+            raise ValueError("Invalid, expired, or already used Google OAuth state") from exc

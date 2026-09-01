@@ -1,6 +1,14 @@
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
-from jafar.google_oauth import GoogleOAuthBroker, GoogleOAuthConfig, GoogleTokenSet, InMemoryGoogleTokenStore
+import pytest
+
+from jafar.google_oauth import (
+    GoogleOAuthBroker,
+    GoogleOAuthConfig,
+    GoogleTokenSet,
+    InMemoryGoogleTokenStore,
+)
 
 
 class FakeResponse:
@@ -30,13 +38,15 @@ def make_broker():
     return GoogleOAuthBroker(config, InMemoryGoogleTokenStore(), client=FakeClient())
 
 
+def extract_state(url: str) -> str:
+    return parse_qs(urlparse(url).query)["state"][0]
+
+
 def test_authorization_url_and_code_exchange_round_trip():
     broker = make_broker()
-    url = broker.authorization_url("user-1")
-    state = url.split("state=", 1)[1].split("&", 1)[0]
-    from urllib.parse import unquote
+    state = extract_state(broker.authorization_url("user-1"))
 
-    subject = broker.exchange_code(code="code", state=unquote(state))
+    subject = broker.exchange_code(code="code", state=state)
     assert subject == "user-1"
     assert broker.access_token("user-1") == "a1"
 
@@ -57,14 +67,20 @@ def test_refreshes_expiring_access_token():
 
 def test_rejects_tampered_state():
     broker = make_broker()
-    url = broker.authorization_url("user-1")
-    state = url.split("state=", 1)[1].split("&", 1)[0]
-    from urllib.parse import unquote
+    state = extract_state(broker.authorization_url("user-1"))
 
-    state = unquote(state)
-    try:
+    with pytest.raises(ValueError, match="Invalid, expired, or already used"):
         broker.exchange_code(code="code", state=state + "x")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("tampered OAuth state must be rejected")
+
+
+def test_oauth_state_can_be_consumed_only_once():
+    broker = make_broker()
+    state = extract_state(broker.authorization_url("user-1"))
+
+    assert broker.exchange_code(code="first-code", state=state) == "user-1"
+    assert len(broker.client.calls) == 1
+
+    with pytest.raises(ValueError, match="already used"):
+        broker.exchange_code(code="replayed-code", state=state)
+
+    assert len(broker.client.calls) == 1

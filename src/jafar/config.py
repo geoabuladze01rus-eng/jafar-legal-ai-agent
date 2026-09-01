@@ -9,6 +9,15 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.6"
+
+    ollama_enabled: bool = True
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_timeout_seconds: float = 120.0
+    ollama_health_timeout_seconds: float = 0.35
+    ollama_keep_alive: str = "5m"
+    ollama_think: bool = False
+
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False
     telegram_production_send: bool = False

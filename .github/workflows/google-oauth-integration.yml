@@ -1,0 +1,46 @@
+name: Google OAuth Integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/jafar/google_oauth.py'
+      - 'src/jafar/google_oauth_api.py'
+      - 'src/jafar/config.py'
+      - 'src/jafar/main.py'
+      - 'tests/test_google_oauth.py'
+      - 'tests/test_google_oauth_api.py'
+      - 'docs/google-oauth.md'
+      - '.github/workflows/google-oauth-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint Google OAuth integration surface
+        run: >-
+          ruff check
+          src/jafar/google_oauth.py
+          src/jafar/google_oauth_api.py
+          src/jafar/config.py
+          tests/test_google_oauth.py
+          tests/test_google_oauth_api.py
+      - name: Compile sources
+        run: python -m compileall -q src
+      - name: Run Google OAuth regression tests
+        run: >-
+          pytest -q
+          tests/test_google_oauth.py
+          tests/test_google_oauth_api.py

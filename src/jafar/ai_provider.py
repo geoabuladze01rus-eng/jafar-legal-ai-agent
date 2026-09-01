@@ -90,7 +90,12 @@ class OpenAILegalAnalyzer:
         except ValueError:
             task = DocumentTask.SUMMARIZE
 
-        analysis = self.analyze(text=request.prompt, task=task)
+        try:
+            matter_type = MatterType(request.matter_type) if request.matter_type else MatterType.GENERAL
+        except ValueError:
+            matter_type = MatterType.GENERAL
+
+        analysis = self.analyze(text=request.prompt, task=task, matter_type=matter_type)
         return ModelResponse(
             provider=self.key,
             model=self.config.model,

@@ -1,17 +1,18 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
-import os
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .api_auth import api_auth_middleware
+from .command_runtime import JafarCommandRuntime
 from .config import settings
-from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .domains import DocumentTask, MatterType
 from .google_oauth_api import router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
 from .google_workspace_http import (
@@ -30,10 +31,12 @@ from .matter_runtime import build_matter_repository_from_env
 from .memory_command_router import NaturalLanguageMemoryRouter
 from .memory_commands import MemoryCommandExecutor
 from .memory_runtime import build_memory_service_from_env
+from .model_router import ModelRouter
+from .ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
 from .persistent_matter_catalog import PersistentMatterCatalog
+from .privacy_policy import ProviderPrivacyPolicy
+from .routed_legal_analyzer import RoutedLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
-from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
-from .command_runtime import JafarCommandRuntime
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -60,11 +63,27 @@ app.middleware("http")(api_auth_middleware)
 app.include_router(legal_entity_router)
 app.include_router(legal_research_router)
 app.include_router(google_oauth_router)
+
 heuristic_analyzer = LegalAnalyzer()
-openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if os.getenv("OPENAI_API_KEY") else None
+ollama_analyzer = OllamaLegalAnalyzer(config=OllamaProviderConfig())
+openai_analyzer = (
+    OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.openai_api_key else None
+)
+model_providers = {"ollama": ollama_analyzer}
+if openai_analyzer is not None:
+    model_providers["openai"] = openai_analyzer
+confidential_providers = (
+    ("ollama", "openai")
+    if settings.confidential_cloud_fallback and openai_analyzer is not None
+    else ("ollama",)
+)
+privacy_policy = ProviderPrivacyPolicy(confidential_providers=confidential_providers)
+model_router = ModelRouter(model_providers, privacy_policy=privacy_policy)
+routed_analyzer = RoutedLegalAnalyzer(model_router, heuristic_analyzer)
+
 matter_store = build_matter_repository_from_env()
 document_extractor = DocumentExtractor()
-document_workflow = DocumentWorkflow(matter_store, heuristic_analyzer)
+document_workflow = DocumentWorkflow(matter_store, routed_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
 persistent_matter_catalog = PersistentMatterCatalog(matter_store)
 workspace_router = NaturalLanguageWorkspaceRouter()
@@ -291,9 +310,7 @@ def command(request: CommandRequest) -> CommandResponse:
 
 
 def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
-    if openai_analyzer is not None:
-        return openai_analyzer.analyze(text=text, task=task, matter_type=matter_type)
-    return heuristic_analyzer.analyze(text, task, matter_type)
+    return routed_analyzer.analyze(text, task, matter_type)
 
 
 @app.post("/v1/analyze", response_model=AnalysisResponse)
@@ -316,7 +333,11 @@ async def analyze_document(
 ) -> AnalysisResponse:
     try:
         content = await file.read(document_extractor.MAX_BYTES + 1)
-        extracted = document_extractor.extract(filename=file.filename or "document", content=content, media_type=file.content_type)
+        extracted = document_extractor.extract(
+            filename=file.filename or "document",
+            content=content,
+            media_type=file.content_type,
+        )
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -328,12 +349,17 @@ async def analyze_document(
     if matter_id and matter_store.get(matter_id) is None:
         raise HTTPException(status_code=404, detail="Matter not found")
 
-    if openai_analyzer is not None:
-        analysis = openai_analyzer.analyze(text=extracted, task=document_task, matter_type=matter_type)
-        return AnalysisResponse(analysis=analysis, matter_id=matter_id)
-
-    result = document_workflow.process(file.filename or "document", extracted, document_task, matter_type)
-    return AnalysisResponse(analysis=result.analysis, matter_id=result.match.matter_id if result.match else matter_id)
+    result = document_workflow.process(
+        file.filename or "document",
+        extracted,
+        document_task,
+        matter_type,
+        matter_id=matter_id,
+    )
+    return AnalysisResponse(
+        analysis=result.analysis,
+        matter_id=result.match.matter_id if result.match else matter_id,
+    )
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

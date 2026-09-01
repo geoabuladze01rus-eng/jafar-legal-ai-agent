@@ -1,0 +1,37 @@
+name: Ollama Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release/jafar-2.0-consolidation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Ruff
+        run: ruff check .
+      - name: Compile sources
+        run: python -m compileall -q src
+      - name: Ollama and routing tests
+        run: >-
+          pytest -q
+          tests/test_ollama_provider.py
+          tests/test_routed_legal_analyzer.py
+          tests/test_multimodel_router.py
+          tests/test_privacy_policy.py
+      - name: Full Python suite
+        run: pytest -q

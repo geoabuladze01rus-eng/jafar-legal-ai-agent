@@ -45,7 +45,7 @@ class SupabaseGoogleTokenStore(GoogleTokenStore):
         ).execute()
 
 
-def build_google_token_store_from_env() -> GoogleTokenStore:
+def build_google_token_store_from_env(*, require_persistent: bool = False) -> GoogleTokenStore:
     url = os.getenv("JAFAR_SUPABASE_URL", "").strip()
     service_key = os.getenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", "").strip()
     encryption_key = os.getenv("JAFAR_GOOGLE_TOKEN_ENCRYPTION_KEY", "").strip()
@@ -53,6 +53,12 @@ def build_google_token_store_from_env() -> GoogleTokenStore:
         from supabase import create_client
 
         return SupabaseGoogleTokenStore(create_client(url, service_key), encryption_key)
+
+    if require_persistent:
+        raise RuntimeError(
+            "Persistent Google OAuth token storage requires Supabase URL, service-role key, "
+            "and token encryption key"
+        )
 
     from .google_oauth import InMemoryGoogleTokenStore
 

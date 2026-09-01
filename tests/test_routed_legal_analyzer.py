@@ -9,6 +9,7 @@ from jafar.legal_analysis import LegalAnalyzer
 from jafar.legal_models import Matter
 from jafar.matters import MatterStore
 from jafar.model_router import ModelRequest, ModelResponse, ModelRouter
+from jafar.privacy_policy import ProviderPrivacyPolicy
 from jafar.routed_legal_analyzer import RoutedLegalAnalyzer
 
 
@@ -42,9 +43,16 @@ class FakeOllamaProvider:
         )
 
 
+def make_local_router(provider: FakeOllamaProvider) -> ModelRouter:
+    return ModelRouter(
+        {"ollama": provider},
+        privacy_policy=ProviderPrivacyPolicy(confidential_providers=("ollama",)),
+    )
+
+
 def test_routed_analyzer_uses_local_provider_for_confidential_legal_text() -> None:
     provider = FakeOllamaProvider()
-    analyzer = RoutedLegalAnalyzer(ModelRouter({"ollama": provider}), LegalAnalyzer())
+    analyzer = RoutedLegalAnalyzer(make_local_router(provider), LegalAnalyzer())
 
     analysis = analyzer.analyze(
         "Документ по уголовному делу.",
@@ -61,7 +69,7 @@ def test_routed_analyzer_uses_local_provider_for_confidential_legal_text() -> No
 
 def test_routed_analyzer_falls_back_when_local_provider_is_unavailable() -> None:
     provider = FakeOllamaProvider(available=False)
-    analyzer = RoutedLegalAnalyzer(ModelRouter({"ollama": provider}), LegalAnalyzer())
+    analyzer = RoutedLegalAnalyzer(make_local_router(provider), LegalAnalyzer())
 
     analysis = analyzer.analyze(
         "Срок обжалования до 21.08.2026.",
@@ -90,7 +98,7 @@ def test_document_workflow_keeps_event_capture_when_analysis_comes_from_ollama()
         )
     )
     provider = FakeOllamaProvider()
-    analyzer = RoutedLegalAnalyzer(ModelRouter({"ollama": provider}), LegalAnalyzer())
+    analyzer = RoutedLegalAnalyzer(make_local_router(provider), LegalAnalyzer())
     workflow = DocumentWorkflow(store, analyzer)
 
     result = workflow.process(

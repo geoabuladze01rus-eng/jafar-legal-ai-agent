@@ -57,8 +57,12 @@ class RecoveryWorkerRuntime:
                     if self._stop.is_set():
                         break
                     self._run_job(job)
-            except Exception:
-                log.exception("recovery worker iteration failed", extra={"worker_id": self.config.worker_id})
+            except Exception as exc:
+                log.error(
+                    "recovery worker iteration failed error_type=%s",
+                    type(exc).__name__,
+                    extra={"worker_id": self.config.worker_id},
+                )
             self._stop.wait(self.config.poll_seconds)
         log.info("recovery worker stopped", extra={"worker_id": self.config.worker_id})
 
@@ -77,16 +81,21 @@ class RecoveryWorkerRuntime:
             self.executor.retry(storage_path=job.storage_path)
             self.queue.finish(job_id=job.id, worker_id=self.config.worker_id, success=True)
         except Exception as exc:
-            log.exception("recovery job failed", extra={"job_id": job.id, "storage_path": job.storage_path})
+            error_type = type(exc).__name__
+            log.error("recovery job failed error_type=%s", error_type, extra={"job_id": job.id})
             try:
                 self.queue.finish(
                     job_id=job.id,
                     worker_id=self.config.worker_id,
                     success=False,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=error_type,
                 )
-            except Exception:
-                log.exception("recovery job completion update failed", extra={"job_id": job.id})
+            except Exception as completion_exc:
+                log.error(
+                    "recovery job completion update failed error_type=%s",
+                    type(completion_exc).__name__,
+                    extra={"job_id": job.id},
+                )
         finally:
             heartbeat_stop.set()
             if heartbeat_thread:
@@ -98,5 +107,9 @@ class RecoveryWorkerRuntime:
                 if not self.lease_store.heartbeat(job_id=job.id, worker_id=self.config.worker_id):
                     log.warning("recovery lease heartbeat rejected", extra={"job_id": job.id})
                     return
-            except Exception:
-                log.exception("recovery lease heartbeat failed", extra={"job_id": job.id})
+            except Exception as exc:
+                log.error(
+                    "recovery lease heartbeat failed error_type=%s",
+                    type(exc).__name__,
+                    extra={"job_id": job.id},
+                )

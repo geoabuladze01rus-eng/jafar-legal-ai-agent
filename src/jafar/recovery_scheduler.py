@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .document_recovery import DocumentRecoveryWorker, RecoveryCandidate
+from .error_safety import safe_exception_label
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,13 @@ class ScheduledRecoveryRunner:
             run = RecoveryRun(started_at=started, finished_at=finished, claimed=len(candidates))
         except Exception as exc:
             finished = datetime.now(timezone.utc)
-            run = RecoveryRun(started_at=started, finished_at=finished, claimed=0, status="failed", error=f"{type(exc).__name__}: {exc}")
+            run = RecoveryRun(
+                started_at=started,
+                finished_at=finished,
+                claimed=0,
+                status="failed",
+                error=safe_exception_label(exc),
+            )
         if self.heartbeat_store is not None:
             self.heartbeat_store.record(run)
         if run.status == "failed":

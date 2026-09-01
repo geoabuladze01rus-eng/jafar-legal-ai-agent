@@ -346,7 +346,7 @@ async def analyze_document(
             media_type=file.content_type,
         )
     except DocumentExtractionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Document could not be extracted safely") from exc
 
     try:
         document_task = DocumentTask(task)

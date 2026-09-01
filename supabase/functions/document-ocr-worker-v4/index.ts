@@ -37,6 +37,12 @@ function confidentialCloudEnabled(): boolean {
   return (Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK") ?? "").trim().toLowerCase() === "true";
 }
 
+function safeErrorCode(error: unknown): string {
+  const message = String(error).replace(/^Error:\s*/u, "");
+  const candidate = message.split(":", 1)[0].replace(/[^a-z0-9_]/giu, "_").slice(0, 80);
+  return candidate || "document_ocr_failed";
+}
+
 async function openaiFile(key: string, file: Blob) {
   const form = new FormData();
   form.append("purpose", "user_data");
@@ -46,7 +52,7 @@ async function openaiFile(key: string, file: Blob) {
     headers: { Authorization: `Bearer ${key}` },
     body: form,
   });
-  if (!response.ok) throw new Error(`file_upload:${response.status}:${(await response.text()).slice(0, 700)}`);
+  if (!response.ok) throw new Error(`file_upload:${response.status}`);
   return await response.json();
 }
 
@@ -70,7 +76,8 @@ Deno.serve(async (req) => {
   const job = jobs?.[0];
   if (!job) return json({ ok: true, status: "idle" });
 
-  const fail = async (message: string, retry = true) => {
+  const fail = async (error: unknown, retry = true) => {
+    const message = safeErrorCode(error);
     const attempts = Number(job.attempts ?? 1);
     const terminal = !retry || attempts >= MAX_RETRIES;
     const next = terminal ? null : new Date(Date.now() + Math.min(120000, 5000 * attempts)).toISOString();
@@ -134,7 +141,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    await fail(`responses:${response.status}:${(await response.text()).slice(0, 1500)}`);
+    await fail(`responses:${response.status}`);
     return json({ error: "openai_ocr_failed" }, 502);
   }
 

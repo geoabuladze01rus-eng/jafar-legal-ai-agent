@@ -45,7 +45,7 @@ def test_retry_failure_returns_document_to_failed_with_error():
         service.retry(storage_path="m/contract.pdf")
 
     assert [call[1] for call in store.calls] == [DocumentStatus.PROCESSING, DocumentStatus.FAILED]
-    assert store.calls[-1][2] == "RuntimeError: provider unavailable"
+    assert store.calls[-1][2] == "RuntimeError"
 
 
 def test_completed_document_cannot_be_retried():

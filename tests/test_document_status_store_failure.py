@@ -35,4 +35,4 @@ def test_status_store_records_processing_failed_with_error():
     assert [call[2] for call in statuses.calls] == [
         DocumentStatus.STORED, DocumentStatus.PROCESSING, DocumentStatus.FAILED
     ]
-    assert statuses.calls[-1][3] == "RuntimeError: AI provider unavailable"
+    assert statuses.calls[-1][3] == "RuntimeError"

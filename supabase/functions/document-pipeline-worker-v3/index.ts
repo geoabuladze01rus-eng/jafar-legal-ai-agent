@@ -36,6 +36,12 @@ function confidentialCloudEnabled(): boolean {
   return (Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK") ?? "").trim().toLowerCase() === "true";
 }
 
+function safeErrorCode(error: unknown): string {
+  const message = String(error).replace(/^Error:\s*/u, "");
+  const candidate = message.split(":", 1)[0].replace(/[^a-z0-9_]/giu, "_").slice(0, 80);
+  return candidate || "document_pipeline_failed";
+}
+
 function splitOversizedBlock(block: string, maxChars = 3400): string[] {
   if (block.length <= maxChars) return [block];
   const sentences = block.split(/(?<=[.!?;:])\s+(?=[А-ЯЁA-Z0-9])/u);
@@ -173,7 +179,7 @@ Deno.serve(async (req) => {
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
           body: JSON.stringify({ model: EMBED_MODEL, input: chunks.map((chunk: any) => chunk.content) }),
         });
-        if (!response.ok) throw new Error(`embedding_api:${response.status}:${(await response.text()).slice(0, 800)}`);
+        if (!response.ok) throw new Error(`embedding_api:${response.status}`);
         const output = await response.json();
         for (let i = 0; i < chunks.length; i++) {
           const embedding = output.data?.[i]?.embedding;
@@ -200,7 +206,7 @@ Deno.serve(async (req) => {
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({ model: MODEL, input: prompt, text: { format: { type: "json_object" } } }),
       });
-      if (!response.ok) throw new Error(`analysis_api:${response.status}:${(await response.text()).slice(0, 1200)}`);
+      if (!response.ok) throw new Error(`analysis_api:${response.status}`);
       const output = await response.json();
       let result: any;
       try { result = JSON.parse(output.output_text || "{}"); } catch { throw new Error("analysis_invalid_json"); }
@@ -226,9 +232,9 @@ Deno.serve(async (req) => {
     await db.from("worker_heartbeats").upsert({ worker_name: "document-pipeline-worker", last_seen_at: new Date().toISOString(), status: "active", updated_at: new Date().toISOString() });
     return json({ ok: true, job_id: job.id, document_id: job.document_id, stage: job.stage, status: "completed" });
   } catch (error) {
-    const message = String(error);
-    const manual = message.includes("manual_review");
-    await finish(manual ? "manual_review" : "failed", message);
-    return json({ ok: false, job_id: job.id, document_id: job.document_id, stage: job.stage, status: manual ? "manual_review" : "failed", error: message }, manual ? 422 : 502);
+    const code = safeErrorCode(error);
+    const manual = code.includes("manual_review");
+    await finish(manual ? "manual_review" : "failed", code);
+    return json({ ok: false, job_id: job.id, document_id: job.document_id, stage: job.stage, status: manual ? "manual_review" : "failed", error: code }, manual ? 422 : 502);
   }
 });

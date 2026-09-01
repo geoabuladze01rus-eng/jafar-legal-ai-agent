@@ -50,9 +50,10 @@ openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.ope
 model_providers = {"ollama": ollama_analyzer}
 if openai_analyzer is not None:
     model_providers["openai"] = openai_analyzer
-privacy_policy = ProviderPrivacyPolicy(
-    allow_confidential_cloud_fallback=settings.confidential_cloud_fallback
+confidential_providers = (
+    ("ollama", "openai") if settings.confidential_cloud_fallback else ("ollama",)
 )
+privacy_policy = ProviderPrivacyPolicy(confidential_providers=confidential_providers)
 model_router = ModelRouter(model_providers, privacy_policy=privacy_policy)
 routed_analyzer = RoutedLegalAnalyzer(model_router, heuristic_analyzer)
 matter_store = MatterStore()

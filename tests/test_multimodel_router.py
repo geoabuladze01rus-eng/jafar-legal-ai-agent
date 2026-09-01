@@ -23,12 +23,19 @@ class FakeProvider:
         return ModelResponse(self.key, "test-model", self.text, {})
 
 
+def local_policy(*, cloud_fallback: bool = False) -> ProviderPrivacyPolicy:
+    providers = ("ollama", "openai") if cloud_fallback else ("ollama",)
+    return ProviderPrivacyPolicy(confidential_providers=providers)
+
+
 def test_router_prefers_ollama_for_confidential_text() -> None:
     providers = {
         "ollama": FakeProvider("ollama", "local"),
         "openai": FakeProvider("openai", "cloud"),
     }
-    decision = ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
+    decision = ModelRouter(providers, privacy_policy=local_policy()).decide(
+        ModelRequest("p", "legal_analysis")
+    )
     assert decision.primary == "ollama"
 
 
@@ -38,7 +45,9 @@ def test_router_fails_closed_when_local_model_is_unavailable() -> None:
         "openai": FakeProvider("openai", "cloud"),
     }
     with pytest.raises(RuntimeError, match="No permitted and available AI provider"):
-        ModelRouter(providers).decide(ModelRequest("p", "legal_analysis"))
+        ModelRouter(providers, privacy_policy=local_policy()).decide(
+            ModelRequest("p", "legal_analysis")
+        )
 
 
 def test_router_uses_openai_fallback_only_when_confidential_cloud_is_opted_in() -> None:
@@ -46,10 +55,7 @@ def test_router_uses_openai_fallback_only_when_confidential_cloud_is_opted_in() 
         "ollama": FakeProvider("ollama", "local", available=False),
         "openai": FakeProvider("openai", "cloud"),
     }
-    router = ModelRouter(
-        providers,
-        privacy_policy=ProviderPrivacyPolicy(allow_confidential_cloud_fallback=True),
-    )
+    router = ModelRouter(providers, privacy_policy=local_policy(cloud_fallback=True))
     decision = router.decide(ModelRequest("p", "legal_analysis"))
     assert decision.primary == "openai"
 
@@ -114,7 +120,7 @@ def test_confidential_verification_requires_cloud_opt_in() -> None:
         "openai": FakeProvider("openai", "same conclusion"),
     }
     with pytest.raises(RuntimeError, match="Verification requested"):
-        ModelRouter(providers).decide(
+        ModelRouter(providers, privacy_policy=local_policy()).decide(
             ModelRequest("p", "legal_analysis", verification=True)
         )
 
@@ -124,10 +130,7 @@ def test_confidential_verification_can_use_openai_after_explicit_opt_in() -> Non
         "ollama": FakeProvider("ollama", "same conclusion"),
         "openai": FakeProvider("openai", "same conclusion"),
     }
-    router = ModelRouter(
-        providers,
-        privacy_policy=ProviderPrivacyPolicy(allow_confidential_cloud_fallback=True),
-    )
+    router = ModelRouter(providers, privacy_policy=local_policy(cloud_fallback=True))
     result = ModelConsensus(router).evaluate(
         ModelRequest("p", "legal_analysis", verification=True)
     )

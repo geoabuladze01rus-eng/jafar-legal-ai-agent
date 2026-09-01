@@ -1,0 +1,45 @@
+name: Ollama Integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/jafar/ollama_provider.py'
+      - 'src/jafar/model_router.py'
+      - 'src/jafar/privacy_policy.py'
+      - 'src/jafar/config.py'
+      - 'src/jafar/main.py'
+      - 'tests/test_ollama_provider.py'
+      - 'tests/test_multimodel_router.py'
+      - 'tests/test_privacy_policy.py'
+      - '.github/workflows/ollama-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint Ollama integration surface
+        run: >-
+          ruff check
+          src/jafar/ollama_provider.py
+          src/jafar/config.py
+          src/jafar/privacy_policy.py
+          src/jafar/main.py
+          tests/test_ollama_provider.py
+          tests/test_privacy_policy.py
+      - name: Compile sources
+        run: python -m compileall -q src
+      - name: Run full test suite
+        run: pytest -q

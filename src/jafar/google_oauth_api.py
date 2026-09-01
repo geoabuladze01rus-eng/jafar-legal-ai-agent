@@ -3,14 +3,20 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
+from .api_auth import PROTECTED_ENVIRONMENTS, configured_environment
 from .google_oauth import GoogleOAuthBroker, GoogleOAuthConfig
 from .supabase_google_token_store import build_google_token_store_from_env
 
 router = APIRouter(prefix="/v1/oauth/google", tags=["google-oauth"])
 
 _config = GoogleOAuthConfig.from_env()
-_token_store = build_google_token_store_from_env()
-_broker = GoogleOAuthBroker(_config, _token_store) if _config is not None else None
+if _config is not None:
+    _token_store = build_google_token_store_from_env(
+        require_persistent=configured_environment() in PROTECTED_ENVIRONMENTS,
+    )
+    _broker = GoogleOAuthBroker(_config, _token_store)
+else:
+    _broker = None
 
 
 def google_oauth_broker() -> GoogleOAuthBroker | None:

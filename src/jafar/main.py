@@ -13,7 +13,7 @@ from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
-from .google_oauth_api import router as google_oauth_router
+from .google_oauth_api import resolve_google_oauth_subject, router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
 from .google_workspace_http import (
     GoogleWorkspaceAPIError,
@@ -142,13 +142,21 @@ def command(request: CommandRequest) -> CommandResponse:
     else:
         workspace_route = workspace_router.route(request.text)
         if workspace_route.intent is not None:
-            google_workspace_service = build_google_workspace_service_from_env(request.user_id)
-            if google_workspace_service is None:
+            try:
+                oauth_subject = resolve_google_oauth_subject(request.user_id)
+            except RuntimeError:
                 return CommandResponse(
-                    message="Google Workspace пока не подключён. Откройте /v1/oauth/google/start?subject=" + request.user_id,
+                    message="Google Workspace identity не настроен на этом сервере.",
                     intent="google_workspace_unavailable",
                     request_id=str(uuid4()),
-                    data={"oauth_subject": request.user_id},
+                )
+            google_workspace_service = build_google_workspace_service_from_env(oauth_subject)
+            if google_workspace_service is None:
+                return CommandResponse(
+                    message="Google Workspace пока не подключён. Выполните OAuth-подключение.",
+                    intent="google_workspace_unavailable",
+                    request_id=str(uuid4()),
+                    data={"oauth_subject": oauth_subject},
                 )
             try:
                 if workspace_route.intent == "gmail_inbox":
@@ -166,14 +174,14 @@ def command(request: CommandRequest) -> CommandResponse:
                     message="Google Workspace не авторизован. Выполните OAuth-подключение.",
                     intent="google_workspace_auth_required",
                     request_id=str(uuid4()),
-                    data={"oauth_subject": request.user_id},
+                    data={"oauth_subject": oauth_subject},
                 )
             except GoogleWorkspaceNetworkError:
                 return CommandResponse(
                     message="Не удалось связаться с Google Workspace. Попробуйте повторить запрос.",
                     intent="google_workspace_network_error",
                     request_id=str(uuid4()),
-                    data={"oauth_subject": request.user_id},
+                    data={"oauth_subject": oauth_subject},
                 )
             except GoogleWorkspaceAPIError as exc:
                 messages = {
@@ -185,7 +193,7 @@ def command(request: CommandRequest) -> CommandResponse:
                     intent="google_workspace_api_error",
                     request_id=str(uuid4()),
                     data={
-                        "oauth_subject": request.user_id,
+                        "oauth_subject": oauth_subject,
                         "google_error_kind": exc.kind,
                         "google_status_code": exc.status_code,
                     },
@@ -195,14 +203,14 @@ def command(request: CommandRequest) -> CommandResponse:
                     message="Google Workspace вернул недопустимый ответ. Данные не использованы.",
                     intent="google_workspace_error",
                     request_id=str(uuid4()),
-                    data={"oauth_subject": request.user_id},
+                    data={"oauth_subject": oauth_subject},
                 )
             except (RuntimeError, ValueError, OSError):
                 return CommandResponse(
                     message="Не удалось обработать ответ Google Workspace. Данные не использованы.",
                     intent="google_workspace_error",
                     request_id=str(uuid4()),
-                    data={"oauth_subject": request.user_id},
+                    data={"oauth_subject": oauth_subject},
                 )
             return CommandResponse(
                 message=str(workspace_data.get("message", "Данные получены.")),

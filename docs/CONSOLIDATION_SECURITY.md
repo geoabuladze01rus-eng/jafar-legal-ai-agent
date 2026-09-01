@@ -25,6 +25,7 @@ This document records security invariants verified during the CONSOLIDATION phas
 - HTTP API authentication may be optional in local development, but `/v1/*` fails closed in `staging` and `production` when `JAFAR_API_BEARER_TOKEN` is absent.
 - The Google OAuth callback is the only `/v1` authentication exemption and remains protected by the OAuth state validation flow.
 - Configured Google OAuth in staging/production requires persistent encrypted Supabase token storage; it must not silently fall back to an in-memory token store.
+- Google OAuth and Workspace token lookup in staging/production use a server-bound subject; API callers cannot select another token-store subject.
 
 ## Deployment constraint
 

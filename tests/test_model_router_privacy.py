@@ -22,27 +22,27 @@ class Provider:
         return ModelResponse(self.key, "test-model", "ok", {})
 
 
-def test_confidential_request_defaults_to_openai_only() -> None:
-    providers = {"openai": Provider("openai"), "deepseek": Provider("deepseek")}
+def test_confidential_request_defaults_to_ollama_only() -> None:
+    providers = {"ollama": Provider("ollama"), "openai": Provider("openai")}
     router = ModelRouter(providers)
 
     decision = router.decide(ModelRequest(prompt="private legal document", task="legal_analysis"))
 
-    assert decision.primary == "openai"
+    assert decision.primary == "ollama"
 
 
 def test_confidential_request_does_not_fallback_to_unlisted_provider() -> None:
     providers = {
-        "openai": Provider("openai", fail=True),
-        "deepseek": Provider("deepseek"),
+        "ollama": Provider("ollama", fail=True),
+        "openai": Provider("openai"),
     }
     router = ModelRouter(providers)
 
     with pytest.raises(RuntimeError, match="All permitted AI providers failed"):
         router.run(ModelRequest(prompt="private legal document", task="legal_analysis"))
 
-    assert providers["openai"].calls == 1
-    assert providers["deepseek"].calls == 0
+    assert providers["ollama"].calls == 1
+    assert providers["openai"].calls == 0
 
 
 def test_explicit_allowlist_can_enable_fallback() -> None:

@@ -5,6 +5,7 @@ import os
 from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis
 from .model_router import ModelRequest, ModelRouter
+from .privacy_policy import confidential_cloud_fallback_enabled
 
 
 class LegalAnalysisService:
@@ -15,6 +16,8 @@ class LegalAnalysisService:
 
     @classmethod
     def from_environment(cls) -> "LegalAnalysisService":
+        if not confidential_cloud_fallback_enabled():
+            raise RuntimeError("Confidential cloud processing is not enabled")
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY is required to create the legal analysis service")
 

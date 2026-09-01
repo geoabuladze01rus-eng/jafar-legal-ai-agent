@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
@@ -23,11 +25,29 @@ def google_oauth_broker() -> GoogleOAuthBroker | None:
     return _broker
 
 
+def resolve_google_oauth_subject(requested_subject: str) -> str:
+    """Bind OAuth token access to deployment identity in protected environments."""
+
+    configured = (
+        os.getenv("JAFAR_GOOGLE_OAUTH_SUBJECT", "").strip()
+        or os.getenv("JAFAR_LEGAL_RESEARCH_OWNER_USER_ID", "").strip()
+    )
+    if configured:
+        return configured
+    if configured_environment() in PROTECTED_ENVIRONMENTS:
+        raise RuntimeError("A fixed Google OAuth subject is required in staging and production")
+    return requested_subject
+
+
 @router.get("/start")
 def start_google_oauth(subject: str = Query(min_length=1, max_length=200)):
     if _broker is None:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured")
-    return RedirectResponse(_broker.authorization_url(subject), status_code=307)
+    try:
+        resolved_subject = resolve_google_oauth_subject(subject)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Google OAuth subject is not configured") from exc
+    return RedirectResponse(_broker.authorization_url(resolved_subject), status_code=307)
 
 
 @router.get("/callback")

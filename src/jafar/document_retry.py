@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from .document_status import DocumentStatus
+from .error_safety import safe_exception_label
 
 
 class RetryStatusStore(Protocol):
@@ -30,7 +31,7 @@ class DocumentRetryService:
             self.status_store.set_status(
                 storage_path=storage_path,
                 status=DocumentStatus.FAILED,
-                error=f"{type(exc).__name__}: {exc}",
+                error=safe_exception_label(exc),
             )
             raise
         self.status_store.set_status(storage_path=storage_path, status=DocumentStatus.COMPLETED)

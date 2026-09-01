@@ -38,3 +38,10 @@ def test_workers_require_explicit_confidential_cloud_opt_in_before_claiming_jobs
         assert gate in source
         assert rejection in source
         assert source.index(rejection) < source.index('db.rpc("claim_document_')
+
+
+def test_workers_do_not_persist_or_return_raw_provider_error_bodies():
+    for path in WORKERS:
+        source = path.read_text(encoding="utf-8")
+        assert "function safeErrorCode(error: unknown)" in source
+        assert "await response.text()" not in source

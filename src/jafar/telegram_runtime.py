@@ -163,10 +163,9 @@ class TelegramRuntime:
 
         if self.dry_run:
             logger.info(
-                "Telegram dry-run update=%s chat=%s draft_chars=%s",
+                "Telegram dry-run update=%s chat=%s draft_ready=true",
                 update.get("update_id"),
                 result.comment.chat_id,
-                len(result.draft.decision.draft),
             )
             return
 

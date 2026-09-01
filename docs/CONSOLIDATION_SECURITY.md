@@ -24,6 +24,11 @@ This document records security invariants verified during the CONSOLIDATION phas
 - OCR-only case facts are not authoritative until corroborated by a verified source; source conflicts remain visible with provenance.
 - HTTP API authentication may be optional in local development, but `/v1/*` fails closed in `staging` and `production` when `JAFAR_API_BEARER_TOKEN` is absent.
 - The Google OAuth callback is the only `/v1` authentication exemption and remains protected by the OAuth state validation flow.
+- Configured Google OAuth in staging/production requires persistent encrypted Supabase token storage; it must not silently fall back to an in-memory token store.
+
+## Deployment constraint
+
+The current one-time Google OAuth state store is process-local. Until a shared atomic OAuth state store is implemented, the supported OAuth deployment topology is a single application instance. Do not horizontally scale the OAuth broker behind a load balancer and assume replay protection is shared across instances.
 
 ## Release review rule
 

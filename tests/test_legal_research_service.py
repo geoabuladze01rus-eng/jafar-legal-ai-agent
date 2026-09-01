@@ -1,3 +1,5 @@
+import pytest
+
 from jafar.cross_document_analysis import CrossDocumentContradictionService, DocumentClaim
 from jafar.legal_research_service import LegalResearchService
 from jafar.matter_rag import MatterChunk, MatterRAGContext, RetrievedChunk
@@ -30,6 +32,16 @@ class FakeAnswers:
         return f"Ответ [{context.citations[0]}]"
 
 
+class MissingCitationAnswers:
+    def answer(self, *, question, context):
+        return "Срок продлен до 10 сентября."
+
+
+class HallucinatedCitationAnswers:
+    def answer(self, *, question, context):
+        return "Срок продлен [document:invented:page:99:chunk:7]"
+
+
 def test_research_returns_matter_scoped_answer_and_citations():
     service = LegalResearchService(
         embeddings=FakeEmbeddings(),
@@ -39,6 +51,28 @@ def test_research_returns_matter_scoped_answer_and_citations():
     result = service.research(matter_id="matter-1", question="Какой срок?")
     assert result.citations == ("document:doc-1:page:2:chunk:3",)
     assert result.answer.endswith("[document:doc-1:page:2:chunk:3]")
+
+
+def test_research_rejects_answer_without_required_matter_citation():
+    service = LegalResearchService(
+        embeddings=FakeEmbeddings(),
+        retrieval=FakeRetrieval(),
+        answers=MissingCitationAnswers(),
+    )
+
+    with pytest.raises(RuntimeError, match="omitted required Matter citations"):
+        service.research(matter_id="matter-1", question="Какой срок?")
+
+
+def test_research_rejects_hallucinated_citation_token():
+    service = LegalResearchService(
+        embeddings=FakeEmbeddings(),
+        retrieval=FakeRetrieval(),
+        answers=HallucinatedCitationAnswers(),
+    )
+
+    with pytest.raises(RuntimeError, match="outside retrieved Matter context"):
+        service.research(matter_id="matter-1", question="Какой срок?")
 
 
 def test_research_attaches_cross_document_contradictions():
@@ -61,9 +95,5 @@ def test_research_attaches_cross_document_contradictions():
 
 def test_research_validates_inputs():
     service = LegalResearchService(FakeEmbeddings(), FakeRetrieval(), FakeAnswers())
-    try:
+    with pytest.raises(ValueError, match="matter_id"):
         service.research(matter_id="", question="x")
-    except ValueError as exc:
-        assert "matter_id" in str(exc)
-    else:
-        raise AssertionError("expected ValueError")

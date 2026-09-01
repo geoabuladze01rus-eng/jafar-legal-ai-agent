@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Protocol, Sequence
 
 from .contradiction_detector import ContradictionGapDetector
@@ -10,6 +11,9 @@ from .cross_document_analysis import (
     DocumentClaim,
 )
 from .matter_rag import MatterRAGContext
+
+
+_CITATION_TOKEN = re.compile(r"document:[A-Za-z0-9._-]+:page:\d+:chunk:\d+")
 
 
 class EmbeddingProvider(Protocol):
@@ -79,6 +83,7 @@ class LegalResearchService:
             min_similarity=min_similarity,
         )
         answer = self.answers.answer(question=question, context=context)
+        self._validate_answer_citations(answer=answer, context=context)
 
         contradiction_report = None
         if self.contradictions is not None and claims:
@@ -95,3 +100,20 @@ class LegalResearchService:
             contradiction_report=contradiction_report,
             context=context,
         )
+
+    @staticmethod
+    def _validate_answer_citations(*, answer: str, context: MatterRAGContext) -> None:
+        if not context.results:
+            return
+
+        cited = tuple(dict.fromkeys(_CITATION_TOKEN.findall(answer)))
+        if not cited:
+            raise RuntimeError("research answer omitted required Matter citations")
+
+        allowed = set(context.citations)
+        unknown = tuple(ref for ref in cited if ref not in allowed)
+        if unknown:
+            raise RuntimeError(
+                "research answer cited sources outside retrieved Matter context: "
+                + ", ".join(unknown)
+            )

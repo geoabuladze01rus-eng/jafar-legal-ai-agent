@@ -9,7 +9,6 @@ from jafar.domains import DocumentTask, MatterType
 from jafar.model_router import ModelRequest
 from jafar.ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
 
-
 BASE_URL = "http://127.0.0.1:11434"
 
 
@@ -49,7 +48,7 @@ def test_available_is_false_when_daemon_is_unreachable() -> None:
 def test_remote_ollama_url_is_not_treated_as_local() -> None:
     provider = OllamaLegalAnalyzer(
         config=OllamaProviderConfig(model="qwen3:4b", base_url="http://192.168.1.10:11434"),
-        client=make_client(lambda request: httpx.Response(200, json={"models": []})),
+        client=make_client(lambda _request: httpx.Response(200, json={"models": []})),
     )
     assert provider.available() is False
     with pytest.raises(PermissionError, match="loopback"):

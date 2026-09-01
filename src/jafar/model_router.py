@@ -6,6 +6,8 @@ from typing import Any, Protocol
 from .domains import DocumentTask
 from .privacy_policy import ProviderPrivacyPolicy
 
+_PROVIDER_FAILURES = (RuntimeError, ValueError, TypeError, PermissionError, OSError)
+
 
 @dataclass(frozen=True, slots=True)
 class ModelRequest:
@@ -101,7 +103,7 @@ class ModelRouter:
         if decision.verifier:
             try:
                 responses.append(self.providers[decision.verifier].complete(request))
-            except Exception as exc:
+            except _PROVIDER_FAILURES as exc:
                 raise RuntimeError(
                     f"Independent verification provider {decision.verifier!r} failed"
                 ) from exc
@@ -130,7 +132,7 @@ class ModelRouter:
             for key in ("ollama", "openai", "gemini", "deepseek", "nano_banana")
             if key != primary and key in allowed and self._available(key)
         )
-        last_error: Exception | None = None
+        last_error: BaseException | None = None
         for key in candidates:
             try:
                 response = self.providers[key].complete(request)
@@ -139,7 +141,7 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
-            except Exception as exc:
+            except _PROVIDER_FAILURES as exc:
                 last_error = exc
         raise RuntimeError("All permitted AI providers failed during completion") from last_error
 

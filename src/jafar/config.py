@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ollama_health_timeout_seconds: float = 0.35
     ollama_keep_alive: str = "5m"
     ollama_think: bool = False
+    confidential_cloud_fallback: bool = False
 
     telegram_bot_token: str | None = None
     telegram_polling_enabled: bool = False

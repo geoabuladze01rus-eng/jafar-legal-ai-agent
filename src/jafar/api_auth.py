@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 
 OAUTH_CALLBACK_PATHS = {"/v1/oauth/google/callback"}
+PROTECTED_ENVIRONMENTS = {"staging", "production"}
 
 
 def configured_api_token() -> str | None:
@@ -15,10 +16,18 @@ def configured_api_token() -> str | None:
     return token or None
 
 
+def configured_environment() -> str:
+    return os.getenv("ENVIRONMENT", "development").strip().lower() or "development"
+
+
+def api_auth_required() -> bool:
+    return configured_api_token() is not None or configured_environment() in PROTECTED_ENVIRONMENTS
+
+
 def validate_bearer_value(authorization: str | None) -> bool:
     expected = configured_api_token()
     if expected is None:
-        return True
+        return not api_auth_required()
     if not authorization or not authorization.startswith("Bearer "):
         return False
     supplied = authorization.removeprefix("Bearer ").strip()

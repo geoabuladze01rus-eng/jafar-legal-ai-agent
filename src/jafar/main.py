@@ -1,23 +1,24 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
+from .command_runtime import JafarCommandRuntime
 from .config import settings
-from .domains import DocumentTask, MatterType
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .domains import DocumentTask, MatterType
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
 from .legal_models import AnalysisRequest, AnalysisResponse, LegalAnalysis, Matter
 from .matters import MatterStore
-from .telegram_runtime import TelegramRuntime
-from .ai_provider import AIProviderConfig, OpenAILegalAnalyzer
-from .command_runtime import JafarCommandRuntime
 from .model_router import ModelRequest, ModelRouter
 from .ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
+from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -137,7 +138,7 @@ def _provider_analyze(
         return None
     try:
         return LegalAnalysis.model_validate(payload)
-    except Exception:
+    except ValidationError:
         return None
 
 
@@ -161,7 +162,7 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
 
 @app.post("/v1/documents/analyze", response_model=AnalysisResponse)
 async def analyze_document(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     task: str = "legal_analysis",
     matter_type: MatterType = MatterType.GENERAL,
     matter_id: str | None = None,
@@ -202,7 +203,7 @@ async def analyze_document(
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)
 def create_matter(request: CreateMatterRequest) -> Matter:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     matter = Matter(
         id=str(uuid4()),
         title=request.title,

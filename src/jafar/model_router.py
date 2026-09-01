@@ -11,12 +11,12 @@ from .privacy_policy import ProviderPrivacyPolicy
 class ModelRequest:
     prompt: str
     task: str
-    matter_type: str | None = None
     requires_vision: bool = False
     requires_google_context: bool = False
     verification: bool = False
     confidential: bool = True
     allowed_providers: tuple[str, ...] | None = None
+    matter_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

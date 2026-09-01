@@ -28,3 +28,13 @@ def test_workers_with_disabled_platform_jwt_have_a_dedicated_secret_boundary():
     assert config.count("verify_jwt = false") == len(WORKERS)
     assert schedule.count("jafar_worker_secret") == len(WORKERS)
     assert "SUPABASE_SERVICE_ROLE_KEY" not in schedule
+
+
+def test_workers_require_explicit_confidential_cloud_opt_in_before_claiming_jobs():
+    for path in WORKERS:
+        source = path.read_text(encoding="utf-8")
+        gate = 'Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK")'
+        rejection = 'json({ error: "confidential_cloud_processing_disabled" }, 503)'
+        assert gate in source
+        assert rejection in source
+        assert source.index(rejection) < source.index('db.rpc("claim_document_')

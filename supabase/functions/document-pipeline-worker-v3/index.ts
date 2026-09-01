@@ -32,6 +32,10 @@ function isInternal(req: Request): boolean {
   return configuredKeys().some((key) => safeEqual(key, apiKey) || safeEqual(key, bearer));
 }
 
+function confidentialCloudEnabled(): boolean {
+  return (Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK") ?? "").trim().toLowerCase() === "true";
+}
+
 function splitOversizedBlock(block: string, maxChars = 3400): string[] {
   if (block.length <= maxChars) return [block];
   const sentences = block.split(/(?<=[.!?;:])\s+(?=[А-ЯЁA-Z0-9])/u);
@@ -90,6 +94,7 @@ function semanticLegalChunks(text: string, targetChars = 2600, maxChars = 3400):
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isInternal(req)) return json({ error: "unauthorized_worker" }, 401);
+  if (!confidentialCloudEnabled()) return json({ error: "confidential_cloud_processing_disabled" }, 503);
 
   const url = Deno.env.get("SUPABASE_URL");
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

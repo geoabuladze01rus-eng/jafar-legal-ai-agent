@@ -10,6 +10,7 @@ on:
       - 'src/jafar/privacy_policy.py'
       - 'src/jafar/config.py'
       - 'src/jafar/main.py'
+      - 'src/jafar/ai_provider.py'
       - 'tests/test_ollama_provider.py'
       - 'tests/test_routed_legal_analyzer.py'
       - 'tests/test_multimodel_router.py'
@@ -37,13 +38,24 @@ jobs:
           ruff check
           src/jafar/ollama_provider.py
           src/jafar/routed_legal_analyzer.py
+          src/jafar/model_router.py
           src/jafar/config.py
           src/jafar/privacy_policy.py
           src/jafar/main.py
+          src/jafar/ai_provider.py
           tests/test_ollama_provider.py
           tests/test_routed_legal_analyzer.py
+          tests/test_multimodel_router.py
           tests/test_privacy_policy.py
       - name: Compile sources
         run: python -m compileall -q src
-      - name: Run full test suite
-        run: pytest -q
+      - name: Run Ollama integration regression tests
+        run: >-
+          pytest -q
+          tests/test_ollama_provider.py
+          tests/test_routed_legal_analyzer.py
+          tests/test_privacy_policy.py
+          tests/test_multimodel_router.py
+          tests/test_document_workflow.py
+          tests/test_analysis_service.py
+          tests/test_model_router_privacy.py

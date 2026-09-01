@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import ValidationError
@@ -27,6 +28,7 @@ class OllamaLegalAnalyzer:
     """Local Ollama provider for private document processing and cheap development runs."""
 
     key = "ollama"
+    _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
     def __init__(
         self,
@@ -41,15 +43,20 @@ class OllamaLegalAnalyzer:
         )
 
     def available(self) -> bool:
-        if not self.config.enabled:
+        if not self.config.enabled or not self._is_loopback_url(self.config.base_url):
             return False
         try:
             response = self.client.get("/api/tags", timeout=self.config.health_timeout_seconds)
             response.raise_for_status()
-            models = response.json().get("models", [])
+            data = response.json()
         except (httpx.HTTPError, ValueError, TypeError):
             return False
+        if not isinstance(data, dict):
+            return False
 
+        models = data.get("models", [])
+        if not isinstance(models, list):
+            return False
         configured = self.config.model
         return any(
             model.get("name") == configured or model.get("model") == configured
@@ -143,6 +150,8 @@ class OllamaLegalAnalyzer:
         )
 
     def _chat(self, payload: dict) -> dict:
+        if not self._is_loopback_url(self.config.base_url):
+            raise PermissionError("Confidential Ollama requests require a loopback base URL")
         try:
             response = self.client.post("/api/chat", json=payload, timeout=self.config.timeout_seconds)
             response.raise_for_status()
@@ -164,3 +173,8 @@ class OllamaLegalAnalyzer:
         if not content.strip():
             raise RuntimeError("Ollama response has no content")
         return content
+
+    @classmethod
+    def _is_loopback_url(cls, base_url: str) -> bool:
+        parsed = urlparse(base_url)
+        return parsed.scheme in {"http", "https"} and parsed.hostname in cls._LOOPBACK_HOSTS

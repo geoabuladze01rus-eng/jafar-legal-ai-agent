@@ -30,9 +30,9 @@ jobs:
           cache: pip
       - name: Install project and development dependencies
         run: python -m pip install -e '.[dev]'
-      - name: Show lint diff for Ollama integration surface
+      - name: Lint Ollama integration surface
         run: >-
-          ruff check --fix --diff
+          ruff check
           src/jafar/ollama_provider.py
           src/jafar/config.py
           src/jafar/privacy_policy.py

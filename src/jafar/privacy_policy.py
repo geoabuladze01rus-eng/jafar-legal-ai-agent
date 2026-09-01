@@ -7,13 +7,11 @@ from dataclasses import dataclass
 class ProviderPrivacyPolicy:
     """Central policy deciding which AI providers may receive a request.
 
-    Confidential requests stay on local Ollama by default. Cloud fallback must be
-    enabled explicitly so an unavailable local model cannot silently cause data egress.
+    The default preserves Jafar's existing OpenAI-only confidential policy. Runtime
+    compositions that have local Ollama available can supply a stricter provider tuple.
     """
 
-    allow_confidential_cloud_fallback: bool = False
-    confidential_local_providers: tuple[str, ...] = ("ollama",)
-    confidential_cloud_providers: tuple[str, ...] = ("openai",)
+    confidential_providers: tuple[str, ...] = ("openai",)
     non_confidential_providers: tuple[str, ...] = (
         "ollama",
         "openai",
@@ -22,11 +20,7 @@ class ProviderPrivacyPolicy:
     )
 
     def allowed_providers(self, *, confidential: bool) -> tuple[str, ...]:
-        if not confidential:
-            return self.non_confidential_providers
-        if self.allow_confidential_cloud_fallback:
-            return self.confidential_local_providers + self.confidential_cloud_providers
-        return self.confidential_local_providers
+        return self.confidential_providers if confidential else self.non_confidential_providers
 
     def validate(self, *, confidential: bool, requested: tuple[str, ...] | None = None) -> tuple[str, ...]:
         policy_allowed = self.allowed_providers(confidential=confidential)

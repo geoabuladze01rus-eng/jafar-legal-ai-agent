@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'src/jafar/ollama_provider.py'
+      - 'src/jafar/routed_legal_analyzer.py'
       - 'src/jafar/model_router.py'
       - 'src/jafar/privacy_policy.py'
       - 'src/jafar/config.py'
       - 'src/jafar/main.py'
       - 'tests/test_ollama_provider.py'
+      - 'tests/test_routed_legal_analyzer.py'
       - 'tests/test_multimodel_router.py'
       - 'tests/test_privacy_policy.py'
       - '.github/workflows/ollama-integration.yml'
@@ -34,10 +36,12 @@ jobs:
         run: >-
           ruff check
           src/jafar/ollama_provider.py
+          src/jafar/routed_legal_analyzer.py
           src/jafar/config.py
           src/jafar/privacy_policy.py
           src/jafar/main.py
           tests/test_ollama_provider.py
+          tests/test_routed_legal_analyzer.py
           tests/test_privacy_policy.py
       - name: Compile sources
         run: python -m compileall -q src

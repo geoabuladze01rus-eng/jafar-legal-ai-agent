@@ -10,25 +10,26 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function configuredKeys(): string[] {
-  const keys: string[] = [];
-  for (const envName of ["SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_SECRET_KEYS"]) {
-    try {
-      const raw = Deno.env.get(envName);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      for (const value of Object.values(parsed)) if (typeof value === "string") keys.push(value);
-    } catch { /* ignore malformed optional key maps */ }
+  const worker = Deno.env.get("JAFAR_WORKER_SECRET")?.trim() ?? "";
+  return worker.length >= 32 ? [worker] : [];
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index++) {
+    difference |= leftBytes[index] ^ rightBytes[index];
   }
-  const worker = Deno.env.get("JAFAR_WORKER_SECRET");
-  if (worker) keys.push(worker);
-  return [...new Set(keys)];
+  return difference === 0;
 }
 
 function isInternal(req: Request): boolean {
   const apiKey = req.headers.get("apikey") ?? "";
   const auth = req.headers.get("Authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
+  return configuredKeys().some((key) => safeEqual(key, apiKey) || safeEqual(key, bearer));
 }
 
 function splitOversizedBlock(block: string, maxChars = 3400): string[] {

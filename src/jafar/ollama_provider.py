@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 
 import httpx
+from pydantic import ValidationError
 
 from .config import settings
 from .domains import DocumentTask, MatterType
@@ -101,7 +102,7 @@ class OllamaLegalAnalyzer:
         content = self._message_content(data)
         try:
             return LegalAnalysis.model_validate_json(content)
-        except Exception as exc:
+        except ValidationError as exc:
             raise RuntimeError("Ollama returned invalid structured legal analysis") from exc
 
     def complete(self, request: ModelRequest) -> ModelResponse:
@@ -149,15 +150,17 @@ class OllamaLegalAnalyzer:
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             raise RuntimeError("Ollama request failed") from exc
         if not isinstance(data, dict):
-            raise RuntimeError("Ollama returned an unexpected response")
+            raise TypeError("Ollama returned an unexpected response")
         return data
 
     @staticmethod
     def _message_content(data: dict) -> str:
         message = data.get("message")
         if not isinstance(message, dict):
-            raise RuntimeError("Ollama response has no message")
+            raise TypeError("Ollama response has no message")
         content = message.get("content")
-        if not isinstance(content, str) or not content.strip():
+        if not isinstance(content, str):
+            raise TypeError("Ollama response content must be a string")
+        if not content.strip():
             raise RuntimeError("Ollama response has no content")
         return content

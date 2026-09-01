@@ -2,13 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .config import settings
-from .google_oauth import GoogleOAuthClient, GoogleOAuthError, GoogleOAuthTokens
+from .google_oauth import (
+    GoogleOAuthClient,
+    GoogleOAuthError,
+    GoogleOAuthTokens,
+    OneTimeStateStore,
+)
 
 router = APIRouter(prefix="/v1/integrations/google", tags=["google"])
+state_store = OneTimeStateStore(ttl_seconds=600)
 
 
 @dataclass(slots=True)
@@ -45,6 +51,7 @@ def _client() -> GoogleOAuthClient:
         redirect_uri=settings.google_oauth_redirect_uri,
         scopes=_scopes(),
         prompt=settings.google_oauth_prompt,
+        state_store=state_store,
     )
 
 
@@ -85,12 +92,14 @@ def authorize() -> GoogleAuthorizationResponse:
 
 @router.get("/callback", response_model=GoogleCallbackResponse)
 def callback(
-    code: str = Query(min_length=1),
-    state: str = Query(min_length=1),
+    code: str | None = None,
+    state: str | None = None,
     error: str | None = None,
 ) -> GoogleCallbackResponse:
     if error:
         raise HTTPException(status_code=400, detail=f"Google OAuth authorization failed: {error}")
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Google OAuth callback is missing code or state")
 
     try:
         tokens = _client().exchange_code(code=code, state=state)

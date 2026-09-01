@@ -5,13 +5,18 @@ import pytest
 from jafar.privacy_policy import ProviderPrivacyPolicy
 
 
-def test_confidential_policy_is_local_only_by_default() -> None:
+def test_default_confidential_policy_preserves_openai_compatibility() -> None:
     policy = ProviderPrivacyPolicy()
+    assert policy.allowed_providers(confidential=True) == ("openai",)
+
+
+def test_runtime_can_be_configured_local_only() -> None:
+    policy = ProviderPrivacyPolicy(confidential_providers=("ollama",))
     assert policy.allowed_providers(confidential=True) == ("ollama",)
 
 
-def test_confidential_cloud_fallback_requires_explicit_opt_in() -> None:
-    policy = ProviderPrivacyPolicy(allow_confidential_cloud_fallback=True)
+def test_runtime_can_explicitly_enable_confidential_cloud_fallback() -> None:
+    policy = ProviderPrivacyPolicy(confidential_providers=("ollama", "openai"))
     assert policy.allowed_providers(confidential=True) == ("ollama", "openai")
 
 
@@ -26,7 +31,7 @@ def test_non_confidential_policy_allows_configured_providers() -> None:
 
 
 def test_forbidden_provider_is_rejected() -> None:
-    policy = ProviderPrivacyPolicy()
+    policy = ProviderPrivacyPolicy(confidential_providers=("ollama",))
     with pytest.raises(PermissionError, match="forbidden"):
         policy.validate(confidential=True, requested=("ollama", "openai"))
 
@@ -39,6 +44,6 @@ def test_explicit_permitted_allowlist_is_preserved() -> None:
     ) == ("ollama", "openai", "deepseek")
 
 
-def test_default_validation_preserves_local_policy_order() -> None:
-    policy = ProviderPrivacyPolicy()
-    assert policy.validate(confidential=True) == ("ollama",)
+def test_validation_preserves_configured_provider_order() -> None:
+    policy = ProviderPrivacyPolicy(confidential_providers=("ollama", "openai"))
+    assert policy.validate(confidential=True) == ("ollama", "openai")

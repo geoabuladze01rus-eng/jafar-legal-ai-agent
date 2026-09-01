@@ -18,6 +18,7 @@ from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .matters import MatterStore
 from .model_router import ModelRouter
 from .ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
+from .privacy_policy import ProviderPrivacyPolicy
 from .routed_legal_analyzer import RoutedLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
 
@@ -49,7 +50,10 @@ openai_analyzer = OpenAILegalAnalyzer(config=AIProviderConfig()) if settings.ope
 model_providers = {"ollama": ollama_analyzer}
 if openai_analyzer is not None:
     model_providers["openai"] = openai_analyzer
-model_router = ModelRouter(model_providers)
+privacy_policy = ProviderPrivacyPolicy(
+    allow_confidential_cloud_fallback=settings.confidential_cloud_fallback
+)
+model_router = ModelRouter(model_providers, privacy_policy=privacy_policy)
 routed_analyzer = RoutedLegalAnalyzer(model_router, heuristic_analyzer)
 matter_store = MatterStore()
 document_extractor = DocumentExtractor()

@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from jafar.google_oauth import GoogleTokenSet, InMemoryGoogleTokenStore
 from jafar.supabase_google_token_store import SupabaseGoogleTokenStore, build_google_token_store_from_env
 
@@ -57,6 +59,15 @@ def test_selects_in_memory_store_only_when_persistent_settings_are_incomplete(mo
     monkeypatch.delenv("JAFAR_GOOGLE_TOKEN_ENCRYPTION_KEY", raising=False)
 
     assert isinstance(build_google_token_store_from_env(), InMemoryGoogleTokenStore)
+
+
+def test_required_persistent_store_fails_closed_when_settings_are_incomplete(monkeypatch):
+    monkeypatch.delenv("JAFAR_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("JAFAR_GOOGLE_TOKEN_ENCRYPTION_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="Persistent Google OAuth token storage"):
+        build_google_token_store_from_env(require_persistent=True)
 
 
 def test_supabase_store_round_trips_tokens_through_encrypted_rpc_contract():

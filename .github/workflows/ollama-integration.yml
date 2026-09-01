@@ -42,7 +42,6 @@ jobs:
           src/jafar/config.py
           src/jafar/privacy_policy.py
           src/jafar/main.py
-          src/jafar/ai_provider.py
           tests/test_ollama_provider.py
           tests/test_routed_legal_analyzer.py
           tests/test_multimodel_router.py

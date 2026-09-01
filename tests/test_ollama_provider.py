@@ -3,16 +3,20 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from jafar.domains import DocumentTask, MatterType
 from jafar.model_router import ModelRequest
 from jafar.ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
 
 
+BASE_URL = "http://127.0.0.1:11434"
+
+
 def make_client(handler) -> httpx.Client:
     return httpx.Client(
         transport=httpx.MockTransport(handler),
-        base_url="http://ollama.test",
+        base_url=BASE_URL,
     )
 
 
@@ -25,7 +29,7 @@ def test_available_requires_configured_model_to_be_installed() -> None:
         )
 
     provider = OllamaLegalAnalyzer(
-        config=OllamaProviderConfig(model="qwen3:4b", base_url="http://ollama.test"),
+        config=OllamaProviderConfig(model="qwen3:4b", base_url=BASE_URL),
         client=make_client(handler),
     )
     assert provider.available() is True
@@ -36,10 +40,20 @@ def test_available_is_false_when_daemon_is_unreachable() -> None:
         raise httpx.ConnectError("offline", request=request)
 
     provider = OllamaLegalAnalyzer(
-        config=OllamaProviderConfig(model="qwen3:4b", base_url="http://ollama.test"),
+        config=OllamaProviderConfig(model="qwen3:4b", base_url=BASE_URL),
         client=make_client(handler),
     )
     assert provider.available() is False
+
+
+def test_remote_ollama_url_is_not_treated_as_local() -> None:
+    provider = OllamaLegalAnalyzer(
+        config=OllamaProviderConfig(model="qwen3:4b", base_url="http://192.168.1.10:11434"),
+        client=make_client(lambda request: httpx.Response(200, json={"models": []})),
+    )
+    assert provider.available() is False
+    with pytest.raises(PermissionError, match="loopback"):
+        provider.complete(ModelRequest(prompt="secret", task="chat"))
 
 
 def test_structured_legal_analysis_uses_json_schema_and_preserves_matter_type() -> None:
@@ -78,7 +92,7 @@ def test_structured_legal_analysis_uses_json_schema_and_preserves_matter_type() 
         )
 
     provider = OllamaLegalAnalyzer(
-        config=OllamaProviderConfig(model="qwen3:4b", base_url="http://ollama.test"),
+        config=OllamaProviderConfig(model="qwen3:4b", base_url=BASE_URL),
         client=make_client(handler),
     )
     response = provider.complete(

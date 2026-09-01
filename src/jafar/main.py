@@ -320,7 +320,6 @@ def analyze(request: AnalysisRequest) -> AnalysisResponse:
         matter = matter_store.get(request.matter_id)
         if matter is None:
             raise HTTPException(status_code=404, detail="Matter not found")
-        matter_store.add_deadlines(request.matter_id, analysis.deadlines)
     return AnalysisResponse(analysis=analysis, matter_id=request.matter_id)
 
 

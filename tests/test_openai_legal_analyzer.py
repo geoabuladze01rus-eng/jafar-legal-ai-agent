@@ -55,7 +55,7 @@ def test_openai_adapter_rejects_empty_structured_response():
     client = FakeClient(None)
     analyzer = OpenAILegalAnalyzer(config=AIProviderConfig(model="test-model"), client=client)
 
-    with pytest.raises(RuntimeError, match="no structured legal analysis"):
+    with pytest.raises(RuntimeError, match="failed after retries"):
         analyzer.analyze(
             text="Document text",
             task=DocumentTask.LEGAL_ANALYSIS,

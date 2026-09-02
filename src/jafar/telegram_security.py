@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .config import Settings
 
-
 _SECRET_PLACEHOLDERS = {"replace-me", "changeme", "change-me", "secret"}
 
 
@@ -16,16 +15,16 @@ def live_send_enabled(settings: Settings) -> bool:
     return bool(settings.telegram_production_send and not settings.telegram_dry_run)
 
 
-def _poll_identity_secret_is_secure(settings: Settings) -> bool:
-    value = (settings.telegram_poll_identity_secret or "").strip()
-    return len(value) >= 32 and value.casefold() not in _SECRET_PLACEHOLDERS
+def _secure_secret(value: str | None, *, minimum: int = 32) -> bool:
+    normalized = (value or "").strip()
+    return len(normalized) >= minimum and normalized.casefold() not in _SECRET_PLACEHOLDERS
 
 
 def validate_telegram_settings(settings: Settings) -> None:
     """Fail early on contradictory or incomplete Telegram execution configuration."""
-
     token_present = bool((settings.telegram_bot_token or "").strip())
     allowed = configured_chat_ids(settings)
+    production = settings.environment.strip().casefold() == "production"
 
     if settings.telegram_polling_enabled:
         if not token_present:
@@ -47,11 +46,11 @@ def validate_telegram_settings(settings: Settings) -> None:
             raise RuntimeError("Telegram live send requires TELEGRAM_BOT_TOKEN")
         if not allowed:
             raise RuntimeError("Telegram live send requires TELEGRAM_ALLOWED_CHAT_IDS")
+        if production and not (settings.telegram_owner_approver_id or "").strip():
+            raise RuntimeError("Production Telegram live send requires TELEGRAM_OWNER_APPROVER_ID")
 
-    if (
-        settings.environment.strip().casefold() == "production"
-        and settings.telegram_polling_enabled
-        and not _poll_identity_secret_is_secure(settings)
+    if production and settings.telegram_polling_enabled and not _secure_secret(
+        settings.telegram_poll_identity_secret
     ):
         raise RuntimeError(
             "Production Telegram polling requires TELEGRAM_POLL_IDENTITY_SECRET of at least 32 non-placeholder characters"

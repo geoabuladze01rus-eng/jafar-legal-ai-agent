@@ -1,5 +1,6 @@
 import asyncio
 
+from jafar import telegram_runtime as telegram_runtime_module
 from jafar.telegram_runtime import TelegramRuntime
 
 
@@ -11,7 +12,17 @@ class FakeOutbound:
         self.calls.append((str(chat_id), text, allowed))
 
 
-def test_runtime_routes_safe_comment_to_outbound() -> None:
+def test_runtime_routes_safe_allowlisted_comment_to_outbound(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        telegram_runtime_module.settings,
+        "telegram_scheduler_db_path",
+        str(tmp_path / "telegram.sqlite3"),
+    )
+    monkeypatch.setattr(
+        telegram_runtime_module,
+        "configured_chat_ids",
+        lambda _settings: ("-100123",),
+    )
     runtime = TelegramRuntime("test-token", production_send=False, dry_run=False)
     fake = FakeOutbound()
     runtime.outbound = fake  # type: ignore[assignment]
@@ -35,8 +46,18 @@ def test_runtime_routes_safe_comment_to_outbound() -> None:
     assert allowed is True
 
 
-def test_runtime_does_not_send_blocked_comment() -> None:
-    runtime = TelegramRuntime("test-token", production_send=False)
+def test_runtime_drops_non_allowlisted_content_before_drafting(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        telegram_runtime_module.settings,
+        "telegram_scheduler_db_path",
+        str(tmp_path / "telegram.sqlite3"),
+    )
+    monkeypatch.setattr(
+        telegram_runtime_module,
+        "configured_chat_ids",
+        lambda _settings: ("-100999",),
+    )
+    runtime = TelegramRuntime("test-token", production_send=False, dry_run=False)
     fake = FakeOutbound()
     runtime.outbound = fake  # type: ignore[assignment]
 
@@ -46,10 +67,38 @@ def test_runtime_does_not_send_blocked_comment() -> None:
             "message_id": 8,
             "chat": {"id": -100123, "type": "group"},
             "from": {"id": 42},
+            "text": "Этот текст не должен попадать в pipeline",
+        },
+    }
+
+    asyncio.run(runtime.handle_update(update))
+    assert fake.calls == []
+
+
+def test_runtime_does_not_send_blocked_comment(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        telegram_runtime_module.settings,
+        "telegram_scheduler_db_path",
+        str(tmp_path / "telegram.sqlite3"),
+    )
+    monkeypatch.setattr(
+        telegram_runtime_module,
+        "configured_chat_ids",
+        lambda _settings: ("-100123",),
+    )
+    runtime = TelegramRuntime("test-token", production_send=False)
+    fake = FakeOutbound()
+    runtime.outbound = fake  # type: ignore[assignment]
+
+    update = {
+        "update_id": 103,
+        "message": {
+            "message_id": 9,
+            "chat": {"id": -100123, "type": "group"},
+            "from": {"id": 42},
             "text": "Публикую паспорт и адрес здесь",
         },
     }
 
     asyncio.run(runtime.handle_update(update))
-
     assert fake.calls == []

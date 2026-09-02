@@ -10,6 +10,7 @@ import httpx
 from .comment_pipeline import process_update
 from .config import settings
 from .production_guard import ProductionGuard
+from .telegram_errors import TelegramDeliveryUncertainError
 from .telegram_outbound import TelegramOutbound
 from .telegram_polls import TelegramPollStore
 from .telegram_security import configured_chat_ids
@@ -45,10 +46,10 @@ class TelegramBotHttpClient:
         try:
             async with httpx.AsyncClient(timeout=self.request_timeout) as client:
                 response = await client.post(self._url(method), **kwargs)
-        except httpx.TimeoutException:
-            raise RuntimeError(f"Telegram {method} timed out") from None
-        except httpx.HTTPError:
-            raise RuntimeError(f"Telegram {method} transport failed") from None
+        except (httpx.TimeoutException, httpx.HTTPError):
+            # A POST can reach Telegram even when the client never receives a response.
+            # Treat transport ambiguity as uncertain delivery and never auto-retry it.
+            raise TelegramDeliveryUncertainError(f"Telegram {method} delivery uncertain") from None
 
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"Telegram {method} HTTP {response.status_code}")

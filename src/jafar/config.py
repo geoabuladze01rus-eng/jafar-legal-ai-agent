@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     telegram_production_send: bool = False
     telegram_dry_run: bool = True
     telegram_editorial_mode: str = "APPROVE"
+    telegram_owner_approver_id: str | None = None
 
     jafar_mcp_auth_token: str | None = None
     jafar_mcp_public_url: str | None = None

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .telegram_errors import TelegramDeliveryUncertainError
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -32,16 +34,18 @@ def parse_schedule_time(value: str) -> datetime:
     return parsed
 
 
-def _safe_delivery_error(exc: Exception) -> str:
-    """Persist a low-information error code rather than exception text or Telegram payloads."""
+def _safe_delivery_error(exc: Exception) -> tuple[str, str]:
+    """Return a fail-closed status and low-information error code."""
+    if isinstance(exc, TelegramDeliveryUncertainError):
+        return "delivery_uncertain", "delivery_uncertain"
     if isinstance(exc, PermissionError):
-        return "delivery_policy_denied"
+        return "failed", "delivery_policy_denied"
     if isinstance(exc, ValueError):
-        return "delivery_invalid_payload"
+        return "failed", "delivery_invalid_payload"
     if isinstance(exc, TimeoutError):
-        return "delivery_timeout"
+        return "delivery_uncertain", "delivery_uncertain"
     name = re.sub(r"[^a-z0-9]+", "_", type(exc).__name__.casefold()).strip("_")
-    return f"delivery_{name or 'failure'}"[:96]
+    return "failed", f"delivery_{name or 'failure'}"[:96]
 
 
 @dataclass(frozen=True)
@@ -59,7 +63,7 @@ class ScheduledItem:
 
 
 class TelegramScheduleStore:
-    """SQLite state machine. `sending` jobs are never automatically retried after a crash."""
+    """SQLite state machine with no automatic retry after uncertain delivery."""
 
     def __init__(self, path: str | Path) -> None:
         db_path = Path(path).expanduser()
@@ -99,7 +103,7 @@ class TelegramScheduleStore:
                 "CREATE INDEX IF NOT EXISTS telegram_scheduled_due ON telegram_scheduled_items(status, scheduled_for)"
             )
             con.execute(
-                "UPDATE telegram_scheduled_items SET status='failed', error='interrupted_before_delivery_confirmation', updated_at=? WHERE status='sending'",
+                "UPDATE telegram_scheduled_items SET status='delivery_uncertain', error='delivery_uncertain', updated_at=? WHERE status='sending'",
                 (utc_now().isoformat(),),
             )
         self._harden_permissions()
@@ -169,7 +173,10 @@ class TelegramScheduleStore:
             raise KeyError(item_id)
         return self._item(row)
 
-    def list(self, statuses: tuple[str, ...] = ("pending", "sending", "failed")) -> list[ScheduledItem]:
+    def list(
+        self,
+        statuses: tuple[str, ...] = ("pending", "sending", "failed", "delivery_uncertain"),
+    ) -> list[ScheduledItem]:
         if not statuses:
             return []
         marks = ",".join("?" for _ in statuses)
@@ -189,9 +196,20 @@ class TelegramScheduleStore:
         self._harden_permissions()
         if not changed:
             item = self.get(item_id)
-            if item.status == "pending":
-                raise KeyError(item_id)
             raise ValueError(f"scheduled item cannot be cancelled from status {item.status}")
+        return self.get(item_id)
+
+    def reschedule(self, item_id: str, scheduled_for: datetime) -> ScheduledItem:
+        new_time = scheduled_for.astimezone(UTC)
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_scheduled_items SET scheduled_for=?, updated_at=? WHERE id=? AND status='pending'",
+                (new_time.isoformat(), utc_now().isoformat(), item_id),
+            ).rowcount
+        self._harden_permissions()
+        if not changed:
+            item = self.get(item_id)
+            raise ValueError(f"scheduled item cannot be rescheduled from status {item.status}")
         return self.get(item_id)
 
     def claim_due(self, now: datetime | None = None) -> list[ScheduledItem]:
@@ -212,17 +230,26 @@ class TelegramScheduleStore:
         self._harden_permissions()
         return [self.get(item_id) for item_id in claimed]
 
-    def finish(self, item: ScheduledItem, *, message_id: int | None = None, error: str | None = None) -> None:
-        status = "failed" if error else "sent"
+    def finish(
+        self,
+        item: ScheduledItem,
+        *,
+        message_id: int | None = None,
+        error: str | None = None,
+        status: str | None = None,
+    ) -> None:
+        final_status = status or ("failed" if error else "sent")
+        if final_status not in {"sent", "failed", "delivery_uncertain"}:
+            raise ValueError("invalid scheduler final status")
         with self._connect() as con:
             changed = con.execute(
                 "UPDATE telegram_scheduled_items SET status=?, message_id=?, error=?, updated_at=? WHERE id=? AND status='sending'",
-                (status, message_id, error, utc_now().isoformat(), item.id),
+                (final_status, message_id, error, utc_now().isoformat(), item.id),
             ).rowcount
         self._harden_permissions()
         if not changed:
             raise RuntimeError("scheduled_item_finish_state_mismatch")
-        if not error and item.recurrence_seconds:
+        if final_status == "sent" and item.recurrence_seconds:
             next_time = item.scheduled_for + timedelta(seconds=item.recurrence_seconds)
             while next_time <= utc_now():
                 next_time += timedelta(seconds=item.recurrence_seconds)
@@ -236,20 +263,54 @@ class TelegramScheduleStore:
                 parent_id=item.id,
             )
 
+    def reconcile_uncertain(
+        self,
+        item_id: str,
+        *,
+        confirmed_executed: bool,
+        message_id: int | None = None,
+    ) -> ScheduledItem:
+        item = self.get(item_id)
+        if item.status != "delivery_uncertain":
+            raise ValueError("only delivery_uncertain items can be reconciled")
+        if confirmed_executed and message_id is None:
+            raise ValueError("confirmed executed reconciliation requires message_id")
+        new_status = "sent" if confirmed_executed else "cancelled"
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_scheduled_items SET status=?, message_id=?, error=NULL, updated_at=? WHERE id=? AND status='delivery_uncertain'",
+                (new_status, message_id, utc_now().isoformat(), item_id),
+            ).rowcount
+        self._harden_permissions()
+        if not changed:
+            raise RuntimeError("scheduled_item_reconciliation_state_mismatch")
+        return self.get(item_id)
+
     @staticmethod
     def _item(row: sqlite3.Row) -> ScheduledItem:
         payload = json.loads(row["payload_json"])
         if not isinstance(payload, dict):
             raise RuntimeError("scheduled_item_payload_invalid")
         return ScheduledItem(
-            row["id"], row["kind"], row["chat_id"], payload,
-            datetime.fromisoformat(row["scheduled_for"]), row["status"],
-            row["idempotency_key"], row["recurrence_seconds"], row["message_id"], row["error"]
+            row["id"],
+            row["kind"],
+            row["chat_id"],
+            payload,
+            datetime.fromisoformat(row["scheduled_for"]),
+            row["status"],
+            row["idempotency_key"],
+            row["recurrence_seconds"],
+            row["message_id"],
+            row["error"],
         )
 
 
 class TelegramScheduler:
-    def __init__(self, store: TelegramScheduleStore, deliver: Callable[[ScheduledItem], Awaitable[int | None]]) -> None:
+    def __init__(
+        self,
+        store: TelegramScheduleStore,
+        deliver: Callable[[ScheduledItem], Awaitable[int | None]],
+    ) -> None:
         self.store, self.deliver = store, deliver
 
     async def run_due(self, now: datetime | None = None) -> int:
@@ -257,10 +318,11 @@ class TelegramScheduler:
         for item in items:
             try:
                 message_id = await self.deliver(item)
-            except Exception as exc:  # noqa: BLE001
-                self.store.finish(item, error=_safe_delivery_error(exc))
+            except Exception as exc:  # noqa: BLE001 - all side-effect failures close the state machine
+                status, error = _safe_delivery_error(exc)
+                self.store.finish(item, error=error, status=status)
             else:
-                self.store.finish(item, message_id=message_id)
+                self.store.finish(item, message_id=message_id, status="sent")
         return len(items)
 
     async def serve(self, stop: asyncio.Event, interval_seconds: float = 5.0) -> None:

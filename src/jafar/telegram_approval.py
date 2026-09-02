@@ -17,7 +17,9 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def canonical_payload_hash(*, kind: str, chat_id: str, payload: dict[str, Any], scheduled_for: str | None) -> str:
+def canonical_payload_hash(
+    *, kind: str, chat_id: str, payload: dict[str, Any], scheduled_for: str | None
+) -> str:
     body = json.dumps(
         {"kind": kind, "chat_id": chat_id, "payload": payload, "scheduled_for": scheduled_for},
         ensure_ascii=False,
@@ -47,7 +49,8 @@ class TelegramApprovalStore:
 
     The RC's central approval engine is stateless, so this adapter persists the exact Telegram
     payload and a deterministic SHA-256 binding. Execution accepts only approval_id, never a
-    replacement payload, preventing silent mutation after approval.
+    replacement payload, preventing silent mutation after approval. Manual uncertain-delivery
+    reconciliation is append-only audited and never re-runs the external handler.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -74,6 +77,19 @@ class TelegramApprovalStore:
                 approved_at TEXT,
                 updated_at TEXT NOT NULL
             )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS telegram_approval_reconciliation (
+                reconciliation_id TEXT PRIMARY KEY,
+                approval_id TEXT NOT NULL,
+                operator TEXT NOT NULL,
+                confirmed_executed INTEGER NOT NULL,
+                message_id INTEGER,
+                evidence_note TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS telegram_approval_reconciliation_by_approval "
+                "ON telegram_approval_reconciliation(approval_id, created_at)"
+            )
         self._harden_permissions()
         self._engine = LegalActionApprovalEngine()
 
@@ -114,12 +130,18 @@ class TelegramApprovalStore:
         now = _now()
         with self._connect() as con:
             con.execute(
-                "INSERT INTO telegram_publication_approvals VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?)",
+                "INSERT INTO telegram_publication_approvals VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?)",
                 (
                     approval_id,
                     kind,
                     chat_id,
-                    json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                     scheduled_for,
                     payload_hash,
                     request.state.value,
@@ -176,7 +198,9 @@ class TelegramApprovalStore:
         now = _now()
         with self._connect() as con:
             changed = con.execute(
-                "UPDATE telegram_publication_approvals SET state='approved', approved_by=?, approved_at=?, updated_at=? WHERE approval_id=? AND state='proposed'",
+                "UPDATE telegram_publication_approvals "
+                "SET state='approved', approved_by=?, approved_at=?, updated_at=? "
+                "WHERE approval_id=? AND state='proposed'",
                 (decision["approved_by"], now, now, approval_id),
             ).rowcount
         self._harden_permissions()
@@ -187,7 +211,9 @@ class TelegramApprovalStore:
     def mark_scheduled(self, approval_id: str, *, schedule_id: str) -> TelegramApprovalRecord:
         with self._connect() as con:
             changed = con.execute(
-                "UPDATE telegram_publication_approvals SET state='executed', schedule_id=?, updated_at=? WHERE approval_id=? AND state='approved'",
+                "UPDATE telegram_publication_approvals "
+                "SET state='executed', schedule_id=?, updated_at=? "
+                "WHERE approval_id=? AND state='approved'",
                 (schedule_id, _now(), approval_id),
             ).rowcount
         self._harden_permissions()
@@ -195,10 +221,14 @@ class TelegramApprovalStore:
             raise RuntimeError("telegram_approval_execution_state_mismatch")
         return self.get(approval_id)
 
-    def mark_published(self, approval_id: str, *, message_id: int | None) -> TelegramApprovalRecord:
+    def mark_published(
+        self, approval_id: str, *, message_id: int | None
+    ) -> TelegramApprovalRecord:
         with self._connect() as con:
             changed = con.execute(
-                "UPDATE telegram_publication_approvals SET state='executed', message_id=?, updated_at=? WHERE approval_id=? AND state='approved'",
+                "UPDATE telegram_publication_approvals "
+                "SET state='executed', message_id=?, updated_at=? "
+                "WHERE approval_id=? AND state='approved'",
                 (message_id, _now(), approval_id),
             ).rowcount
         self._harden_permissions()
@@ -209,7 +239,9 @@ class TelegramApprovalStore:
     def mark_delivery_uncertain(self, approval_id: str) -> TelegramApprovalRecord:
         with self._connect() as con:
             changed = con.execute(
-                "UPDATE telegram_publication_approvals SET state='delivery_uncertain', updated_at=? WHERE approval_id=? AND state='approved'",
+                "UPDATE telegram_publication_approvals "
+                "SET state='delivery_uncertain', updated_at=? "
+                "WHERE approval_id=? AND state='approved'",
                 (_now(), approval_id),
             ).rowcount
         self._harden_permissions()
@@ -217,12 +249,92 @@ class TelegramApprovalStore:
             raise RuntimeError("telegram_approval_execution_state_mismatch")
         return self.get(approval_id)
 
+    def reconcile_uncertain(
+        self,
+        approval_id: str,
+        *,
+        operator: str,
+        confirmed_executed: bool,
+        evidence_note: str,
+        message_id: int | None = None,
+    ) -> TelegramApprovalRecord:
+        record = self.get(approval_id)
+        operator = operator.strip()
+        evidence_note = evidence_note.strip()
+        if record.state != "delivery_uncertain":
+            raise ValueError("only delivery_uncertain approvals can be reconciled")
+        if not operator:
+            raise ValueError("reconciliation operator is required")
+        if not evidence_note:
+            raise ValueError("reconciliation evidence note is required")
+        if len(evidence_note) > 1000:
+            raise ValueError("reconciliation evidence note exceeds 1000 characters")
+        if confirmed_executed and message_id is None:
+            raise ValueError("confirmed executed reconciliation requires message_id")
+        if message_id is not None and (isinstance(message_id, bool) or message_id <= 0):
+            raise ValueError("message_id must be a positive integer")
+
+        new_state = "executed" if confirmed_executed else "approved"
+        reconciliation_id = str(uuid4())
+        now = _now()
+        with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            changed = con.execute(
+                "UPDATE telegram_publication_approvals "
+                "SET state=?, message_id=?, updated_at=? "
+                "WHERE approval_id=? AND state='delivery_uncertain'",
+                (
+                    new_state,
+                    message_id if confirmed_executed else None,
+                    now,
+                    approval_id,
+                ),
+            ).rowcount
+            if not changed:
+                raise RuntimeError("telegram_approval_reconciliation_state_mismatch")
+            con.execute(
+                "INSERT INTO telegram_approval_reconciliation VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    reconciliation_id,
+                    approval_id,
+                    operator,
+                    1 if confirmed_executed else 0,
+                    message_id,
+                    evidence_note,
+                    now,
+                ),
+            )
+        self._harden_permissions()
+        return self.get(approval_id)
+
+    def reconciliation_history(self, approval_id: str) -> list[dict[str, Any]]:
+        self.get(approval_id)
+        with self._connect() as con:
+            rows = con.execute(
+                "SELECT reconciliation_id, operator, confirmed_executed, message_id, "
+                "evidence_note, created_at FROM telegram_approval_reconciliation "
+                "WHERE approval_id=? ORDER BY created_at",
+                (approval_id,),
+            ).fetchall()
+        return [
+            {
+                "reconciliation_id": row["reconciliation_id"],
+                "operator": row["operator"],
+                "confirmed_executed": bool(row["confirmed_executed"]),
+                "message_id": row["message_id"],
+                "evidence_note": row["evidence_note"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
     def list_recent(self, limit: int = 20) -> list[TelegramApprovalRecord]:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         with self._connect() as con:
             rows = con.execute(
-                "SELECT approval_id FROM telegram_publication_approvals ORDER BY created_at DESC LIMIT ?",
+                "SELECT approval_id FROM telegram_publication_approvals "
+                "ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [self.get(str(row["approval_id"])) for row in rows]

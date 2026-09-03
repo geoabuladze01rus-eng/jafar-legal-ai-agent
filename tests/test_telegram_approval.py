@@ -103,3 +103,75 @@ def test_uncertain_not_executed_can_return_to_same_approved_payload(tmp_path):
     )
     assert reconciled.state == "approved"
     assert reconciled.payload_hash == approved.payload_hash
+
+
+
+def test_legacy_approval_schema_accepts_new_drafts_after_error_migration(
+    tmp_path,
+):
+    db = tmp_path / "legacy-telegram.sqlite3"
+
+    with sqlite3.connect(db) as con:
+        con.execute(
+            """CREATE TABLE telegram_publication_approvals (
+                approval_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                scheduled_for TEXT,
+                payload_hash TEXT NOT NULL,
+                state TEXT NOT NULL,
+                requested_by TEXT NOT NULL,
+                approved_by TEXT,
+                schedule_id TEXT,
+                message_id INTEGER,
+                created_at TEXT NOT NULL,
+                approved_at TEXT,
+                updated_at TEXT NOT NULL
+            )"""
+        )
+
+    store = TelegramApprovalStore(db)
+
+    with sqlite3.connect(db) as con:
+        columns = [
+            row[1]
+            for row in con.execute(
+                "PRAGMA table_info("
+                "telegram_publication_approvals"
+                ")"
+            )
+        ]
+
+    assert columns[-1] == "error"
+
+    record = store.create(
+        kind="post",
+        chat_id="8999343417",
+        payload={
+            "text":
+                "legacy migration regression",
+            "photo_url": None,
+            "photo_base64": None,
+            "video_url": None,
+            "video_base64": None,
+            "filename": "image.png",
+            "recurrence_seconds": None,
+        },
+        scheduled_for=None,
+        requested_by="migration-test",
+    )
+
+    assert record.state == "proposed"
+    assert record.error is None
+    assert record.message_id is None
+    assert record.schedule_id is None
+
+    loaded = store.get(
+        record.approval_id
+    )
+
+    assert (
+        loaded.payload_hash
+        == record.payload_hash
+    )

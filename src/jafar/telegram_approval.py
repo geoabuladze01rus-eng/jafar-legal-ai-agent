@@ -138,8 +138,27 @@ class TelegramApprovalStore:
         now = _now()
         with self._connect() as con:
             con.execute(
-                "INSERT INTO telegram_publication_approvals VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, ?)",
+                """INSERT INTO telegram_publication_approvals (
+                    approval_id,
+                    kind,
+                    chat_id,
+                    payload_json,
+                    scheduled_for,
+                    payload_hash,
+                    state,
+                    requested_by,
+                    approved_by,
+                    schedule_id,
+                    message_id,
+                    error,
+                    created_at,
+                    approved_at,
+                    updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    NULL, NULL, NULL, NULL,
+                    ?, NULL, ?
+                )""",
                 (
                     approval_id,
                     kind,

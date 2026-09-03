@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .error_safety import safe_exception_label
+
 
 @dataclass(frozen=True, slots=True)
 class ApprovalRequest:
@@ -42,4 +44,9 @@ class ApprovalExecutionService:
             result = handler(payload)
             return ExecutionResult(request.approval_id, "executed", "Действие выполнено.", result if isinstance(result, dict) else {"result": result})
         except Exception as exc:
-            return ExecutionResult(request.approval_id, "error", "Действие не выполнено.", {"error": str(exc)})
+            return ExecutionResult(
+                request.approval_id,
+                "error",
+                "Действие не выполнено.",
+                {"error_type": safe_exception_label(exc)},
+            )

@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+
+
+def confidential_cloud_fallback_enabled() -> bool:
+    """Return whether deployment policy explicitly permits confidential cloud use."""
+
+    return os.getenv("CONFIDENTIAL_CLOUD_FALLBACK", "false").strip().lower() == "true"
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderPrivacyPolicy:
     """Central policy deciding which AI providers may receive a request.
 
-    The default preserves Jafar's existing OpenAI-only confidential policy. Runtime
-    compositions that have local Ollama available can supply a stricter provider tuple.
+    Confidential requests are local-only by default. A runtime may add a cloud
+    provider only after deployment policy explicitly opts in.
     """
 
-    confidential_providers: tuple[str, ...] = ("openai",)
+    confidential_providers: tuple[str, ...] = ("ollama",)
     non_confidential_providers: tuple[str, ...] = (
         "ollama",
         "openai",

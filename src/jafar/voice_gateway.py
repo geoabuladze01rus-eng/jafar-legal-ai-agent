@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .error_safety import safe_exception_label
+
 
 @dataclass(frozen=True, slots=True)
 class VoiceCommand:
@@ -42,4 +44,8 @@ class VoiceCommandGateway:
             result = self.command_handler(text)
             return VoiceResult("completed", result, action=text)
         except Exception as exc:
-            return VoiceResult("error", "Не удалось выполнить команду.", metadata={"error": str(exc)})
+            return VoiceResult(
+                "error",
+                "Не удалось выполнить команду.",
+                metadata={"error_type": safe_exception_label(exc)},
+            )

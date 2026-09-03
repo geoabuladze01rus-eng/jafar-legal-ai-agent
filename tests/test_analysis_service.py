@@ -4,6 +4,7 @@ from jafar.analysis_service import LegalAnalysisService
 from jafar.domains import DocumentTask, MatterType
 from jafar.legal_models import AnalysisRequest, LegalAnalysis
 from jafar.model_router import ModelRequest, ModelResponse
+from jafar.privacy_policy import ProviderPrivacyPolicy
 
 
 class FakeProvider:
@@ -30,7 +31,12 @@ class FakeProvider:
 def test_analysis_service_returns_structured_analysis() -> None:
     from jafar.model_router import ModelRouter
 
-    service = LegalAnalysisService(ModelRouter({"openai": FakeProvider()}))
+    service = LegalAnalysisService(
+        ModelRouter(
+            {"openai": FakeProvider()},
+            privacy_policy=ProviderPrivacyPolicy(confidential_providers=("openai",)),
+        )
+    )
     response = service.analyze(
         AnalysisRequest(text="Test legal document", task=DocumentTask.LEGAL_ANALYSIS)
     )

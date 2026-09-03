@@ -69,3 +69,28 @@ def test_command_reports_google_api_error_without_requesting_oauth_again(monkeyp
     payload = response.json()
     assert payload["intent"] == "google_workspace_api_error"
     assert payload["data"]["google_error_kind"] == "api_disabled"
+
+
+def test_production_command_uses_server_bound_oauth_subject(monkeypatch):
+    subjects = []
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("JAFAR_API_BEARER_TOKEN", "synthetic-api-token")
+    monkeypatch.setenv("JAFAR_GOOGLE_OAUTH_SUBJECT", "deployment-owner")
+    monkeypatch.setattr(
+        main,
+        "build_google_workspace_service_from_env",
+        lambda subject=None: subjects.append(subject) or FakeWorkspaceService(),
+    )
+
+    response = TestClient(main.app).post(
+        "/v1/command",
+        json={
+            "text": "Проверь непрочитанные письма",
+            "user_id": "caller-controlled-subject",
+            "source_device": "test",
+        },
+        headers={"Authorization": "Bearer synthetic-api-token"},
+    )
+
+    assert response.status_code == 200
+    assert subjects == ["deployment-owner"]

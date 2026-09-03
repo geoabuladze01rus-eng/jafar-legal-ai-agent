@@ -6,10 +6,14 @@ from supabase import create_client
 
 from .memory_service import LongTermMemoryService
 from .openai_legal_research import OpenAIEmbeddingProvider
+from .privacy_policy import confidential_cloud_fallback_enabled
 from .supabase_memory_repository import SupabaseMemoryRepository
 
 
 def build_memory_service_from_env() -> LongTermMemoryService | None:
+    if not confidential_cloud_fallback_enabled():
+        return None
+
     url = os.getenv("JAFAR_SUPABASE_URL", "").strip()
     service_role_key = os.getenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", "").strip()
     owner_user_id = os.getenv("JAFAR_LEGAL_RESEARCH_OWNER_USER_ID", "").strip()

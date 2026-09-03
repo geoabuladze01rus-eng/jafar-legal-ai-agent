@@ -20,9 +20,20 @@ class Settings(BaseSettings):
     confidential_cloud_fallback: bool = False
 
     telegram_bot_token: str | None = None
+    telegram_allowed_chat_ids: str = ""
     telegram_polling_enabled: bool = False
+    telegram_scheduler_enabled: bool = False
+    telegram_scheduler_db_path: str = "var/telegram_scheduler.sqlite3"
+    telegram_scheduler_claim_timeout_seconds: int = 120
+    telegram_max_video_bytes: int = 20 * 1024 * 1024
+    telegram_poll_identity_secret: str | None = None
     telegram_production_send: bool = False
     telegram_dry_run: bool = True
+    telegram_editorial_mode: str = "APPROVE"
+    telegram_owner_approver_id: str | None = None
+
+    jafar_mcp_auth_token: str | None = None
+    jafar_mcp_public_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

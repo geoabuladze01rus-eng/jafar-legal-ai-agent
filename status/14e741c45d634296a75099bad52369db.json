@@ -1,0 +1,25 @@
+{
+  "action": "create_post_draft",
+  "command_id": "14e741c45d634296a75099bad52369db",
+  "result": {
+    "action": "create_post_draft",
+    "approval": {
+      "approval_id": "3800caaa-b9b7-462e-a2a7-f6bb6300be73",
+      "approved_by": null,
+      "chat_id": "-1004412524447",
+      "error": null,
+      "has_photo": true,
+      "has_video": false,
+      "kind": "post",
+      "message_id": null,
+      "payload_hash": "b65a758c81a81350e7f01a561e4ac64b09dc4c470c3aa6f4dc36c310d1d3f5cd",
+      "schedule_id": null,
+      "scheduled_for": null,
+      "state": "proposed"
+    },
+    "ok": true
+  },
+  "state": "completed",
+  "timestamp": 1788472088,
+  "version": 1
+}

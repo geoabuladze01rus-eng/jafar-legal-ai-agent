@@ -603,3 +603,325 @@ def test_owner_approve_rejects_immediate_publication(
     ] == [
         "telegram_get_approval"
     ]
+
+
+
+def test_accept_private_media_post_draft():
+    command = {
+        "version": 1,
+        "command_id":
+            "1234567890abcdef",
+        "action":
+            "create_post_draft",
+        "chat_id":
+            "-1001234567890",
+        "text":
+            "draft with private image",
+        "scheduled_for":
+            "2099-09-10T06:00:00+00:00",
+        "media_path":
+            "media/test.png",
+        "media_sha256":
+            "a" * 64,
+        "filename":
+            "test.png",
+    }
+
+    relay._validate_command(
+        command
+    )
+
+
+def test_private_media_rejects_path_traversal():
+
+    command = {
+        "version": 1,
+        "command_id":
+            "1234567890abcdef",
+        "action":
+            "create_post_draft",
+        "chat_id":
+            "-1001234567890",
+        "text":
+            "draft",
+        "media_path":
+            "media/../secret.png",
+        "media_sha256":
+            "a" * 64,
+    }
+
+    try:
+
+        relay._validate_command(
+            command
+        )
+
+    except ValueError:
+        pass
+
+    else:
+
+        raise AssertionError(
+            "path traversal accepted"
+        )
+
+
+def test_private_media_requires_sha256():
+
+    command = {
+        "version": 1,
+        "command_id":
+            "1234567890abcdef",
+        "action":
+            "create_post_draft",
+        "chat_id":
+            "-1001234567890",
+        "text":
+            "draft",
+        "media_path":
+            "media/test.png",
+    }
+
+    try:
+
+        relay._validate_command(
+            command
+        )
+
+    except ValueError:
+        pass
+
+    else:
+
+        raise AssertionError(
+            "media without hash accepted"
+        )
+
+
+def test_private_media_rejects_direct_base64():
+
+    command = {
+        "version": 1,
+        "command_id":
+            "1234567890abcdef",
+        "action":
+            "create_post_draft",
+        "chat_id":
+            "-1001234567890",
+        "text":
+            "draft",
+        "photo_base64":
+            "unsafe-direct-payload",
+    }
+
+    try:
+
+        relay._validate_command(
+            command
+        )
+
+    except ValueError:
+        pass
+
+    else:
+
+        raise AssertionError(
+            "direct photo_base64 relay accepted"
+        )
+
+
+def test_private_media_rejects_hash_mismatch(
+    monkeypatch,
+):
+
+    monkeypatch.setattr(
+        relay,
+        "_git",
+        lambda *args, **kwargs: "",
+    )
+
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + b"test-image-data"
+    )
+
+    monkeypatch.setattr(
+        relay,
+        "_git_bytes",
+        lambda *args, **kwargs: png,
+    )
+
+    try:
+
+        relay._load_private_media(
+            "media/test.png",
+            "0" * 64,
+        )
+
+    except PermissionError:
+        pass
+
+    else:
+
+        raise AssertionError(
+            "media hash mismatch accepted"
+        )
+
+
+def test_private_media_rejects_fake_image(
+    monkeypatch,
+):
+
+    monkeypatch.setattr(
+        relay,
+        "_git",
+        lambda *args, **kwargs: "",
+    )
+
+    content = (
+        b"this is not an image"
+    )
+
+    monkeypatch.setattr(
+        relay,
+        "_git_bytes",
+        lambda *args, **kwargs:
+            content,
+    )
+
+    import hashlib
+
+    digest = hashlib.sha256(
+        content
+    ).hexdigest()
+
+    try:
+
+        relay._load_private_media(
+            "media/fake.png",
+            digest,
+        )
+
+    except ValueError:
+        pass
+
+    else:
+
+        raise AssertionError(
+            "fake image accepted"
+        )
+
+
+def test_private_media_draft_passes_bytes_to_mcp(
+    monkeypatch,
+):
+
+    import base64
+    import hashlib
+
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + b"private-test-image"
+    )
+
+    digest = hashlib.sha256(
+        png
+    ).hexdigest()
+
+    calls = []
+
+    monkeypatch.setattr(
+        relay,
+        "_git",
+        lambda *args, **kwargs: "",
+    )
+
+    monkeypatch.setattr(
+        relay,
+        "_git_bytes",
+        lambda *args, **kwargs:
+            png,
+    )
+
+    async def fake_call(
+        tool_name,
+        arguments,
+    ):
+
+        calls.append(
+            (
+                tool_name,
+                arguments,
+            )
+        )
+
+        return {
+            "approval_id":
+                "approval-photo-123",
+            "state":
+                "proposed",
+            "message_id":
+                None,
+        }
+
+    monkeypatch.setattr(
+        relay,
+        "_call_mcp_tool",
+        fake_call,
+    )
+
+    result = relay._execute(
+        {
+            "version": 1,
+            "command_id":
+                "1234567890abcdef",
+            "action":
+                "create_post_draft",
+            "chat_id":
+                "-1001234567890",
+            "text":
+                "draft with image",
+            "scheduled_for":
+                "2099-09-10T06:00:00+00:00",
+            "media_path":
+                "media/test.png",
+            "media_sha256":
+                digest,
+        }
+    )
+
+    assert len(calls) == 1
+
+    tool_name, arguments = (
+        calls[0]
+    )
+
+    assert (
+        tool_name
+        == "telegram_create_post_draft"
+    )
+
+    assert (
+        arguments["filename"]
+        == "test.png"
+    )
+
+    assert (
+        arguments.get(
+            "photo_url"
+        )
+        is None
+    )
+
+    decoded = base64.b64decode(
+        arguments[
+            "photo_base64"
+        ]
+    )
+
+    assert decoded == png
+
+    assert (
+        result["approval"]["state"]
+        == "proposed"
+    )

@@ -33,9 +33,13 @@ STATUS_WORKTREE = BRIDGE_HOME / "status-worktree"
 REMOTE = "origin"
 QUEUE_BRANCH = "jafar-command-queue"
 STATUS_BRANCH = "jafar-command-status"
+MEDIA_BRANCH = "jafar-media"
 
 QUEUE_PREFIX = "queue/"
 STATUS_PREFIX = "status/"
+MEDIA_PREFIX = "media/"
+
+MAX_RELAY_PHOTO_BYTES = 10 * 1024 * 1024
 
 ALLOWED_ACTIONS = {
     "dry_run_probe",
@@ -65,6 +69,20 @@ def _git(*args: str, cwd: Path = REPO) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+    )
+    return proc.stdout
+
+
+def _git_bytes(
+    *args: str,
+    cwd: Path = REPO,
+) -> bytes:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     return proc.stdout
 
@@ -307,6 +325,8 @@ def _validate_command(command: dict[str, Any]) -> None:
             "text",
             "scheduled_for",
             "photo_url",
+            "media_path",
+            "media_sha256",
             "filename",
         }
         unknown = set(command) - allowed_keys
@@ -329,6 +349,84 @@ def _validate_command(command: dict[str, Any]) -> None:
         photo_url = command.get("photo_url")
         if photo_url is not None and not isinstance(photo_url, str):
             raise ValueError("photo_url must be a string")
+
+        media_path = command.get("media_path")
+        media_sha256 = command.get("media_sha256")
+
+        if (
+            photo_url is not None
+            and media_path is not None
+        ):
+            raise ValueError(
+                "provide only one of "
+                "photo_url or media_path"
+            )
+
+        if media_path is not None:
+
+            if not isinstance(
+                media_path,
+                str,
+            ):
+                raise ValueError(
+                    "media_path must be a string"
+                )
+
+            if (
+                not media_path.startswith(
+                    MEDIA_PREFIX
+                )
+                or len(media_path) > 240
+                or "\\" in media_path
+                or "//" in media_path
+                or any(
+                    part in {"", ".", ".."}
+                    for part
+                    in media_path.split("/")
+                )
+            ):
+                raise ValueError(
+                    "unsafe media_path"
+                )
+
+            if not media_path.lower().endswith(
+                (
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".webp",
+                )
+            ):
+                raise ValueError(
+                    "media file must be "
+                    "PNG, JPEG, or WebP"
+                )
+
+            if (
+                not isinstance(
+                    media_sha256,
+                    str,
+                )
+                or len(media_sha256) != 64
+                or any(
+                    char
+                    not in
+                    "0123456789abcdef"
+                    for char
+                    in media_sha256
+                )
+            ):
+                raise ValueError(
+                    "media_sha256 must be "
+                    "lowercase sha256"
+                )
+
+        elif media_sha256 is not None:
+
+            raise ValueError(
+                "media_sha256 requires "
+                "media_path"
+            )
 
         filename = command.get("filename")
         if filename is not None and not isinstance(filename, str):
@@ -436,6 +534,70 @@ def _validate_command(command: dict[str, Any]) -> None:
             raise ValueError("unexpected relay fields")
 
 
+def _load_private_media(
+    media_path: str,
+    expected_sha256: str,
+) -> bytes:
+
+    _git(
+        "fetch",
+        "--quiet",
+        REMOTE,
+        MEDIA_BRANCH,
+    )
+
+    content = _git_bytes(
+        "show",
+        f"{REMOTE}/{MEDIA_BRANCH}:{media_path}",
+    )
+
+    if not content:
+        raise ValueError(
+            "media file is empty"
+        )
+
+    if len(content) > MAX_RELAY_PHOTO_BYTES:
+        raise ValueError(
+            "media file exceeds 10 MB"
+        )
+
+    digest = hashlib.sha256(
+        content
+    ).hexdigest()
+
+    if digest != expected_sha256:
+        raise PermissionError(
+            "media sha256 mismatch"
+        )
+
+    if content.startswith(
+        b"\x89PNG\r\n\x1a\n"
+    ):
+        pass
+
+    elif content.startswith(
+        b"\xff\xd8\xff"
+    ):
+        pass
+
+    elif (
+        content.startswith(
+            b"RIFF"
+        )
+        and len(content) >= 12
+        and content[8:12] == b"WEBP"
+    ):
+        pass
+
+    else:
+        raise ValueError(
+            "media content is not "
+            "PNG, JPEG, or WebP"
+        )
+
+    return content
+
+
 def _read_env_file() -> dict[str, str]:
     env: dict[str, str] = {}
     for line in (REPO / ".env").read_text().splitlines():
@@ -525,8 +687,44 @@ def _execute(command: dict[str, Any]) -> dict[str, Any]:
         if command.get("photo_url") is not None:
             arguments["photo_url"] = command["photo_url"]
 
-        if command.get("filename") is not None:
-            arguments["filename"] = command["filename"]
+        if command.get("media_path") is not None:
+
+            media_path = str(
+                command["media_path"]
+            )
+
+            media = _load_private_media(
+                media_path,
+                str(
+                    command["media_sha256"]
+                ),
+            )
+
+            arguments["photo_base64"] = (
+                base64.b64encode(
+                    media
+                ).decode(
+                    "ascii"
+                )
+            )
+
+            arguments["filename"] = (
+                str(
+                    command["filename"]
+                )
+                if command.get(
+                    "filename"
+                )
+                else Path(
+                    media_path
+                ).name
+            )
+
+        elif command.get("filename") is not None:
+
+            arguments["filename"] = (
+                command["filename"]
+            )
 
         result = asyncio.run(
             _call_mcp_tool(

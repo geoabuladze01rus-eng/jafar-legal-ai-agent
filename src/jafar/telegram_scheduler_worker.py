@@ -27,7 +27,11 @@ async def main() -> None:
             pass
 
     try:
-        await TelegramScheduler(_store(), _deliver).serve(stop)
+        await TelegramScheduler(
+            _store(),
+            _deliver,
+            claim_timeout_seconds=settings.telegram_scheduler_claim_timeout_seconds,
+        ).serve(stop)
     except asyncio.CancelledError:
         stop.set()
         raise

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     telegram_polling_enabled: bool = False
     telegram_scheduler_enabled: bool = False
     telegram_scheduler_db_path: str = "var/telegram_scheduler.sqlite3"
+    telegram_scheduler_claim_timeout_seconds: int = 120
     telegram_poll_identity_secret: str | None = None
     telegram_production_send: bool = False
     telegram_dry_run: bool = True

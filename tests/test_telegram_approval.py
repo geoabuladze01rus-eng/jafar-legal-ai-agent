@@ -31,6 +31,7 @@ def test_telegram_approval_fails_closed_if_persisted_payload_changes(tmp_path):
         scheduled_for=None,
         requested_by="chatgpt",
     )
+    store.approve(record.approval_id, approver="owner")
     with sqlite3.connect(db) as con:
         con.execute(
             "UPDATE telegram_publication_approvals SET payload_json=? WHERE approval_id=?",
@@ -63,6 +64,7 @@ def test_uncertain_reconciliation_is_audited_and_does_not_rerun_handler(tmp_path
         requested_by="chatgpt",
     )
     store.approve(record.approval_id, approver="owner")
+    store.begin_execution(record.approval_id)
     store.mark_delivery_uncertain(record.approval_id)
 
     reconciled = store.reconcile_uncertain(
@@ -90,6 +92,7 @@ def test_uncertain_not_executed_can_return_to_same_approved_payload(tmp_path):
         requested_by="chatgpt",
     )
     approved = store.approve(record.approval_id, approver="owner")
+    store.begin_execution(record.approval_id)
     store.mark_delivery_uncertain(record.approval_id)
 
     reconciled = store.reconcile_uncertain(

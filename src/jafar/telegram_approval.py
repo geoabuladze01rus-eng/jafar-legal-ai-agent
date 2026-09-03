@@ -42,6 +42,7 @@ class TelegramApprovalRecord:
     approved_by: str | None
     schedule_id: str | None
     message_id: int | None
+    error: str | None
 
 
 class TelegramApprovalStore:
@@ -73,10 +74,17 @@ class TelegramApprovalStore:
                 approved_by TEXT,
                 schedule_id TEXT,
                 message_id INTEGER,
+                error TEXT,
                 created_at TEXT NOT NULL,
                 approved_at TEXT,
                 updated_at TEXT NOT NULL
             )""")
+            columns = {
+                str(row["name"])
+                for row in con.execute("PRAGMA table_info(telegram_publication_approvals)")
+            }
+            if "error" not in columns:
+                con.execute("ALTER TABLE telegram_publication_approvals ADD COLUMN error TEXT")
             con.execute("""CREATE TABLE IF NOT EXISTS telegram_approval_reconciliation (
                 reconciliation_id TEXT PRIMARY KEY,
                 approval_id TEXT NOT NULL,
@@ -131,7 +139,7 @@ class TelegramApprovalStore:
         with self._connect() as con:
             con.execute(
                 "INSERT INTO telegram_publication_approvals VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?)",
+                "(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, ?)",
                 (
                     approval_id,
                     kind,
@@ -183,6 +191,7 @@ class TelegramApprovalStore:
             approved_by=row["approved_by"],
             schedule_id=row["schedule_id"],
             message_id=row["message_id"],
+            error=row["error"],
         )
 
     def approve(self, approval_id: str, *, approver: str) -> TelegramApprovalRecord:
@@ -213,8 +222,22 @@ class TelegramApprovalStore:
             changed = con.execute(
                 "UPDATE telegram_publication_approvals "
                 "SET state='executed', schedule_id=?, updated_at=? "
-                "WHERE approval_id=? AND state='approved'",
+                "WHERE approval_id=? AND state='executing'",
                 (schedule_id, _now(), approval_id),
+            ).rowcount
+        self._harden_permissions()
+        if not changed:
+            raise RuntimeError("telegram_approval_execution_state_mismatch")
+        return self.get(approval_id)
+
+    def begin_execution(self, approval_id: str) -> TelegramApprovalRecord:
+        """Atomically claim one approved effect; a second worker cannot publish it."""
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_publication_approvals "
+                "SET state='executing', error=NULL, updated_at=? "
+                "WHERE approval_id=? AND state='approved'",
+                (_now(), approval_id),
             ).rowcount
         self._harden_permissions()
         if not changed:
@@ -228,7 +251,7 @@ class TelegramApprovalStore:
             changed = con.execute(
                 "UPDATE telegram_publication_approvals "
                 "SET state='executed', message_id=?, updated_at=? "
-                "WHERE approval_id=? AND state='approved'",
+                "WHERE approval_id=? AND state='executing'",
                 (message_id, _now(), approval_id),
             ).rowcount
         self._harden_permissions()
@@ -240,8 +263,35 @@ class TelegramApprovalStore:
         with self._connect() as con:
             changed = con.execute(
                 "UPDATE telegram_publication_approvals "
-                "SET state='delivery_uncertain', updated_at=? "
-                "WHERE approval_id=? AND state='approved'",
+                "SET state='delivery_uncertain', error='delivery_uncertain', updated_at=? "
+                "WHERE approval_id=? AND state='executing'",
+                (_now(), approval_id),
+            ).rowcount
+        self._harden_permissions()
+        if not changed:
+            raise RuntimeError("telegram_approval_execution_state_mismatch")
+        return self.get(approval_id)
+
+    def mark_failed(self, approval_id: str, *, error: str) -> TelegramApprovalRecord:
+        safe_error = error.strip()[:96] or "execution_failed"
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_publication_approvals "
+                "SET state='failed', error=?, updated_at=? "
+                "WHERE approval_id=? AND state='executing'",
+                (safe_error, _now(), approval_id),
+            ).rowcount
+        self._harden_permissions()
+        if not changed:
+            raise RuntimeError("telegram_approval_execution_state_mismatch")
+        return self.get(approval_id)
+
+    def mark_dry_run_completed(self, approval_id: str) -> TelegramApprovalRecord:
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_publication_approvals "
+                "SET state='dry_run_completed', updated_at=? "
+                "WHERE approval_id=? AND state='executing'",
                 (_now(), approval_id),
             ).rowcount
         self._harden_permissions()

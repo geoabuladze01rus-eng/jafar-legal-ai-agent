@@ -37,6 +37,7 @@ from .persistent_matter_catalog import PersistentMatterCatalog
 from .privacy_policy import ProviderPrivacyPolicy
 from .routed_legal_analyzer import RoutedLegalAnalyzer
 from .telegram_runtime import TelegramRuntime
+from .telegram_security import validate_telegram_settings
 
 telegram_runtime: TelegramRuntime | None = None
 
@@ -44,6 +45,7 @@ telegram_runtime: TelegramRuntime | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_runtime
+    validate_telegram_settings(settings)
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,

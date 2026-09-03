@@ -102,10 +102,6 @@ class TelegramScheduleStore:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS telegram_scheduled_due ON telegram_scheduled_items(status, scheduled_for)"
             )
-            con.execute(
-                "UPDATE telegram_scheduled_items SET status='delivery_uncertain', error='delivery_uncertain', updated_at=? WHERE status='sending'",
-                (utc_now().isoformat(),),
-            )
         self._harden_permissions()
 
     def schedule(
@@ -230,6 +226,24 @@ class TelegramScheduleStore:
         self._harden_permissions()
         return [self.get(item_id) for item_id in claimed]
 
+    def recover_stale_sending(
+        self, *, now: datetime | None = None, claim_timeout_seconds: int = 120
+    ) -> int:
+        """Mark only abandoned claims uncertain; fresh concurrent claims are untouched."""
+        if not 30 <= claim_timeout_seconds <= 3600:
+            raise ValueError("claim_timeout_seconds must be between 30 and 3600")
+        current = (now or utc_now()).astimezone(UTC)
+        cutoff = (current - timedelta(seconds=claim_timeout_seconds)).isoformat()
+        with self._connect() as con:
+            changed = con.execute(
+                "UPDATE telegram_scheduled_items "
+                "SET status='delivery_uncertain', error='delivery_uncertain', updated_at=? "
+                "WHERE status='sending' AND updated_at<=?",
+                (current.isoformat(), cutoff),
+            ).rowcount
+        self._harden_permissions()
+        return changed
+
     def finish(
         self,
         item: ScheduledItem,
@@ -310,10 +324,16 @@ class TelegramScheduler:
         self,
         store: TelegramScheduleStore,
         deliver: Callable[[ScheduledItem], Awaitable[int | None]],
+        *,
+        claim_timeout_seconds: int = 120,
     ) -> None:
         self.store, self.deliver = store, deliver
+        self.claim_timeout_seconds = claim_timeout_seconds
 
     async def run_due(self, now: datetime | None = None) -> int:
+        self.store.recover_stale_sending(
+            now=now, claim_timeout_seconds=self.claim_timeout_seconds
+        )
         items = self.store.claim_due(now)
         for item in items:
             try:

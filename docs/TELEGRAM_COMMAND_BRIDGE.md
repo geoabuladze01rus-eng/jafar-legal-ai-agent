@@ -27,6 +27,7 @@ Keep secrets only in the local `.env`; never commit them.
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_CHAT_IDS=...
 TELEGRAM_SCHEDULER_ENABLED=true
+TELEGRAM_SCHEDULER_CLAIM_TIMEOUT_SECONDS=120
 TELEGRAM_PRODUCTION_SEND=false
 TELEGRAM_DRY_RUN=true
 TELEGRAM_OWNER_APPROVER_ID=...
@@ -66,7 +67,23 @@ python -m jafar.telegram_scheduler_worker
 
 The scheduler claims due rows atomically. A second worker cannot claim the same pending row after the first worker changes it to `sending`.
 
-If the process dies while an item is `sending`, startup converts it to `delivery_uncertain`. It is not retried automatically. Use owner-controlled reconciliation with external Telegram evidence.
+If a process dies while an item is `sending`, the worker leaves it untouched for the claim timeout (120 seconds by default) and then converts it to `delivery_uncertain`. It is not retried automatically. Use owner-controlled reconciliation with external Telegram evidence.
+
+## macOS unattended startup
+
+The repository contains launchd templates for the MCP server and scheduler at `deploy/launchd/`. Copy them outside Git, replace `__JAFAR_REPO__` with the absolute repository path, then load them for the current owner:
+
+```bash
+mkdir -p "$HOME/Library/LaunchAgents"
+sed "s|__JAFAR_REPO__|$(pwd)|g" deploy/launchd/com.jafar.telegram-mcp.plist.example \
+  > "$HOME/Library/LaunchAgents/com.jafar.telegram-mcp.plist"
+sed "s|__JAFAR_REPO__|$(pwd)|g" deploy/launchd/com.jafar.telegram-scheduler.plist.example \
+  > "$HOME/Library/LaunchAgents/com.jafar.telegram-scheduler.plist"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jafar.telegram-mcp.plist"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jafar.telegram-scheduler.plist"
+```
+
+The templates load secrets only through the repository's local `.env`; do not put tokens in a plist. To stop them, use `launchctl bootout` with the corresponding plist path.
 
 ## Remote MCP
 
@@ -82,6 +99,15 @@ python -m jafar.telegram_mcp
 Expose that loopback service only through an HTTPS reverse proxy or secure tunnel. Do not bind the MCP process directly to `0.0.0.0`.
 
 The public endpoint must use HTTPS and clients must authenticate with the configured bearer token. Do not place the token in a URL.
+
+For Codex, register the final HTTPS endpoint with a bearer token held in the environment:
+
+```bash
+codex mcp add jafar-telegram --url "https://<private-public-endpoint>/mcp" \
+  --bearer-token-env-var JAFAR_MCP_AUTH_TOKEN
+```
+
+For ChatGPT desktop, add a Streamable HTTP MCP server in Settings using the same HTTPS `/mcp` URL and bearer token. ChatGPT web plugins use OAuth 2.1 rather than static bearer authentication; use the official Secure MCP Tunnel or place an OAuth 2.1 gateway in front of this private endpoint before adding it as a web plugin.
 
 ## Natural-language contract
 

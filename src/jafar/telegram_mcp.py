@@ -12,6 +12,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 
 from jafar.config import settings
 from jafar.telegram_approval import TelegramApprovalRecord, TelegramApprovalStore
@@ -34,6 +35,13 @@ from jafar.telegram_scheduler import (
 
 _LOCAL_MCP_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _MCP_TOKEN_PLACEHOLDERS = {"replace-me", "changeme", "change-me", "secret"}
+_MAX_MCP_REQUEST_BODY_BYTES = 15 * 1024 * 1024
+_MCP_INSTRUCTIONS = (
+    "JAFAR Telegram is approval-first. Create a draft, show its immutable summary to the "
+    "owner, obtain an explicit human APPROVE decision, then execute the approval ID. Never "
+    "approve, execute, alter a destination, or bypass a Telegram allowlist automatically. "
+    "Delivery-uncertain records require manual reconciliation and must never be retried."
+)
 
 
 class _StaticTokenVerifier:
@@ -83,20 +91,27 @@ def validate_mcp_transport_security(
         raise RuntimeError("streamable HTTP MCP requires an HTTPS JAFAR_MCP_PUBLIC_URL")
     if parsed.username or parsed.password:
         raise RuntimeError("JAFAR_MCP_PUBLIC_URL must not embed credentials")
+    if parsed.query or parsed.fragment:
+        raise RuntimeError("JAFAR_MCP_PUBLIC_URL must not contain a query or fragment")
     return token, public_url
 
 
 def _mcp_server() -> MCPServer:
     remote = validate_mcp_transport_security()
     if remote is None:
-        return MCPServer("Jafar Telegram")
+        return MCPServer("Jafar Telegram", instructions=_MCP_INSTRUCTIONS)
     token, public_url = remote
     auth = AuthSettings(
         issuer_url=public_url,
         resource_server_url=public_url,
         required_scopes=["jafar:telegram"],
     )
-    return MCPServer("Jafar Telegram", auth=auth, token_verifier=_StaticTokenVerifier(token))
+    return MCPServer(
+        "Jafar Telegram",
+        instructions=_MCP_INSTRUCTIONS,
+        auth=auth,
+        token_verifier=_StaticTokenVerifier(token),
+    )
 
 
 mcp = _mcp_server()
@@ -224,6 +239,7 @@ def _approval_summary(record: TelegramApprovalRecord) -> dict[str, Any]:
         "approved_by": record.approved_by,
         "schedule_id": record.schedule_id,
         "message_id": record.message_id,
+        "error": record.error,
         "has_photo": bool(
             record.payload.get("photo_url") or record.payload.get("photo_base64")
         ),
@@ -307,9 +323,9 @@ async def _publish_immediately(record: TelegramApprovalRecord) -> int | None:
     raise ValueError("approval kind is not directly publishable")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_status() -> dict[str, Any]:
-    """Return readiness without exposing credentials, chat IDs, paths, or post content."""
+    """Use this when checking Telegram readiness without exposing credentials or content."""
     return {
         "configured": bool((settings.telegram_bot_token or "").strip()),
         "allowed_chat_ids_count": len(_allowed_chat_ids()),
@@ -322,7 +338,7 @@ async def telegram_status() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_create_post_draft(
     chat_id: int | str,
     text: str,
@@ -333,7 +349,7 @@ async def telegram_create_post_draft(
     recurrence_seconds: int | None = None,
     requested_by: str = "chatgpt",
 ) -> dict[str, Any]:
-    """Create an immutable post request. This never publishes or schedules by itself."""
+    """Use this when an owner asks to prepare a text/photo publication; it never publishes."""
     chat = _require_allowed_chat(chat_id)
     if not text or not text.strip():
         raise ValueError("text must not be empty")
@@ -366,7 +382,7 @@ async def telegram_create_post_draft(
     return _approval_summary(record)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_create_poll_draft(
     chat_id: int | str,
     question: str,
@@ -381,7 +397,7 @@ async def telegram_create_poll_draft(
     close_date: int | None = None,
     requested_by: str = "chatgpt",
 ) -> dict[str, Any]:
-    """Create an immutable regular/quiz poll request requiring owner approval."""
+    """Use this when an owner asks to prepare a regular or quiz poll for approval."""
     chat = _require_allowed_chat(chat_id)
     poll = validate_poll(
         question=question,
@@ -407,7 +423,7 @@ async def telegram_create_poll_draft(
     return _approval_summary(record)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_create_cancel_draft(
     schedule_id: str,
     requested_by: str = "chatgpt",
@@ -427,7 +443,7 @@ async def telegram_create_cancel_draft(
     return _approval_summary(record)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_create_reschedule_draft(
     schedule_id: str,
     new_scheduled_for: str,
@@ -449,19 +465,19 @@ async def telegram_create_reschedule_draft(
     return _approval_summary(record)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_approve_publication(
     approval_id: str,
     approver: str,
     confirmation: str,
 ) -> dict[str, Any]:
-    """Explicit owner approval. The approved payload is immutable and hash-bound."""
+    """Use this only after an owner explicitly confirms APPROVE for the immutable draft."""
     owner = _require_owner_approver(approver, confirmation)
     record = _approvals().approve(approval_id.strip(), approver=owner)
     return _approval_summary(record)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
 async def telegram_execute_approved(approval_id: str) -> dict[str, Any]:
     """Execute exactly the previously approved action; replacement payloads are not accepted."""
     approvals = _approvals()
@@ -470,37 +486,58 @@ async def telegram_execute_approved(approval_id: str) -> dict[str, Any]:
         raise PermissionError("Telegram action is not in approved state")
     _require_allowed_chat(record.chat_id)
 
-    if record.kind == "cancel":
-        item = _store().cancel(str(record.payload["schedule_id"]))
-        approvals.mark_published(record.approval_id, message_id=None)
-        return {"ok": True, "approval_id": record.approval_id, "cancelled": _scheduled(item)}
+    if record.kind in {"post", "poll"} and record.scheduled_for is not None:
+        if not settings.telegram_scheduler_enabled:
+            raise PermissionError("Telegram scheduler is disabled")
+    if not settings.telegram_dry_run and record.kind in {"post", "poll"}:
+        # Refuse before consuming approval when production delivery is not explicitly live.
+        _require_live_send_token()
 
-    if record.kind == "reschedule":
-        new_time = datetime.fromisoformat(str(record.payload["new_scheduled_for"]))
-        item = _store().reschedule(str(record.payload["schedule_id"]), new_time)
-        approvals.mark_published(record.approval_id, message_id=None)
-        return {"ok": True, "approval_id": record.approval_id, "rescheduled": _scheduled(item)}
+    record = approvals.begin_execution(record.approval_id)
 
-    if record.scheduled_for is not None:
-        scheduled = datetime.fromisoformat(record.scheduled_for)
-        recurrence_seconds = record.payload.get("recurrence_seconds") if record.kind == "post" else None
-        payload = dict(record.payload)
-        payload.pop("recurrence_seconds", None)
-        item = _store().schedule(
-            kind=record.kind,
-            chat_id=record.chat_id,
-            payload=payload,
-            scheduled_for=scheduled,
-            idempotency_key=_key(record.kind, record.chat_id, payload, record.scheduled_for),
-            recurrence_seconds=recurrence_seconds,
-        )
-        approvals.mark_scheduled(record.approval_id, schedule_id=item.id)
-        return {"ok": True, "approval_id": record.approval_id, "scheduled": _scheduled(item)}
+    if settings.telegram_dry_run:
+        completed = approvals.mark_dry_run_completed(record.approval_id)
+        return {
+            "ok": True,
+            "approval_id": completed.approval_id,
+            "state": completed.state,
+            "dry_run": True,
+        }
 
     try:
+        if record.kind == "cancel":
+            item = _store().cancel(str(record.payload["schedule_id"]))
+            approvals.mark_published(record.approval_id, message_id=None)
+            return {"ok": True, "approval_id": record.approval_id, "cancelled": _scheduled(item)}
+
+        if record.kind == "reschedule":
+            new_time = datetime.fromisoformat(str(record.payload["new_scheduled_for"]))
+            item = _store().reschedule(str(record.payload["schedule_id"]), new_time)
+            approvals.mark_published(record.approval_id, message_id=None)
+            return {"ok": True, "approval_id": record.approval_id, "rescheduled": _scheduled(item)}
+
+        if record.scheduled_for is not None:
+            scheduled = datetime.fromisoformat(record.scheduled_for)
+            recurrence_seconds = record.payload.get("recurrence_seconds") if record.kind == "post" else None
+            payload = dict(record.payload)
+            payload.pop("recurrence_seconds", None)
+            item = _store().schedule(
+                kind=record.kind,
+                chat_id=record.chat_id,
+                payload=payload,
+                scheduled_for=scheduled,
+                idempotency_key=_key(record.kind, record.chat_id, payload, record.scheduled_for),
+                recurrence_seconds=recurrence_seconds,
+            )
+            approvals.mark_scheduled(record.approval_id, schedule_id=item.id)
+            return {"ok": True, "approval_id": record.approval_id, "scheduled": _scheduled(item)}
+
         message_id = await _publish_immediately(record)
     except TelegramDeliveryUncertainError:
         approvals.mark_delivery_uncertain(record.approval_id)
+        raise
+    except Exception as exc:
+        approvals.mark_failed(record.approval_id, error=f"execution_{type(exc).__name__.casefold()}")
         raise
     approvals.mark_published(record.approval_id, message_id=message_id)
     return {
@@ -511,31 +548,31 @@ async def telegram_execute_approved(approval_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_get_approval(approval_id: str) -> dict[str, Any]:
     """Return approval status without returning the post body or image bytes."""
     return _approval_summary(_approvals().get(approval_id.strip()))
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_list_recent_approvals(limit: int = 20) -> dict[str, Any]:
     """List recent publication approval states without post bodies."""
     return {"items": [_approval_summary(item) for item in _approvals().list_recent(limit)]}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_list_scheduled_posts() -> dict[str, Any]:
     """List scheduled/failed/uncertain items without exposing post bodies or image bytes."""
     return {"items": [_scheduled(item) for item in _store().list()]}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_get_delivery_status(schedule_id: str) -> dict[str, Any]:
     """Return one persisted scheduler delivery state and Telegram message_id when known."""
     return _scheduled(_store().get(schedule_id.strip()))
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 async def telegram_reconcile_delivery_uncertain(
     schedule_id: str,
     confirmed_executed: bool,
@@ -553,7 +590,7 @@ async def telegram_reconcile_delivery_uncertain(
     return _scheduled(item)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
 async def telegram_get_poll_results(poll_id: str) -> dict[str, Any]:
     """Read poll results only while the owning chat remains allowlisted."""
     result = _polls().results(poll_id.strip())
@@ -565,7 +602,11 @@ async def telegram_get_poll_results(poll_id: str) -> dict[str, Any]:
 
 
 async def run_scheduler_once() -> int:
-    return await TelegramScheduler(_store(), _deliver).run_due()
+    return await TelegramScheduler(
+        _store(),
+        _deliver,
+        claim_timeout_seconds=settings.telegram_scheduler_claim_timeout_seconds,
+    ).run_due()
 
 
 if __name__ == "__main__":
@@ -609,6 +650,7 @@ if __name__ == "__main__":
             stateless_http=True,
             json_response=True,
             transport_security=transport_security,
+            max_request_body_size=_MAX_MCP_REQUEST_BODY_BYTES,
         )
     elif selected_transport == "stdio":
         mcp.run()

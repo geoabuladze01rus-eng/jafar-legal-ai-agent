@@ -9,9 +9,7 @@ import httpx
 
 from .comment_pipeline import process_update
 from .config import settings
-from .production_guard import ProductionGuard
 from .telegram_errors import TelegramDeliveryUncertainError
-from .telegram_outbound import TelegramOutbound
 from .telegram_polls import TelegramPollStore
 from .telegram_security import configured_chat_ids
 from .telegram_update_receiver import TelegramUpdateReceiver, run_polling
@@ -60,9 +58,8 @@ class TelegramBotHttpClient:
         if not isinstance(payload, dict):
             raise RuntimeError(f"Telegram {method} returned invalid response")
         if not payload.get("ok"):
-            description = payload.get("description")
-            safe_description = description if isinstance(description, str) else "unknown error"
-            raise RuntimeError(f"Telegram {method} failed: {safe_description[:300]}")
+            # Telegram's description is external input and can echo sensitive request data.
+            raise RuntimeError(f"Telegram {method} API request failed")
         result = payload.get("result")
         return dict(result) if isinstance(result, dict) else {}
 
@@ -120,7 +117,7 @@ class TelegramBotHttpClient:
 
 
 class TelegramRuntime:
-    """Connect Telegram polling, the comment pipeline, safety and outbound delivery."""
+    """Receive allowlisted Telegram updates; inbound traffic never sends automatically."""
 
     def __init__(
         self,
@@ -142,10 +139,9 @@ class TelegramRuntime:
             settings.telegram_scheduler_db_path,
             identity_secret=identity_secret,
         )
-        self.outbound = TelegramOutbound(
-            guard=ProductionGuard(production_send=production_send and not dry_run),
-            bot=self.bot,
-        )
+        # Kept for constructor compatibility. Every external effect goes through the
+        # hash-bound MCP approval/execution path, never the inbound polling task.
+        del production_send
         self._task: asyncio.Task[None] | None = None
 
     async def handle_update(self, update: dict[str, Any]) -> None:
@@ -161,18 +157,12 @@ class TelegramRuntime:
         if result is None or not result.safety.allowed:
             return
 
-        if self.dry_run:
-            logger.info(
-                "Telegram dry-run update=%s chat=%s draft_ready=true",
-                update.get("update_id"),
-                result.comment.chat_id,
-            )
-            return
-
-        await self.outbound.send_text(
+        logger.info(
+            "Telegram inbound draft ready update=%s chat_type=%s chat=%s dry_run=%s",
+            update.get("update_id"),
+            str(update.get("message", {}).get("chat", {}).get("type", "unknown")),
             result.comment.chat_id,
-            result.draft.decision.draft,
-            allowed=result.safety.allowed,
+            self.dry_run,
         )
 
     async def handle_error(self, update: dict[str, Any], exc: Exception) -> None:

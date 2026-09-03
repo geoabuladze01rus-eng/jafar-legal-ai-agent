@@ -1,18 +1,14 @@
 import asyncio
+import logging
+
+from jafar import main as main_module
 
 from jafar import telegram_runtime as telegram_runtime_module
 from jafar.telegram_runtime import TelegramRuntime
 
 
-class FakeOutbound:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str, bool]] = []
-
-    async def send_text(self, chat_id: int | str, text: str, *, allowed: bool):
-        self.calls.append((str(chat_id), text, allowed))
-
-
-def test_runtime_routes_safe_allowlisted_comment_to_outbound(monkeypatch, tmp_path) -> None:
+def test_runtime_creates_safe_draft_signal_but_never_sends(monkeypatch, tmp_path, caplog) -> None:
+    caplog.set_level(logging.INFO)
     monkeypatch.setattr(
         telegram_runtime_module.settings,
         "telegram_scheduler_db_path",
@@ -24,8 +20,6 @@ def test_runtime_routes_safe_allowlisted_comment_to_outbound(monkeypatch, tmp_pa
         lambda _settings: ("-100123",),
     )
     runtime = TelegramRuntime("test-token", production_send=False, dry_run=False)
-    fake = FakeOutbound()
-    runtime.outbound = fake  # type: ignore[assignment]
 
     update = {
         "update_id": 101,
@@ -39,14 +33,11 @@ def test_runtime_routes_safe_allowlisted_comment_to_outbound(monkeypatch, tmp_pa
 
     asyncio.run(runtime.handle_update(update))
 
-    assert len(fake.calls) == 1
-    chat_id, text, allowed = fake.calls[0]
-    assert chat_id == "-100123"
-    assert "Спасибо за вопрос" in text
-    assert allowed is True
+    assert "Telegram inbound draft ready" in caplog.text
+    assert "Почему суд отказал" not in caplog.text
 
 
-def test_runtime_drops_non_allowlisted_content_before_drafting(monkeypatch, tmp_path) -> None:
+def test_runtime_drops_non_allowlisted_content_before_drafting(monkeypatch, tmp_path, caplog) -> None:
     monkeypatch.setattr(
         telegram_runtime_module.settings,
         "telegram_scheduler_db_path",
@@ -58,8 +49,6 @@ def test_runtime_drops_non_allowlisted_content_before_drafting(monkeypatch, tmp_
         lambda _settings: ("-100999",),
     )
     runtime = TelegramRuntime("test-token", production_send=False, dry_run=False)
-    fake = FakeOutbound()
-    runtime.outbound = fake  # type: ignore[assignment]
 
     update = {
         "update_id": 102,
@@ -72,10 +61,10 @@ def test_runtime_drops_non_allowlisted_content_before_drafting(monkeypatch, tmp_
     }
 
     asyncio.run(runtime.handle_update(update))
-    assert fake.calls == []
+    assert "Этот текст" not in caplog.text
 
 
-def test_runtime_does_not_send_blocked_comment(monkeypatch, tmp_path) -> None:
+def test_runtime_does_not_send_blocked_comment(monkeypatch, tmp_path, caplog) -> None:
     monkeypatch.setattr(
         telegram_runtime_module.settings,
         "telegram_scheduler_db_path",
@@ -87,8 +76,6 @@ def test_runtime_does_not_send_blocked_comment(monkeypatch, tmp_path) -> None:
         lambda _settings: ("-100123",),
     )
     runtime = TelegramRuntime("test-token", production_send=False)
-    fake = FakeOutbound()
-    runtime.outbound = fake  # type: ignore[assignment]
 
     update = {
         "update_id": 103,
@@ -101,4 +88,34 @@ def test_runtime_does_not_send_blocked_comment(monkeypatch, tmp_path) -> None:
     }
 
     asyncio.run(runtime.handle_update(update))
-    assert fake.calls == []
+    assert "draft ready" not in caplog.text
+
+
+def test_exported_fastapi_lifespan_starts_runtime_only_when_polling_enabled(monkeypatch) -> None:
+    events: list[str] = []
+
+    class FakeRuntime:
+        def __init__(self, token: str, *, production_send: bool = False) -> None:
+            assert token == "test-token"
+            assert production_send is False
+            events.append("created")
+
+        def start(self) -> None:
+            events.append("started")
+
+        async def stop(self) -> None:
+            events.append("stopped")
+
+    monkeypatch.setattr(main_module, "TelegramRuntime", FakeRuntime)
+    monkeypatch.setattr(main_module.settings, "telegram_polling_enabled", True)
+    monkeypatch.setattr(main_module.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(main_module.settings, "telegram_allowed_chat_ids", "-100123")
+    monkeypatch.setattr(main_module.settings, "telegram_production_send", False)
+    monkeypatch.setattr(main_module.settings, "telegram_dry_run", True)
+
+    async def exercise() -> None:
+        async with main_module.lifespan(main_module.app):
+            assert events == ["created", "started"]
+
+    asyncio.run(exercise())
+    assert events == ["created", "started", "stopped"]

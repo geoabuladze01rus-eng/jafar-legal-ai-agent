@@ -36,6 +36,10 @@ def validate_telegram_settings(settings: Settings) -> None:
             raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_BOT_TOKEN")
         if not allowed:
             raise RuntimeError("TELEGRAM_SCHEDULER_ENABLED requires TELEGRAM_ALLOWED_CHAT_IDS")
+        if not 30 <= settings.telegram_scheduler_claim_timeout_seconds <= 3600:
+            raise RuntimeError(
+                "TELEGRAM_SCHEDULER_CLAIM_TIMEOUT_SECONDS must be between 30 and 3600"
+            )
 
     if settings.telegram_production_send:
         if settings.telegram_dry_run:

@@ -1,0 +1,23 @@
+{
+  "action": "create_post_draft",
+  "command_id": "0f02fb0504fd4b6392176ac998c2175d",
+  "result": {
+    "action": "create_post_draft",
+    "approval": {
+      "approval_id": "394b2265-c0b2-4b12-90e3-c624bbd3283b",
+      "approved_by": null,
+      "chat_id": "-1004412524447",
+      "has_photo": false,
+      "kind": "post",
+      "message_id": null,
+      "payload_hash": "fb4cfea0eff752a8a01b52a111536fb136d97c5a38f3d694492b44fa090a33df",
+      "schedule_id": null,
+      "scheduled_for": "2026-09-10T06:00:00+00:00",
+      "state": "proposed"
+    },
+    "ok": true
+  },
+  "state": "completed",
+  "timestamp": 1788432878,
+  "version": 1
+}

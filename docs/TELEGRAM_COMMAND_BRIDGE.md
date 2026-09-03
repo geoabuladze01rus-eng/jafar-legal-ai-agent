@@ -128,6 +128,18 @@ Expected tool sequence:
 
 A client must not call approval merely because it created the draft. Approval is a separate owner decision.
 
+## Owner-controlled live smoke procedure
+
+Do this only after the dry-run path is reviewed and with a disposable, allowlisted owner chat or channel. It intentionally has no automated command: the owner must make the live-flag change locally and restart both workers.
+
+1. With `TELEGRAM_PRODUCTION_SEND=false` and `TELEGRAM_DRY_RUN=true`, call `telegram_status`, then create, approve (`confirmation="APPROVE"`) and execute one benign draft. Confirm `state="dry_run_completed"` and that Telegram has no new message.
+2. Review the exact one-line test message and target chat. In the private `.env`, set `TELEGRAM_PRODUCTION_SEND=true` and `TELEGRAM_DRY_RUN=false`; keep `TELEGRAM_ALLOWED_CHAT_IDS` limited to the test destination. Restart the MCP process and scheduler worker.
+3. Call `telegram_status`; it must return `live_send_enabled=true`. Create a fresh immediate draft, approve it explicitly, execute it once, then call `telegram_get_approval`. Record its persisted `message_id`.
+4. Create a fresh draft scheduled at least two minutes ahead, approve and execute it. Confirm the returned `schedule_id`; after its time, call `telegram_get_delivery_status` and record its persisted `message_id` and `status="sent"`.
+5. Return the live flags to the owner-selected safe posture. If any delivery is `delivery_uncertain`, do not execute it again; inspect Telegram manually and use only the reconciliation tool with evidence.
+
+No CI job and no test command performs these live operations.
+
 ## Full historical channel reading
 
 Old-channel history ingestion is intentionally not required for the publication bridge. Bot API polling handles current allowed updates, not arbitrary historical channel history. Full historical reading should be implemented separately through a read-only MTProto/Telethon adapter with separate credentials and no outbound user-account capability.

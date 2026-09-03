@@ -9,6 +9,7 @@ from .telegram_runtime import TelegramBotHttpClient
 MAX_MESSAGE_CHARS = 4096
 MAX_CAPTION_CHARS = 1024
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
+DEFAULT_MAX_VIDEO_BYTES = 20 * 1024 * 1024
 
 
 def image_mime_type(content: bytes) -> str:
@@ -38,6 +39,33 @@ def validate_photo_url(value: str) -> str:
         raise ValueError("photo_url must not embed credentials")
     if len(url) > 2048:
         raise ValueError("photo_url exceeds 2048 character limit")
+    return url
+
+
+def video_mime_type(content: bytes) -> str:
+    """Recognize ISO BMFF/MP4 files without trusting a filename or declared MIME type."""
+    if len(content) < 16 or content[4:8] != b"ftyp":
+        raise ValueError("video must be an MP4 file with an ftyp container box")
+    box_size = int.from_bytes(content[:4], "big")
+    if box_size not in {0, 1} and box_size < 8:
+        raise ValueError("video has an invalid MP4 ftyp box")
+    return "video/mp4"
+
+
+def validate_video_bytes(content: bytes, *, max_bytes: int = DEFAULT_MAX_VIDEO_BYTES) -> str:
+    if not content:
+        raise ValueError("video must not be empty")
+    if max_bytes < 1:
+        raise ValueError("video maximum size must be positive")
+    if len(content) > max_bytes:
+        raise ValueError(f"video exceeds {max_bytes} byte internal limit")
+    return video_mime_type(content)
+
+
+def validate_video_url(value: str) -> str:
+    url = validate_photo_url(value)
+    if not urlparse(url).path.casefold().endswith(".mp4"):
+        raise ValueError("video_url must reference an MP4 path")
     return url
 
 
@@ -84,6 +112,7 @@ class PublishResult:
     mode: str
     message_ids: list[int]
     photo_message_id: int | None = None
+    video_message_id: int | None = None
 
 
 class TelegramPublisher:
@@ -104,22 +133,54 @@ class TelegramPublisher:
         text: str,
         photo_url: str | None = None,
         photo_bytes: bytes | None = None,
+        video_url: str | None = None,
+        video_bytes: bytes | None = None,
         filename: str = "image.png",
+        max_video_bytes: int = DEFAULT_MAX_VIDEO_BYTES,
     ) -> PublishResult:
         safe_chat_id = self._allow_chat(chat_id)
         if not text or not text.strip():
             raise ValueError("text must not be empty")
-        if bool(photo_url) and bool(photo_bytes):
+        has_photo_url = photo_url is not None
+        has_photo_bytes = photo_bytes is not None
+        has_video_url = video_url is not None
+        has_video_bytes = video_bytes is not None
+        if has_photo_url and has_photo_bytes:
             raise ValueError("provide only one of photo_url or photo_base64")
+        if has_video_url and has_video_bytes:
+            raise ValueError("provide only one of video_url or video_base64")
+        if (has_photo_url or has_photo_bytes) and (has_video_url or has_video_bytes):
+            raise ValueError("provide photo or video, not both")
         if photo_url:
             photo_url = validate_photo_url(photo_url)
-        mime_type = validate_photo_bytes(photo_bytes) if photo_bytes else None
+        if video_url:
+            video_url = validate_video_url(video_url)
+        mime_type = validate_photo_bytes(photo_bytes) if has_photo_bytes else None
         safe_filename = validate_filename(filename)
+        if (has_video_url or has_video_bytes) and not safe_filename.casefold().endswith(".mp4"):
+            raise ValueError("video filename must end with .mp4")
+        if has_video_bytes:
+            validate_video_bytes(video_bytes, max_bytes=max_video_bytes)
         client = self._client_factory()
 
-        if not photo_url and not photo_bytes:
+        if not (has_photo_url or has_photo_bytes or has_video_url or has_video_bytes):
             messages = await self._send_text(client, safe_chat_id, text)
             return PublishResult("text", messages)
+
+        if has_video_url or has_video_bytes:
+            caption = text if len(text) <= MAX_CAPTION_CHARS else ""
+            video = await client.send_video(
+                chat_id=safe_chat_id,
+                caption=caption,
+                video_url=video_url,
+                video_bytes=video_bytes,
+                filename=safe_filename,
+            )
+            video_id = _message_id(video, operation="sendVideo")
+            if caption:
+                return PublishResult("video_with_caption", [], video_message_id=video_id)
+            messages = await self._send_text(client, safe_chat_id, text)
+            return PublishResult("video_then_text", messages, video_message_id=video_id)
 
         caption = text if len(text) <= MAX_CAPTION_CHARS else ""
         photo = await client.send_photo(

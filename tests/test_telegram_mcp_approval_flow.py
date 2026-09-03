@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import timedelta
 
 import pytest
@@ -13,6 +14,9 @@ from jafar.config import settings
 from jafar.telegram_errors import TelegramDeliveryUncertainError
 from jafar.telegram_publishing import PublishResult
 from jafar.telegram_scheduler import TelegramScheduler, utc_now
+
+
+MINIMAL_MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isomiso2"
 
 
 class FakePublisher:
@@ -243,3 +247,71 @@ def test_scheduler_does_not_clobber_fresh_claim_and_marks_stale_uncertain(tmp_pa
     ) == 1
     assert second_store.get(item.id).status == "delivery_uncertain"
     assert second_store.claim_due(utc_now() + timedelta(days=1)) == []
+
+
+def test_video_draft_is_bound_to_approval_and_scheduled_delivery(monkeypatch, tmp_path) -> None:
+    _settings(monkeypatch, tmp_path)
+    fake = FakePublisher()
+    monkeypatch.setattr(telegram_mcp, "_publisher", lambda: fake)
+    future = (utc_now() + timedelta(minutes=1)).isoformat()
+    video_base64 = base64.b64encode(MINIMAL_MP4).decode("ascii")
+
+    draft = asyncio.run(
+        telegram_mcp.telegram_create_post_draft(
+            "-1001",
+            "scheduled MP4",
+            scheduled_for=future,
+            video_base64=video_base64,
+            filename="safe.mp4",
+        )
+    )
+    assert draft["has_video"] is True
+    assert draft["has_photo"] is False
+    asyncio.run(
+        telegram_mcp.telegram_approve_publication(draft["approval_id"], "owner-1", "APPROVE")
+    )
+    scheduled = asyncio.run(telegram_mcp.telegram_execute_approved(draft["approval_id"]))
+    schedule_id = scheduled["scheduled"]["schedule_id"]
+
+    asyncio.run(
+        TelegramScheduler(telegram_mcp._store(), telegram_mcp._deliver).run_due(
+            utc_now() + timedelta(minutes=2)
+        )
+    )
+    assert telegram_mcp._store().get(schedule_id).message_id == 117
+    assert fake.calls[0]["video_bytes"] == MINIMAL_MP4
+    assert fake.calls[0]["filename"] == "safe.mp4"
+
+
+def test_dry_run_creates_then_cancels_future_schedule_without_delivery(monkeypatch, tmp_path) -> None:
+    _settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "telegram_dry_run", True)
+    fake = FakePublisher()
+    monkeypatch.setattr(telegram_mcp, "_publisher", lambda: fake)
+    scheduled_for = (utc_now() + timedelta(minutes=10)).isoformat()
+    draft = asyncio.run(
+        telegram_mcp.telegram_create_post_draft(
+            "-1001", "synthetic schedule", scheduled_for=scheduled_for, requested_by="owner-test"
+        )
+    )
+    assert draft["payload_hash"]
+    assert draft["chat_id"] == "-1001"
+    assert draft["scheduled_for"] == scheduled_for
+    asyncio.run(
+        telegram_mcp.telegram_approve_publication(draft["approval_id"], "owner-1", "APPROVE")
+    )
+    created = asyncio.run(telegram_mcp.telegram_execute_approved(draft["approval_id"]))
+    schedule_id = created["scheduled"]["schedule_id"]
+    assert created["dry_run"] is True
+    assert telegram_mcp._store().get(schedule_id).status == "pending"
+
+    cancellation = asyncio.run(telegram_mcp.telegram_create_cancel_draft(schedule_id, "owner-test"))
+    asyncio.run(
+        telegram_mcp.telegram_approve_publication(
+            cancellation["approval_id"], "owner-1", "APPROVE"
+        )
+    )
+    cancelled = asyncio.run(telegram_mcp.telegram_execute_approved(cancellation["approval_id"]))
+    assert cancelled["dry_run"] is True
+    assert cancelled["cancelled"]["status"] == "cancelled"
+    assert fake.calls == []

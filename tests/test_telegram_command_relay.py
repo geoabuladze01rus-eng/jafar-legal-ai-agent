@@ -925,3 +925,98 @@ def test_private_media_draft_passes_bytes_to_mcp(
         result["approval"]["state"]
         == "proposed"
     )
+
+
+def test_video_command_requires_safe_private_mp4_reference():
+    command = {
+        "version": 1,
+        "command_id": "1234567890abcdef",
+        "action": "create_post_draft",
+        "chat_id": "-1001234567890",
+        "text": "encrypted video draft",
+        "video_path": "media/smoke.mp4",
+        "video_sha256": "a" * 64,
+        "video_filename": "smoke.mp4",
+    }
+    relay._validate_command(command)
+
+    for field, value in (("video_path", "media/../secret.mp4"), ("video_path", "media/test.png")):
+        invalid = dict(command)
+        invalid[field] = value
+        try:
+            relay._validate_command(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe video reference accepted")
+
+    invalid = dict(command)
+    invalid["media_path"] = "media/photo.png"
+    invalid["media_sha256"] = "b" * 64
+    try:
+        relay._validate_command(invalid)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("photo and video were accepted together")
+
+
+def test_encrypted_private_mp4_relay_creates_proposed_video_draft(monkeypatch, tmp_path):
+    mp4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isomiso2"
+    digest = __import__("hashlib").sha256(mp4).hexdigest()
+    calls = []
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_path = tmp_path / "private.pem"
+    private_path.write_bytes(
+        key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    )
+    monkeypatch.setattr(relay, "PRIVATE_KEY_PATH", private_path)
+
+    monkeypatch.setattr(relay, "_git", lambda *args, **kwargs: "")
+    monkeypatch.setattr(relay, "_git_bytes", lambda *args, **kwargs: mp4)
+
+    async def fake_call(tool_name, arguments):
+        calls.append((tool_name, arguments))
+        return {
+            "approval_id": "approval-video-123",
+            "state": "proposed",
+            "has_video": True,
+            "has_photo": False,
+            "message_id": None,
+        }
+
+    monkeypatch.setattr(relay, "_call_mcp_tool", fake_call)
+    command = {
+        "version": 1,
+        "command_id": "1234567890abcdef",
+        "action": "create_post_draft",
+        "chat_id": "-1001234567890",
+        "text": "synthetic encrypted MP4",
+        "video_path": "media/smoke.mp4",
+        "video_sha256": digest,
+        "video_filename": "smoke.mp4",
+    }
+    aes_key = AESGCM.generate_key(bit_length=256)
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(aes_key).encrypt(nonce, json.dumps(command).encode(), None)
+    wrapped = key.public_key().encrypt(
+        aes_key,
+        padding.OAEP(
+            mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None
+        ),
+    )
+    envelope = json.dumps(
+        {
+            "v": 1,
+            "wrapped_key": base64.b64encode(wrapped).decode(),
+            "nonce": base64.b64encode(nonce).decode(),
+            "ciphertext": base64.b64encode(ciphertext).decode(),
+        }
+    )
+    result = relay._execute(relay.decrypt_envelope(envelope))
+
+    assert result["approval"]["state"] == "proposed"
+    assert result["approval"]["has_video"] is True
+    assert calls[0][0] == "telegram_create_post_draft"
+    assert base64.b64decode(calls[0][1]["video_base64"]) == mp4
+    assert calls[0][1]["filename"] == "smoke.mp4"

@@ -24,6 +24,8 @@ from jafar.telegram_publishing import (
     validate_filename,
     validate_photo_bytes,
     validate_photo_url,
+    validate_video_bytes,
+    validate_video_url,
 )
 from jafar.telegram_runtime import TelegramBotHttpClient
 from jafar.telegram_scheduler import (
@@ -183,6 +185,20 @@ def _decode_photo_base64(value: str) -> bytes:
     return data
 
 
+def _decode_video_base64(value: str) -> bytes:
+    encoded = value.strip()
+    if encoded.startswith("data:"):
+        _, _, encoded = encoded.partition(",")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise ValueError("video_base64 is not valid base64") from exc
+    if not data:
+        raise ValueError("video_base64 decodes to an empty file")
+    validate_video_bytes(data, max_bytes=settings.telegram_max_video_bytes)
+    return data
+
+
 def _store() -> TelegramScheduleStore:
     return TelegramScheduleStore(settings.telegram_scheduler_db_path)
 
@@ -243,6 +259,9 @@ def _approval_summary(record: TelegramApprovalRecord) -> dict[str, Any]:
         "has_photo": bool(
             record.payload.get("photo_url") or record.payload.get("photo_base64")
         ),
+        "has_video": bool(
+            record.payload.get("video_url") or record.payload.get("video_base64")
+        ),
     }
 
 
@@ -268,14 +287,26 @@ async def _deliver(item: ScheduledItem) -> int | None:
             if payload.get("photo_base64")
             else None
         )
+        video = (
+            _decode_video_base64(str(payload["video_base64"]))
+            if payload.get("video_base64")
+            else None
+        )
         result = await _publisher().publish(
             chat_id=item.chat_id,
             text=str(payload["text"]),
             photo_url=payload.get("photo_url"),
             photo_bytes=image,
+            video_url=payload.get("video_url"),
+            video_bytes=video,
             filename=str(payload.get("filename", "image.png")),
+            max_video_bytes=settings.telegram_max_video_bytes,
         )
-        return result.message_ids[-1] if result.message_ids else result.photo_message_id
+        return (
+            result.message_ids[-1]
+            if result.message_ids
+            else result.photo_message_id or result.video_message_id
+        )
     if item.kind == "poll":
         chat = _require_allowed_chat(item.chat_id)
         result = await TelegramBotHttpClient(_require_live_send_token()).send_poll(
@@ -299,14 +330,26 @@ async def _publish_immediately(record: TelegramApprovalRecord) -> int | None:
             if payload.get("photo_base64")
             else None
         )
+        video = (
+            _decode_video_base64(str(payload["video_base64"]))
+            if payload.get("video_base64")
+            else None
+        )
         result = await _publisher().publish(
             chat_id=record.chat_id,
             text=str(payload["text"]),
             photo_url=payload.get("photo_url"),
             photo_bytes=image,
+            video_url=payload.get("video_url"),
+            video_bytes=video,
             filename=str(payload.get("filename", "image.png")),
+            max_video_bytes=settings.telegram_max_video_bytes,
         )
-        return result.message_ids[-1] if result.message_ids else result.photo_message_id
+        return (
+            result.message_ids[-1]
+            if result.message_ids
+            else result.photo_message_id or result.video_message_id
+        )
     if record.kind == "poll":
         chat = _require_allowed_chat(record.chat_id)
         result = await TelegramBotHttpClient(_require_live_send_token()).send_poll(
@@ -345,7 +388,9 @@ async def telegram_create_post_draft(
     scheduled_for: str | None = None,
     photo_url: str | None = None,
     photo_base64: str | None = None,
-    filename: str = "image.png",
+    video_url: str | None = None,
+    video_base64: str | None = None,
+    filename: str | None = None,
     recurrence_seconds: int | None = None,
     requested_by: str = "chatgpt",
 ) -> dict[str, Any]:
@@ -353,13 +398,29 @@ async def telegram_create_post_draft(
     chat = _require_allowed_chat(chat_id)
     if not text or not text.strip():
         raise ValueError("text must not be empty")
-    if photo_url and photo_base64:
+    has_photo_url = photo_url is not None
+    has_photo_base64 = photo_base64 is not None
+    has_video_url = video_url is not None
+    has_video_base64 = video_base64 is not None
+    if has_photo_url and has_photo_base64:
         raise ValueError("provide only one of photo_url or photo_base64")
-    if photo_url:
+    if has_video_url and has_video_base64:
+        raise ValueError("provide only one of video_url or video_base64")
+    if (has_photo_url or has_photo_base64) and (has_video_url or has_video_base64):
+        raise ValueError("provide photo or video, not both")
+    if has_photo_url:
         photo_url = validate_photo_url(photo_url)
-    if photo_base64:
+    if has_photo_base64:
         validate_photo_bytes(_decode_photo_base64(photo_base64))
-    filename = validate_filename(filename)
+    if has_video_url:
+        video_url = validate_video_url(video_url)
+    if has_video_base64:
+        _decode_video_base64(video_base64)
+    filename = validate_filename(
+        filename or ("video.mp4" if has_video_url or has_video_base64 else "image.png")
+    )
+    if (has_video_url or has_video_base64) and not filename.casefold().endswith(".mp4"):
+        raise ValueError("video filename must end with .mp4")
     normalized_schedule = None
     if scheduled_for is not None:
         normalized_schedule = parse_schedule_time(scheduled_for).isoformat()
@@ -369,6 +430,8 @@ async def telegram_create_post_draft(
         "text": text,
         "photo_url": photo_url,
         "photo_base64": photo_base64,
+        "video_url": video_url,
+        "video_base64": video_base64,
         "filename": filename,
         "recurrence_seconds": recurrence_seconds,
     }
@@ -495,26 +558,27 @@ async def telegram_execute_approved(approval_id: str) -> dict[str, Any]:
 
     record = approvals.begin_execution(record.approval_id)
 
-    if settings.telegram_dry_run:
-        completed = approvals.mark_dry_run_completed(record.approval_id)
-        return {
-            "ok": True,
-            "approval_id": completed.approval_id,
-            "state": completed.state,
-            "dry_run": True,
-        }
-
     try:
         if record.kind == "cancel":
             item = _store().cancel(str(record.payload["schedule_id"]))
             approvals.mark_published(record.approval_id, message_id=None)
-            return {"ok": True, "approval_id": record.approval_id, "cancelled": _scheduled(item)}
+            return {
+                "ok": True,
+                "approval_id": record.approval_id,
+                "cancelled": _scheduled(item),
+                "dry_run": settings.telegram_dry_run,
+            }
 
         if record.kind == "reschedule":
             new_time = datetime.fromisoformat(str(record.payload["new_scheduled_for"]))
             item = _store().reschedule(str(record.payload["schedule_id"]), new_time)
             approvals.mark_published(record.approval_id, message_id=None)
-            return {"ok": True, "approval_id": record.approval_id, "rescheduled": _scheduled(item)}
+            return {
+                "ok": True,
+                "approval_id": record.approval_id,
+                "rescheduled": _scheduled(item),
+                "dry_run": settings.telegram_dry_run,
+            }
 
         if record.scheduled_for is not None:
             scheduled = datetime.fromisoformat(record.scheduled_for)
@@ -530,7 +594,21 @@ async def telegram_execute_approved(approval_id: str) -> dict[str, Any]:
                 recurrence_seconds=recurrence_seconds,
             )
             approvals.mark_scheduled(record.approval_id, schedule_id=item.id)
-            return {"ok": True, "approval_id": record.approval_id, "scheduled": _scheduled(item)}
+            return {
+                "ok": True,
+                "approval_id": record.approval_id,
+                "scheduled": _scheduled(item),
+                "dry_run": settings.telegram_dry_run,
+            }
+
+        if settings.telegram_dry_run:
+            completed = approvals.mark_dry_run_completed(record.approval_id)
+            return {
+                "ok": True,
+                "approval_id": completed.approval_id,
+                "state": completed.state,
+                "dry_run": True,
+            }
 
         message_id = await _publish_immediately(record)
     except TelegramDeliveryUncertainError:

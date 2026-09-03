@@ -19,6 +19,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from .telegram_publishing import DEFAULT_MAX_VIDEO_BYTES, validate_video_bytes
+
 logger = logging.getLogger(__name__)
 
 REPO = Path(__file__).resolve().parents[2]
@@ -40,6 +42,7 @@ STATUS_PREFIX = "status/"
 MEDIA_PREFIX = "media/"
 
 MAX_RELAY_PHOTO_BYTES = 10 * 1024 * 1024
+MAX_RELAY_VIDEO_BYTES = DEFAULT_MAX_VIDEO_BYTES
 
 ALLOWED_ACTIONS = {
     "dry_run_probe",
@@ -328,6 +331,9 @@ def _validate_command(command: dict[str, Any]) -> None:
             "media_path",
             "media_sha256",
             "filename",
+            "video_path",
+            "video_sha256",
+            "video_filename",
         }
         unknown = set(command) - allowed_keys
         if unknown:
@@ -352,6 +358,8 @@ def _validate_command(command: dict[str, Any]) -> None:
 
         media_path = command.get("media_path")
         media_sha256 = command.get("media_sha256")
+        video_path = command.get("video_path")
+        video_sha256 = command.get("video_sha256")
 
         if (
             photo_url is not None
@@ -361,6 +369,9 @@ def _validate_command(command: dict[str, Any]) -> None:
                 "provide only one of "
                 "photo_url or media_path"
             )
+
+        if (photo_url is not None or media_path is not None) and video_path is not None:
+            raise ValueError("provide photo or video, not both")
 
         if media_path is not None:
 
@@ -427,6 +438,33 @@ def _validate_command(command: dict[str, Any]) -> None:
                 "media_sha256 requires "
                 "media_path"
             )
+
+        if video_path is not None:
+            if not isinstance(video_path, str):
+                raise ValueError("video_path must be a string")
+            if (
+                not video_path.startswith(MEDIA_PREFIX)
+                or len(video_path) > 240
+                or "\\" in video_path
+                or "//" in video_path
+                or any(part in {"", ".", ".."} for part in video_path.split("/"))
+            ):
+                raise ValueError("unsafe video_path")
+            if not video_path.lower().endswith(".mp4"):
+                raise ValueError("video file must be MP4")
+            if (
+                not isinstance(video_sha256, str)
+                or len(video_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in video_sha256)
+            ):
+                raise ValueError("video_sha256 must be lowercase sha256")
+        elif video_sha256 is not None:
+            raise ValueError("video_sha256 requires video_path")
+
+        video_filename = command.get("video_filename")
+        if video_filename is not None:
+            if not isinstance(video_filename, str) or not video_filename.casefold().endswith(".mp4"):
+                raise ValueError("video_filename must end with .mp4")
 
         filename = command.get("filename")
         if filename is not None and not isinstance(filename, str):
@@ -537,6 +575,8 @@ def _validate_command(command: dict[str, Any]) -> None:
 def _load_private_media(
     media_path: str,
     expected_sha256: str,
+    *,
+    media_kind: str = "photo",
 ) -> bytes:
 
     _git(
@@ -556,10 +596,9 @@ def _load_private_media(
             "media file is empty"
         )
 
-    if len(content) > MAX_RELAY_PHOTO_BYTES:
-        raise ValueError(
-            "media file exceeds 10 MB"
-        )
+    maximum = MAX_RELAY_VIDEO_BYTES if media_kind == "video" else MAX_RELAY_PHOTO_BYTES
+    if len(content) > maximum:
+        raise ValueError("media file exceeds configured internal limit")
 
     digest = hashlib.sha256(
         content
@@ -570,7 +609,9 @@ def _load_private_media(
             "media sha256 mismatch"
         )
 
-    if content.startswith(
+    if media_kind == "video":
+        validate_video_bytes(content, max_bytes=maximum)
+    elif content.startswith(
         b"\x89PNG\r\n\x1a\n"
     ):
         pass
@@ -718,6 +759,20 @@ def _execute(command: dict[str, Any]) -> dict[str, Any]:
                 else Path(
                     media_path
                 ).name
+            )
+
+        elif command.get("video_path") is not None:
+            video_path = str(command["video_path"])
+            video = _load_private_media(
+                video_path,
+                str(command["video_sha256"]),
+                media_kind="video",
+            )
+            arguments["video_base64"] = base64.b64encode(video).decode("ascii")
+            arguments["filename"] = (
+                str(command["video_filename"])
+                if command.get("video_filename")
+                else Path(video_path).name
             )
 
         elif command.get("filename") is not None:

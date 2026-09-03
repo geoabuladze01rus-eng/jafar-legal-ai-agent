@@ -28,6 +28,7 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_CHAT_IDS=...
 TELEGRAM_SCHEDULER_ENABLED=true
 TELEGRAM_SCHEDULER_CLAIM_TIMEOUT_SECONDS=120
+TELEGRAM_MAX_VIDEO_BYTES=20971520
 TELEGRAM_PRODUCTION_SEND=false
 TELEGRAM_DRY_RUN=true
 TELEGRAM_OWNER_APPROVER_ID=...
@@ -41,6 +42,11 @@ JAFAR_MCP_PUBLIC_URL=https://<private-public-endpoint>
 ```
 
 For production polling, `TELEGRAM_POLL_IDENTITY_SECRET` must be a non-placeholder secret of at least 32 characters.
+
+`TELEGRAM_MAX_VIDEO_BYTES` is a conservative internal MP4 intake limit (20 MiB by
+default). It is deliberately not a claim about Telegram's current Bot API upload
+limit. Validate any larger production limit against the official Bot API
+documentation before changing it.
 
 ## Local readiness sequence
 
@@ -57,6 +63,48 @@ Keep live sending disabled first.
 9. Verify `message_id` for immediate sends or `schedule_id` for scheduled sends.
 10. Return live flags to the desired operating configuration after the smoke.
 
+Run the read-only readiness report before the owner smoke. It does not contact
+Telegram, reveal secrets, or modify SQLite state:
+
+```bash
+python scripts/jafar_telegram_readiness.py
+```
+
+It prints the branch and HEAD, local MCP/relay/tunnel health, configured safety
+controls and feature support. `READY_FOR_OWNER_LIVE_SMOKE=true` is deliberately
+possible only while live sending remains disabled; it is a readiness result, not
+permission to send.
+
+## Posts with a private MP4
+
+Text, photo and MP4 video share the same immutable approval and delivery path.
+For an MP4 draft, use exactly one source:
+
+- `video_base64` for a local client-owned byte payload; or
+- `video_url` for an absolute `https://`/`http://` URL ending in `.mp4`.
+
+The filename is required to be a safe `.mp4` name. Empty bytes, non-MP4
+containers, an over-limit file, two video sources, and a photo combined with a
+video are rejected before approval. A short post becomes the video caption;
+longer posts are sent as a video followed by bounded text messages.
+
+For the encrypted Git relay, place a private asset only on the separate
+`jafar-media` branch and reference it exactly as:
+
+```json
+{
+  "action": "create_post_draft",
+  "video_path": "media/example.mp4",
+  "video_sha256": "<lowercase sha256>",
+  "video_filename": "example.mp4"
+}
+```
+
+The relay fetches that exact branch/path, verifies the hash and MP4 container,
+and passes bytes only to the local authenticated MCP. It rejects traversal,
+non-`media/` paths, an unexpected extension, photo+video combinations and all
+inline media. The relay never approves or executes the resulting draft.
+
 ## Scheduler
 
 Run the standalone worker when the FastAPI process is not responsible for scheduling:
@@ -66,6 +114,12 @@ python -m jafar.telegram_scheduler_worker
 ```
 
 The scheduler claims due rows atomically. A second worker cannot claim the same pending row after the first worker changes it to `sending`.
+
+In dry-run, scheduled draft creation and owner-approved cancellation are local
+SQLite operations only. This supports a safe owner test: create a synthetic
+future draft, approve it, confirm the persisted pending `schedule_id`, then
+create/approve/execute its cancellation before it becomes due. A dry-run worker
+must never deliver it to Telegram.
 
 If a process dies while an item is `sending`, the worker leaves it untouched for the claim timeout (120 seconds by default) and then converts it to `delivery_uncertain`. It is not retried automatically. Use owner-controlled reconciliation with external Telegram evidence.
 

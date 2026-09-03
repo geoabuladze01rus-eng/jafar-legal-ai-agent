@@ -91,6 +91,30 @@ class TelegramBotHttpClient:
 
         return await self._post("sendPhoto", data=data, files=files)
 
+    async def send_video(
+        self,
+        *,
+        chat_id: int | str,
+        video_bytes: bytes | None = None,
+        video_url: str | None = None,
+        filename: str = "video.mp4",
+        caption: str = "",
+    ) -> dict[str, Any]:
+        """Send exactly one MP4 source through the same uncertain-POST semantics."""
+        if bool(video_url) == bool(video_bytes):
+            raise ValueError("provide exactly one of video_url or video_bytes")
+        data: dict[str, Any] = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+        if video_url:
+            data["video"] = video_url
+            return await self._post("sendVideo", data=data)
+        return await self._post(
+            "sendVideo",
+            data=data,
+            files={"video": (filename, video_bytes, "video/mp4")},
+        )
+
     async def send_poll(self, *, chat_id: int | str, poll: dict[str, Any]) -> dict[str, Any]:
         options = poll.get("options")
         if not isinstance(options, list):

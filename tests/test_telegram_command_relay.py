@@ -276,3 +276,330 @@ def test_inflight_command_becomes_uncertain_without_reexecution(
 
     status = relay._load_outbox()[command_id]
     assert status["state"] == "execution_uncertain"
+
+
+
+def test_accept_owner_approve_and_schedule():
+    command = {
+        "version": 1,
+        "command_id": "1234567890abcdef",
+        "action": "owner_approve_and_schedule",
+        "approval_id": "approval-123",
+        "expected_payload_hash": "a" * 64,
+        "expected_chat_id": "-1001234567890",
+        "expected_scheduled_for":
+            "2099-09-10T06:00:00+00:00",
+        "owner_confirmation": "APPROVE",
+    }
+
+    relay._validate_command(command)
+
+
+def test_owner_approve_requires_explicit_confirmation():
+    command = {
+        "version": 1,
+        "command_id": "1234567890abcdef",
+        "action": "owner_approve_and_schedule",
+        "approval_id": "approval-123",
+        "expected_payload_hash": "a" * 64,
+        "expected_chat_id": "-1001234567890",
+        "expected_scheduled_for":
+            "2099-09-10T06:00:00+00:00",
+        "owner_confirmation": "YES",
+    }
+
+    try:
+        relay._validate_command(command)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "non-APPROVE confirmation accepted"
+        )
+
+
+def test_owner_approve_rejects_invalid_payload_hash():
+    command = {
+        "version": 1,
+        "command_id": "1234567890abcdef",
+        "action": "owner_approve_and_schedule",
+        "approval_id": "approval-123",
+        "expected_payload_hash": "wrong",
+        "expected_chat_id": "-1001234567890",
+        "expected_scheduled_for":
+            "2099-09-10T06:00:00+00:00",
+        "owner_confirmation": "APPROVE",
+    }
+
+    try:
+        relay._validate_command(command)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "invalid payload hash accepted"
+        )
+
+
+def test_owner_approve_and_schedule_is_hash_bound(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_call(
+        tool_name,
+        arguments,
+    ):
+        calls.append(
+            (tool_name, arguments)
+        )
+
+        if tool_name == "telegram_get_approval":
+            return {
+                "approval_id":
+                    "approval-123",
+                "state":
+                    "proposed",
+                "chat_id":
+                    "-1001234567890",
+                "payload_hash":
+                    "a" * 64,
+                "scheduled_for":
+                    "2099-09-10T06:00:00+00:00",
+            }
+
+        if tool_name == "telegram_approve_publication":
+            return {
+                "approval_id":
+                    "approval-123",
+                "state":
+                    "approved",
+                "chat_id":
+                    "-1001234567890",
+                "payload_hash":
+                    "a" * 64,
+                "scheduled_for":
+                    "2099-09-10T06:00:00+00:00",
+            }
+
+        if tool_name == "telegram_execute_approved":
+            return {
+                "ok": True,
+                "approval_id":
+                    "approval-123",
+                "scheduled": {
+                    "id":
+                        "schedule-123",
+                    "status":
+                        "pending",
+                },
+            }
+
+        raise AssertionError(
+            f"unexpected MCP tool: {tool_name}"
+        )
+
+    monkeypatch.setattr(
+        relay,
+        "_call_mcp_tool",
+        fake_call,
+    )
+
+    monkeypatch.setattr(
+        relay,
+        "_read_env_file",
+        lambda: {
+            "TELEGRAM_OWNER_APPROVER_ID":
+                "artur-owner",
+        },
+    )
+
+    result = relay._execute(
+        {
+            "version": 1,
+            "command_id":
+                "1234567890abcdef",
+            "action":
+                "owner_approve_and_schedule",
+            "approval_id":
+                "approval-123",
+            "expected_payload_hash":
+                "a" * 64,
+            "expected_chat_id":
+                "-1001234567890",
+            "expected_scheduled_for":
+                "2099-09-10T06:00:00+00:00",
+            "owner_confirmation":
+                "APPROVE",
+        }
+    )
+
+    assert calls == [
+        (
+            "telegram_get_approval",
+            {
+                "approval_id":
+                    "approval-123",
+            },
+        ),
+        (
+            "telegram_approve_publication",
+            {
+                "approval_id":
+                    "approval-123",
+                "approver":
+                    "artur-owner",
+                "confirmation":
+                    "APPROVE",
+            },
+        ),
+        (
+            "telegram_execute_approved",
+            {
+                "approval_id":
+                    "approval-123",
+            },
+        ),
+    ]
+
+    assert result["ok"] is True
+    assert (
+        result["execution"]
+        ["scheduled"]
+        ["id"]
+        == "schedule-123"
+    )
+
+
+def test_owner_approve_rejects_hash_mismatch(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_call(
+        tool_name,
+        arguments,
+    ):
+        calls.append(
+            (tool_name, arguments)
+        )
+
+        return {
+            "approval_id":
+                "approval-123",
+            "state":
+                "proposed",
+            "chat_id":
+                "-1001234567890",
+            "payload_hash":
+                "b" * 64,
+            "scheduled_for":
+                "2099-09-10T06:00:00+00:00",
+        }
+
+    monkeypatch.setattr(
+        relay,
+        "_call_mcp_tool",
+        fake_call,
+    )
+
+    try:
+        relay._execute(
+            {
+                "version": 1,
+                "command_id":
+                    "1234567890abcdef",
+                "action":
+                    "owner_approve_and_schedule",
+                "approval_id":
+                    "approval-123",
+                "expected_payload_hash":
+                    "a" * 64,
+                "expected_chat_id":
+                    "-1001234567890",
+                "expected_scheduled_for":
+                    "2099-09-10T06:00:00+00:00",
+                "owner_confirmation":
+                    "APPROVE",
+            }
+        )
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError(
+            "payload hash mismatch accepted"
+        )
+
+    assert [
+        name
+        for name, _ in calls
+    ] == [
+        "telegram_get_approval"
+    ]
+
+
+def test_owner_approve_rejects_immediate_publication(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_call(
+        tool_name,
+        arguments,
+    ):
+        calls.append(
+            (tool_name, arguments)
+        )
+
+        return {
+            "approval_id":
+                "approval-123",
+            "state":
+                "proposed",
+            "chat_id":
+                "-1001234567890",
+            "payload_hash":
+                "a" * 64,
+            "scheduled_for":
+                None,
+        }
+
+    monkeypatch.setattr(
+        relay,
+        "_call_mcp_tool",
+        fake_call,
+    )
+
+    try:
+        relay._execute(
+            {
+                "version": 1,
+                "command_id":
+                    "1234567890abcdef",
+                "action":
+                    "owner_approve_and_schedule",
+                "approval_id":
+                    "approval-123",
+                "expected_payload_hash":
+                    "a" * 64,
+                "expected_chat_id":
+                    "-1001234567890",
+                "expected_scheduled_for":
+                    "2099-09-10T06:00:00+00:00",
+                "owner_confirmation":
+                    "APPROVE",
+            }
+        )
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError(
+            "immediate publication path accepted"
+        )
+
+    assert [
+        name
+        for name, _ in calls
+    ] == [
+        "telegram_get_approval"
+    ]

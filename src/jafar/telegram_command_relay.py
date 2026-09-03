@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ ALLOWED_ACTIONS = {
     "get_approval",
     "list_recent_approvals",
     "list_scheduled_posts",
+    "owner_approve_and_schedule",
 }
 
 FORBIDDEN_ACTIONS = {
@@ -332,6 +334,72 @@ def _validate_command(command: dict[str, Any]) -> None:
         if filename is not None and not isinstance(filename, str):
             raise ValueError("filename must be a string")
 
+    elif action == "owner_approve_and_schedule":
+        allowed_keys = {
+            "version",
+            "command_id",
+            "action",
+            "approval_id",
+            "expected_payload_hash",
+            "expected_chat_id",
+            "expected_scheduled_for",
+            "owner_confirmation",
+        }
+
+        unknown = set(command) - allowed_keys
+        if unknown:
+            raise ValueError(
+                "unexpected owner_approve_and_schedule fields"
+            )
+
+        approval_id = command.get("approval_id")
+        if (
+            not isinstance(approval_id, str)
+            or not approval_id.strip()
+        ):
+            raise ValueError("approval_id is required")
+
+        payload_hash = command.get(
+            "expected_payload_hash"
+        )
+        if (
+            not isinstance(payload_hash, str)
+            or len(payload_hash) != 64
+            or any(
+                char not in "0123456789abcdef"
+                for char in payload_hash
+            )
+        ):
+            raise ValueError(
+                "expected_payload_hash must be lowercase sha256"
+            )
+
+        if not isinstance(
+            command.get("expected_chat_id"),
+            (str, int),
+        ):
+            raise ValueError(
+                "expected_chat_id is required"
+            )
+
+        scheduled_for = command.get(
+            "expected_scheduled_for"
+        )
+        if (
+            not isinstance(scheduled_for, str)
+            or not scheduled_for.strip()
+        ):
+            raise ValueError(
+                "expected_scheduled_for is required"
+            )
+
+        if command.get(
+            "owner_confirmation"
+        ) != "APPROVE":
+            raise ValueError(
+                "explicit owner confirmation is required"
+            )
+
     elif action == "get_approval":
         allowed_keys = {
             "version",
@@ -470,6 +538,162 @@ def _execute(command: dict[str, Any]) -> dict[str, Any]:
             "ok": True,
             "action": action,
             "approval": result,
+        }
+
+    if action == "owner_approve_and_schedule":
+        approval_id = str(
+            command["approval_id"]
+        ).strip()
+
+        expected_hash = str(
+            command["expected_payload_hash"]
+        )
+
+        expected_chat = str(
+            command["expected_chat_id"]
+        )
+
+        expected_schedule = str(
+            command["expected_scheduled_for"]
+        )
+
+        current = asyncio.run(
+            _call_mcp_tool(
+                "telegram_get_approval",
+                {
+                    "approval_id":
+                        approval_id,
+                },
+            )
+        )
+
+        if current.get("state") != "proposed":
+            raise PermissionError(
+                "approval is not in proposed state"
+            )
+
+        if str(
+            current.get("chat_id")
+        ) != expected_chat:
+            raise PermissionError(
+                "approval chat binding changed"
+            )
+
+        if current.get(
+            "payload_hash"
+        ) != expected_hash:
+            raise PermissionError(
+                "approval payload hash changed"
+            )
+
+        actual_schedule = current.get(
+            "scheduled_for"
+        )
+
+        if actual_schedule != expected_schedule:
+            raise PermissionError(
+                "approval schedule binding changed"
+            )
+
+        if not actual_schedule:
+            raise PermissionError(
+                "immediate publication is forbidden "
+                "through owner_approve_and_schedule"
+            )
+
+        try:
+            scheduled_dt = datetime.fromisoformat(
+                str(actual_schedule)
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "invalid scheduled_for timestamp"
+            ) from exc
+
+        if scheduled_dt.tzinfo is None:
+            raise ValueError(
+                "scheduled_for must include timezone"
+            )
+
+        minimum_time = (
+            datetime.now(timezone.utc)
+            + timedelta(minutes=5)
+        )
+
+        if (
+            scheduled_dt.astimezone(
+                timezone.utc
+            )
+            <= minimum_time
+        ):
+            raise PermissionError(
+                "relay scheduling requires "
+                "at least 5 minutes lead time"
+            )
+
+        env = _read_env_file()
+
+        owner = env.get(
+            "TELEGRAM_OWNER_APPROVER_ID",
+            "",
+        ).strip()
+
+        if not owner:
+            raise RuntimeError(
+                "owner approver is not configured"
+            )
+
+        approved = asyncio.run(
+            _call_mcp_tool(
+                "telegram_approve_publication",
+                {
+                    "approval_id":
+                        approval_id,
+                    "approver":
+                        owner,
+                    "confirmation":
+                        command[
+                            "owner_confirmation"
+                        ],
+                },
+            )
+        )
+
+        if approved.get(
+            "state"
+        ) != "approved":
+            raise RuntimeError(
+                "approval did not enter approved state"
+            )
+
+        execution = asyncio.run(
+            _call_mcp_tool(
+                "telegram_execute_approved",
+                {
+                    "approval_id":
+                        approval_id,
+                },
+            )
+        )
+
+        scheduled = execution.get(
+            "scheduled"
+        )
+
+        if not isinstance(
+            scheduled,
+            dict,
+        ):
+            raise RuntimeError(
+                "owner relay may only schedule "
+                "future publications"
+            )
+
+        return {
+            "ok": True,
+            "action": action,
+            "approval": approved,
+            "execution": execution,
         }
 
     if action == "get_approval":

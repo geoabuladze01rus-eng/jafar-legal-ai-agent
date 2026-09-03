@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.transport_security import TransportSecuritySettings
 
 from jafar.config import settings
 from jafar.telegram_approval import TelegramApprovalRecord, TelegramApprovalStore
@@ -578,12 +579,36 @@ if __name__ == "__main__":
             raise RuntimeError("JAFAR_MCP_PORT must be an integer") from exc
         if not 1 <= port <= 65535:
             raise RuntimeError("JAFAR_MCP_PORT must be between 1 and 65535")
+        public_url = (settings.jafar_mcp_public_url or "").strip()
+        public_host = urlparse(public_url).hostname
+        if not public_host:
+            raise RuntimeError("JAFAR_MCP_PUBLIC_URL has no hostname")
+
+        transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "127.0.0.1:*",
+                "localhost:*",
+                "[::1]:*",
+                public_host,
+                f"{public_host}:*",
+            ],
+            allowed_origins=[
+                "http://127.0.0.1:*",
+                "http://localhost:*",
+                "http://[::1]:*",
+                f"https://{public_host}",
+                f"https://{public_host}:*",
+            ],
+        )
+
         mcp.run(
             transport="streamable-http",
             host=host,
             port=port,
             stateless_http=True,
             json_response=True,
+            transport_security=transport_security,
         )
     elif selected_transport == "stdio":
         mcp.run()

@@ -971,6 +971,10 @@ def test_encrypted_private_mp4_relay_creates_proposed_video_draft(monkeypatch, t
         key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
     )
     monkeypatch.setattr(relay, "PRIVATE_KEY_PATH", private_path)
+    monkeypatch.setattr(relay, "BRIDGE_HOME", tmp_path)
+    monkeypatch.setattr(relay, "STATE_PATH", tmp_path / "processed.json")
+    monkeypatch.setattr(relay, "INFLIGHT_PATH", tmp_path / "inflight.json")
+    monkeypatch.setattr(relay, "OUTBOX_PATH", tmp_path / "outbox.json")
 
     monkeypatch.setattr(relay, "_git", lambda *args, **kwargs: "")
     monkeypatch.setattr(relay, "_git_bytes", lambda *args, **kwargs: mp4)
@@ -982,7 +986,9 @@ def test_encrypted_private_mp4_relay_creates_proposed_video_draft(monkeypatch, t
             "state": "proposed",
             "has_video": True,
             "has_photo": False,
+            "approved_by": None,
             "message_id": None,
+            "schedule_id": None,
         }
 
     monkeypatch.setattr(relay, "_call_mcp_tool", fake_call)
@@ -1013,10 +1019,22 @@ def test_encrypted_private_mp4_relay_creates_proposed_video_draft(monkeypatch, t
             "ciphertext": base64.b64encode(ciphertext).decode(),
         }
     )
-    result = relay._execute(relay.decrypt_envelope(envelope))
+    status_records = []
+    monkeypatch.setattr(relay, "_flush_status_outbox", lambda: None)
+    monkeypatch.setattr(relay, "_list_queue_files", lambda: ["queue/1234567890abcdef.jafarcmd"])
+    monkeypatch.setattr(relay, "_read_remote_file", lambda _path: envelope)
+    monkeypatch.setattr(relay, "_queue_status", status_records.append)
 
+    assert relay.run_once() == 1
+    status = status_records[0]
+
+    assert status["state"] == "completed"
+    result = status["result"]
     assert result["approval"]["state"] == "proposed"
     assert result["approval"]["has_video"] is True
+    assert result["approval"]["approved_by"] is None
+    assert result["approval"]["message_id"] is None
+    assert result["approval"]["schedule_id"] is None
     assert calls[0][0] == "telegram_create_post_draft"
     assert base64.b64decode(calls[0][1]["video_base64"]) == mp4
     assert calls[0][1]["filename"] == "smoke.mp4"

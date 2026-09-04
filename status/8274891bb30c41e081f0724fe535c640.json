@@ -1,0 +1,8 @@
+{
+  "action": "create_post_draft",
+  "command_id": "8274891bb30c41e081f0724fe535c640",
+  "error_type": "PermissionError",
+  "state": "failed",
+  "timestamp": 1788512336,
+  "version": 1
+}

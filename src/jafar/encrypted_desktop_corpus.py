@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Any, Iterator, Sequence
 from uuid import uuid4
 
@@ -78,6 +79,7 @@ class EncryptedDesktopCorpusStore:
         self.database_path = database_path
         self.documents_path = documents_path
         self._cipher = AESGCM(key)
+        self._mutex = RLock()
         self._connection = self._open()
         self._migrate()
         self._cleanup_orphan_blobs()
@@ -90,7 +92,7 @@ class EncryptedDesktopCorpusStore:
                 path.chmod(0o700)
             except OSError:
                 pass
-        connection = sqlite3.connect(self.database_path, isolation_level=None)
+        connection = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -151,14 +153,15 @@ class EncryptedDesktopCorpusStore:
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
-        self._connection.execute("BEGIN IMMEDIATE")
-        try:
-            yield
-        except Exception:
-            self._connection.execute("ROLLBACK")
-            raise
-        else:
-            self._connection.execute("COMMIT")
+        with self._mutex:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+            else:
+                self._connection.execute("COMMIT")
 
     def _encrypt(self, value: bytes, aad: bytes) -> tuple[bytes, bytes]:
         nonce = os.urandom(12)
@@ -300,26 +303,28 @@ class EncryptedDesktopCorpusStore:
         return self.get_document(matter_id, document_id)  # type: ignore[return-value]
 
     def get_document(self, matter_id: str, document_id: str) -> CorpusDocument | None:
-        row = self._connection.execute(
-            "SELECT * FROM documents WHERE id = ? AND matter_id = ?", (document_id, matter_id)
-        ).fetchone()
-        if row is None:
-            return None
-        payload = self._document_payload(row)
-        return CorpusDocument(
-            document_id=document_id, matter_id=matter_id, filename=str(payload["filename"]),
-            media_type=str(payload["media_type"]), fingerprint=str(payload["fingerprint"]),
-            byte_count=int(payload["byte_count"]), extracted_text=str(payload["extracted_text"]),
-            ocr_records=tuple(payload.get("ocr_records", [])), facts=tuple(payload.get("facts", [])),
-            provenance=tuple(payload.get("provenance", [])), state=str(row["state"]),
-            created_at=str(row["created_at"]),
-        )
+        with self._mutex:
+            row = self._connection.execute(
+                "SELECT * FROM documents WHERE id = ? AND matter_id = ?", (document_id, matter_id)
+            ).fetchone()
+            if row is None:
+                return None
+            payload = self._document_payload(row)
+            return CorpusDocument(
+                document_id=document_id, matter_id=matter_id, filename=str(payload["filename"]),
+                media_type=str(payload["media_type"]), fingerprint=str(payload["fingerprint"]),
+                byte_count=int(payload["byte_count"]), extracted_text=str(payload["extracted_text"]),
+                ocr_records=tuple(payload.get("ocr_records", [])), facts=tuple(payload.get("facts", [])),
+                provenance=tuple(payload.get("provenance", [])), state=str(row["state"]),
+                created_at=str(row["created_at"]),
+            )
 
     def documents(self, matter_id: str) -> list[CorpusDocument]:
-        rows = self._connection.execute(
-            "SELECT id FROM documents WHERE matter_id = ? ORDER BY created_at", (matter_id,)
-        ).fetchall()
-        return [document for row in rows if (document := self.get_document(matter_id, row["id"]))]
+        with self._mutex:
+            rows = self._connection.execute(
+                "SELECT id FROM documents WHERE matter_id = ? ORDER BY created_at", (matter_id,)
+            ).fetchall()
+            return [document for row in rows if (document := self.get_document(matter_id, row["id"]))]
 
     def read_original(self, matter_id: str, document_id: str) -> bytes:
         document = self.get_document(matter_id, document_id)
@@ -328,22 +333,23 @@ class EncryptedDesktopCorpusStore:
         return self._read_blob(document_id, document.fingerprint)
 
     def chunks(self, matter_id: str) -> list[MatterChunk]:
-        rows = self._connection.execute(
-            "SELECT * FROM chunks WHERE matter_id = ? ORDER BY document_id, chunk_index", (matter_id,)
-        ).fetchall()
-        result: list[MatterChunk] = []
-        for row in rows:
-            if self.get_document(matter_id, row["document_id"]) is None:
-                raise DesktopStorageError("desktop corpus chunk has no authorized document")
-            payload = self._chunk_payload(row)
-            embedding = payload.get("embedding")
-            result.append(MatterChunk(
-                chunk_id=row["id"], matter_id=matter_id, document_id=row["document_id"],
-                source_page=int(row["source_page"]), chunk_index=int(row["chunk_index"]),
-                content=str(payload["content"]),
-                embedding=tuple(float(value) for value in embedding) if embedding is not None else None,
-            ))
-        return result
+        with self._mutex:
+            rows = self._connection.execute(
+                "SELECT * FROM chunks WHERE matter_id = ? ORDER BY document_id, chunk_index", (matter_id,)
+            ).fetchall()
+            result: list[MatterChunk] = []
+            for row in rows:
+                if self.get_document(matter_id, row["document_id"]) is None:
+                    raise DesktopStorageError("desktop corpus chunk has no authorized document")
+                payload = self._chunk_payload(row)
+                embedding = payload.get("embedding")
+                result.append(MatterChunk(
+                    chunk_id=row["id"], matter_id=matter_id, document_id=row["document_id"],
+                    source_page=int(row["source_page"]), chunk_index=int(row["chunk_index"]),
+                    content=str(payload["content"]),
+                    embedding=tuple(float(value) for value in embedding) if embedding is not None else None,
+                ))
+            return result
 
     def retrieve(self, matter_id: str, query: str, *, limit: int = 8) -> MatterRAGContext:
         return MatterRetriever().retrieve(matter_id=matter_id, query=query, chunks=self.chunks(matter_id), limit=limit)
@@ -373,4 +379,5 @@ class EncryptedDesktopCorpusStore:
         return True
 
     def close(self) -> None:
-        self._connection.close()
+        with self._mutex:
+            self._connection.close()

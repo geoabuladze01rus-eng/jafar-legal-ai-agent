@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -97,3 +98,12 @@ def test_second_writer_is_rejected_and_atomic_duplicate_failure_preserves_existi
         first.create(make_matter())
     assert first.get("matter-1") is not None
     first.close()
+
+
+def test_repository_can_serve_fastapi_worker_thread_without_cross_thread_sqlite_failure(tmp_path, monkeypatch):
+    store = repository(tmp_path, storage_key(monkeypatch))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        created = executor.submit(store.create, make_matter()).result()
+        restored = executor.submit(store.get, created.id).result()
+    assert restored is not None
+    store.close()

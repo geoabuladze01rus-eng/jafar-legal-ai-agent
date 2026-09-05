@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -109,3 +110,12 @@ def test_unknown_schema_and_unapproved_delete_fail_closed(tmp_path: Path):
     connection.close()
     with pytest.raises(DesktopStorageError):
         store(tmp_path)
+
+
+def test_corpus_can_serve_worker_thread_without_cross_thread_sqlite_failure(tmp_path: Path):
+    target = store(tmp_path)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        document = executor.submit(persist, target).result()
+        restored = executor.submit(target.get_document, "matter-a", document.document_id).result()
+    assert restored is not None
+    target.close()

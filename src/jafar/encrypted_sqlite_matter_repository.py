@@ -9,6 +9,7 @@ from uuid import uuid4
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from threading import RLock
 from typing import Iterator
 
 from cryptography.exceptions import InvalidTag
@@ -55,6 +56,7 @@ class EncryptedSQLiteMatterRepository(MatterRepository):
         self.database_path = database_path
         self.lock_path = lock_path
         self._cipher = AESGCM(key)
+        self._mutex = RLock()
         self._lock_handle = self._acquire_lock(lock_path)
         try:
             self._connection = self._open()
@@ -79,7 +81,7 @@ class EncryptedSQLiteMatterRepository(MatterRepository):
 
     def _open(self) -> sqlite3.Connection:
         self.database_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, isolation_level=None)
+        connection = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -108,14 +110,15 @@ class EncryptedSQLiteMatterRepository(MatterRepository):
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
-        self._connection.execute("BEGIN IMMEDIATE")
-        try:
-            yield
-        except Exception:
-            self._connection.execute("ROLLBACK")
-            raise
-        else:
-            self._connection.execute("COMMIT")
+        with self._mutex:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+            except Exception:
+                self._connection.execute("ROLLBACK")
+                raise
+            else:
+                self._connection.execute("COMMIT")
 
     def _encrypt(self, value: bytes, aad: bytes) -> tuple[bytes, bytes]:
         nonce = os.urandom(12)
@@ -146,14 +149,16 @@ class EncryptedSQLiteMatterRepository(MatterRepository):
         return matter
 
     def get(self, matter_id: str) -> Matter | None:
-        row = self._connection.execute("SELECT * FROM matters WHERE id = ?", (matter_id,)).fetchone()
-        if row is None:
-            return None
-        return self._matter(row, self._decrypt(row["nonce"], row["payload"], f"matter:{matter_id}".encode()))
+        with self._mutex:
+            row = self._connection.execute("SELECT * FROM matters WHERE id = ?", (matter_id,)).fetchone()
+            if row is None:
+                return None
+            return self._matter(row, self._decrypt(row["nonce"], row["payload"], f"matter:{matter_id}".encode()))
 
     def list_matters(self) -> list[Matter]:
-        rows = self._connection.execute("SELECT * FROM matters ORDER BY updated_at DESC").fetchall()
-        return [self._matter(row, self._decrypt(row["nonce"], row["payload"], f"matter:{row['id']}".encode())) for row in rows]
+        with self._mutex:
+            rows = self._connection.execute("SELECT * FROM matters ORDER BY updated_at DESC").fetchall()
+            return [self._matter(row, self._decrypt(row["nonce"], row["payload"], f"matter:{row['id']}".encode())) for row in rows]
 
     def _save_matter(self, matter: Matter) -> Matter:
         nonce, payload = self._encrypt(self._json(matter), f"matter:{matter.id}".encode())
@@ -212,15 +217,18 @@ class EncryptedSQLiteMatterRepository(MatterRepository):
             return event
 
     def event_by_fingerprint(self, matter_id: str, document_fingerprint: str) -> MatterEvent | None:
-        row = self._connection.execute("SELECT * FROM events WHERE matter_id = ? AND fingerprint = ?", (matter_id, document_fingerprint)).fetchone()
-        if row is None:
-            return None
-        return self._event(row, self._decrypt(row["nonce"], row["payload"], f"event:{row['id']}".encode()))
+        with self._mutex:
+            row = self._connection.execute("SELECT * FROM events WHERE matter_id = ? AND fingerprint = ?", (matter_id, document_fingerprint)).fetchone()
+            if row is None:
+                return None
+            return self._event(row, self._decrypt(row["nonce"], row["payload"], f"event:{row['id']}".encode()))
 
     def events(self, matter_id: str) -> list[MatterEvent]:
-        rows = self._connection.execute("SELECT * FROM events WHERE matter_id = ? ORDER BY event_date", (matter_id,)).fetchall()
-        return [self._event(row, self._decrypt(row["nonce"], row["payload"], f"event:{row['id']}".encode())) for row in rows]
+        with self._mutex:
+            rows = self._connection.execute("SELECT * FROM events WHERE matter_id = ? ORDER BY event_date", (matter_id,)).fetchall()
+            return [self._event(row, self._decrypt(row["nonce"], row["payload"], f"event:{row['id']}".encode())) for row in rows]
 
     def close(self) -> None:
-        self._connection.close()
-        self._lock_handle.close()
+        with self._mutex:
+            self._connection.close()
+            self._lock_handle.close()

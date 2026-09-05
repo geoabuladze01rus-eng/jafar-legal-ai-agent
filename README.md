@@ -2,7 +2,7 @@
 
 Jafar is a private, Matter-centric AI system for legal work. The canonical JAFAR 2.0 consolidation line combines document analysis, matter context, evidence/provenance controls, retrieval, long-term memory, email/workspace intake, Apple voice workflows and controlled external actions behind one security boundary.
 
-Current package version: **0.13.0**.
+Current package version: **2.0.0**.
 
 ## Canonical architecture
 

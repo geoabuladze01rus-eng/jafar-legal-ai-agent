@@ -66,7 +66,7 @@ def research_matter(
             min_similarity=body.min_similarity,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Invalid legal research request") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail="Legal research failed") from exc
     return _serialize(result)

@@ -4,6 +4,7 @@ import os
 
 from supabase import create_client
 
+from .api_auth import PROTECTED_ENVIRONMENTS, configured_environment
 from .matter_repository import MatterRepository
 from .matters import MatterStore
 from .supabase_matter_repository import SupabaseMatterRepository
@@ -21,7 +22,12 @@ def build_matter_repository_from_env() -> MatterRepository:
     service_role_key = os.getenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", "").strip()
     owner_user_id = os.getenv("JAFAR_LEGAL_RESEARCH_OWNER_USER_ID", "").strip()
 
-    if not all((url, service_role_key, owner_user_id)):
+    configured = (url, service_role_key, owner_user_id)
+    if not all(configured):
+        if configured_environment() in PROTECTED_ENVIRONMENTS:
+            raise RuntimeError(
+                "Persistent matter storage is required in staging and production"
+            )
         return MatterStore()
 
     client = create_client(url, service_role_key)

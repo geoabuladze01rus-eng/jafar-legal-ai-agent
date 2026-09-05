@@ -10,25 +10,36 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function configuredKeys(): string[] {
-  const keys: string[] = [];
-  for (const envName of ["SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_SECRET_KEYS"]) {
-    try {
-      const raw = Deno.env.get(envName);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      for (const value of Object.values(parsed)) if (typeof value === "string") keys.push(value);
-    } catch { /* ignore malformed optional key maps */ }
+  const worker = Deno.env.get("JAFAR_WORKER_SECRET")?.trim() ?? "";
+  return worker.length >= 32 ? [worker] : [];
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index++) {
+    difference |= leftBytes[index] ^ rightBytes[index];
   }
-  const worker = Deno.env.get("JAFAR_WORKER_SECRET");
-  if (worker) keys.push(worker);
-  return [...new Set(keys)];
+  return difference === 0;
 }
 
 function isInternal(req: Request): boolean {
   const apiKey = req.headers.get("apikey") ?? "";
   const auth = req.headers.get("Authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
+  return configuredKeys().some((key) => safeEqual(key, apiKey) || safeEqual(key, bearer));
+}
+
+function confidentialCloudEnabled(): boolean {
+  return (Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK") ?? "").trim().toLowerCase() === "true";
+}
+
+function safeErrorCode(error: unknown): string {
+  const message = String(error).replace(/^Error:\s*/u, "");
+  const candidate = message.split(":", 1)[0].replace(/[^a-z0-9_]/giu, "_").slice(0, 80);
+  return candidate || "document_pipeline_failed";
 }
 
 function splitOversizedBlock(block: string, maxChars = 3400): string[] {
@@ -89,6 +100,7 @@ function semanticLegalChunks(text: string, targetChars = 2600, maxChars = 3400):
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isInternal(req)) return json({ error: "unauthorized_worker" }, 401);
+  if (!confidentialCloudEnabled()) return json({ error: "confidential_cloud_processing_disabled" }, 503);
 
   const url = Deno.env.get("SUPABASE_URL");
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -167,7 +179,7 @@ Deno.serve(async (req) => {
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
           body: JSON.stringify({ model: EMBED_MODEL, input: chunks.map((chunk: any) => chunk.content) }),
         });
-        if (!response.ok) throw new Error(`embedding_api:${response.status}:${(await response.text()).slice(0, 800)}`);
+        if (!response.ok) throw new Error(`embedding_api:${response.status}`);
         const output = await response.json();
         for (let i = 0; i < chunks.length; i++) {
           const embedding = output.data?.[i]?.embedding;
@@ -194,7 +206,7 @@ Deno.serve(async (req) => {
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({ model: MODEL, input: prompt, text: { format: { type: "json_object" } } }),
       });
-      if (!response.ok) throw new Error(`analysis_api:${response.status}:${(await response.text()).slice(0, 1200)}`);
+      if (!response.ok) throw new Error(`analysis_api:${response.status}`);
       const output = await response.json();
       let result: any;
       try { result = JSON.parse(output.output_text || "{}"); } catch { throw new Error("analysis_invalid_json"); }
@@ -220,9 +232,9 @@ Deno.serve(async (req) => {
     await db.from("worker_heartbeats").upsert({ worker_name: "document-pipeline-worker", last_seen_at: new Date().toISOString(), status: "active", updated_at: new Date().toISOString() });
     return json({ ok: true, job_id: job.id, document_id: job.document_id, stage: job.stage, status: "completed" });
   } catch (error) {
-    const message = String(error);
-    const manual = message.includes("manual_review");
-    await finish(manual ? "manual_review" : "failed", message);
-    return json({ ok: false, job_id: job.id, document_id: job.document_id, stage: job.stage, status: manual ? "manual_review" : "failed", error: message }, manual ? 422 : 502);
+    const code = safeErrorCode(error);
+    const manual = code.includes("manual_review");
+    await finish(manual ? "manual_review" : "failed", code);
+    return json({ ok: false, job_id: job.id, document_id: job.document_id, stage: job.stage, status: manual ? "manual_review" : "failed", error: code }, manual ? 422 : 502);
   }
 });

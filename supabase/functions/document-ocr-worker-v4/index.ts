@@ -11,25 +11,36 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function configuredKeys(): string[] {
-  const keys: string[] = [];
-  for (const envName of ["SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_SECRET_KEYS"]) {
-    try {
-      const raw = Deno.env.get(envName);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      for (const value of Object.values(parsed)) if (typeof value === "string") keys.push(value);
-    } catch { /* ignore malformed optional key maps */ }
+  const worker = Deno.env.get("JAFAR_WORKER_SECRET")?.trim() ?? "";
+  return worker.length >= 32 ? [worker] : [];
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index++) {
+    difference |= leftBytes[index] ^ rightBytes[index];
   }
-  const worker = Deno.env.get("JAFAR_WORKER_SECRET");
-  if (worker) keys.push(worker);
-  return [...new Set(keys)];
+  return difference === 0;
 }
 
 function isInternal(req: Request): boolean {
   const apiKey = req.headers.get("apikey") ?? "";
   const auth = req.headers.get("Authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return configuredKeys().includes(apiKey) || configuredKeys().includes(bearer);
+  return configuredKeys().some((key) => safeEqual(key, apiKey) || safeEqual(key, bearer));
+}
+
+function confidentialCloudEnabled(): boolean {
+  return (Deno.env.get("CONFIDENTIAL_CLOUD_FALLBACK") ?? "").trim().toLowerCase() === "true";
+}
+
+function safeErrorCode(error: unknown): string {
+  const message = String(error).replace(/^Error:\s*/u, "");
+  const candidate = message.split(":", 1)[0].replace(/[^a-z0-9_]/giu, "_").slice(0, 80);
+  return candidate || "document_ocr_failed";
 }
 
 async function openaiFile(key: string, file: Blob) {
@@ -41,13 +52,14 @@ async function openaiFile(key: string, file: Blob) {
     headers: { Authorization: `Bearer ${key}` },
     body: form,
   });
-  if (!response.ok) throw new Error(`file_upload:${response.status}:${(await response.text()).slice(0, 700)}`);
+  if (!response.ok) throw new Error(`file_upload:${response.status}`);
   return await response.json();
 }
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isInternal(req)) return json({ error: "unauthorized_worker" }, 401);
+  if (!confidentialCloudEnabled()) return json({ error: "confidential_cloud_processing_disabled" }, 503);
 
   const url = Deno.env.get("SUPABASE_URL");
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -64,7 +76,8 @@ Deno.serve(async (req) => {
   const job = jobs?.[0];
   if (!job) return json({ ok: true, status: "idle" });
 
-  const fail = async (message: string, retry = true) => {
+  const fail = async (error: unknown, retry = true) => {
+    const message = safeErrorCode(error);
     const attempts = Number(job.attempts ?? 1);
     const terminal = !retry || attempts >= MAX_RETRIES;
     const next = terminal ? null : new Date(Date.now() + Math.min(120000, 5000 * attempts)).toISOString();
@@ -128,7 +141,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    await fail(`responses:${response.status}:${(await response.text()).slice(0, 1500)}`);
+    await fail(`responses:${response.status}`);
     return json({ error: "openai_ocr_failed" }, 502);
   }
 

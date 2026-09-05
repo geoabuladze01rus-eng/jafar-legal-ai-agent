@@ -25,6 +25,9 @@ This document records security invariants verified during the CONSOLIDATION phas
 - HTTP API authentication may be optional in local development, but `/v1/*` fails closed in `staging` and `production` when `JAFAR_API_BEARER_TOKEN` is absent.
 - The Google OAuth callback is the only `/v1` authentication exemption and remains protected by the OAuth state validation flow.
 - Configured Google OAuth in staging/production requires persistent encrypted Supabase token storage; it must not silently fall back to an in-memory token store.
+- Google OAuth and Workspace token lookup in staging/production use a server-bound subject; API callers cannot select another token-store subject.
+- Internal document Edge workers accept only a dedicated `JAFAR_WORKER_SECRET` of at least 32 characters. The same value must be provisioned as the Supabase Vault secret `jafar_worker_secret`; publishable/anon and service-role API keys are not worker credentials.
+- OpenAI-backed document workers, legal research, memory embeddings and direct analysis remain disabled until deployment explicitly sets `CONFIDENTIAL_CLOUD_FALLBACK=true`. Enabling it is an operational consent decision, not a default.
 
 ## Deployment constraint
 

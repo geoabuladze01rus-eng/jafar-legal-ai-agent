@@ -25,6 +25,7 @@ def test_desktop_sidecar_rejects_non_loopback_and_missing_ephemeral_token(monkey
     assert main(["--host", LOOPBACK_HOST, "--port", "8123"]) == 2
 
     monkeypatch.setenv("JAFAR_DESKTOP_IPC_TOKEN", "a" * 32)
+    monkeypatch.delenv("JAFAR_DESKTOP_STORAGE_KEY", raising=False)
     assert main(["--host", "0.0.0.0", "--port", "8123"]) == 2
 
     monkeypatch.setenv("JAFAR_DESKTOP_PARENT_PID", "not-a-pid")

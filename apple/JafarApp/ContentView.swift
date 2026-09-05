@@ -38,6 +38,9 @@ struct ContentView: View {
                     Text(backend.title)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(backend.isFailed ? .red : .secondary)
+                    Text(backend.storageTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(backend.isFailed ? .red : .secondary)
                     if backend.isFailed {
                         Button("Повторить") { Task { await backend.start() } }
                             .buttonStyle(.bordered)

@@ -79,6 +79,15 @@ final class BackendRuntime: ObservableObject {
         case .failed: "LOCAL ENGINE FAILED"
         }
     }
+
+    var storageTitle: String {
+        switch state {
+        case .ready: "LOCAL STORAGE READY"
+        case .starting: "INITIALIZING LOCAL STORAGE"
+        case .failed: "LOCAL STORAGE UNAVAILABLE"
+        case .stopped, .stopping: "LOCAL STORAGE STOPPED"
+        }
+    }
 }
 
 final class BackendSupervisor {
@@ -101,10 +110,11 @@ final class BackendSupervisor {
 
         let port = try loopbackPort()
         let token = randomToken()
+        let storageKey = try DesktopStorageKey().loadOrCreate()
         let task = Process()
         task.executableURL = executable
         task.arguments = ["--host", "127.0.0.1", "--port", String(port)]
-        task.environment = safeEnvironment(token: token)
+        task.environment = safeEnvironment(token: token, storageKey: storageKey)
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
         task.terminationHandler = { [weak self] _ in
@@ -161,12 +171,14 @@ final class BackendSupervisor {
             .replacingOccurrences(of: "\n", with: "")
     }
 
-    private func safeEnvironment(token: String) -> [String: String] {
+    private func safeEnvironment(token: String, storageKey: String) -> [String: String] {
         [
             "HOME": NSHomeDirectory(),
             "LANG": "ru_RU.UTF-8",
             "JAFAR_RUNTIME_MODE": "desktop",
             "JAFAR_DESKTOP_IPC_TOKEN": token,
+            // Child-only environment transport: no shell or command-line exposure.
+            "JAFAR_DESKTOP_STORAGE_KEY": storageKey,
             "JAFAR_DESKTOP_PARENT_PID": String(getpid()),
             "JAFAR_PRODUCTION_SEND": "false",
             "JAFAR_TELEGRAM_POLLING_ENABLED": "false",

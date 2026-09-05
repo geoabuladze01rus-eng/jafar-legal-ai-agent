@@ -1,0 +1,12 @@
+# JAFAR beta privacy and data
+
+JAFAR stores Matter data locally in encrypted application-managed storage.  The
+default AI path is local Ollama.  Cloud AI is not enabled automatically for
+confidential work.  Optional Google, cloud AI and messaging integrations do not
+start merely because the beta launches.
+
+JAFAR does not automatically upload Matters, documents, prompts or backups.  Safe
+diagnostics contain only component state and versions, never document content or
+credentials.  This beta does not yet provide portable encrypted export or a cloud
+backup service; users should treat their Mac account, FileVault and Keychain as part
+of the operating security boundary.

@@ -5,6 +5,8 @@ import os
 from supabase import create_client
 
 from .api_auth import PROTECTED_ENVIRONMENTS, configured_environment
+from .desktop_runtime import desktop_paths, is_desktop_runtime
+from .encrypted_sqlite_matter_repository import EncryptedSQLiteMatterRepository, storage_key_from_environment
 from .matter_repository import MatterRepository
 from .matters import MatterStore
 from .supabase_matter_repository import SupabaseMatterRepository
@@ -17,6 +19,12 @@ def build_matter_repository_from_env() -> MatterRepository:
     deployments can share the same matter catalog across restarts and client devices by
     setting the server-side Supabase credentials and fixed owner id.
     """
+
+    if is_desktop_runtime():
+        paths = desktop_paths().create()
+        return EncryptedSQLiteMatterRepository(
+            paths.matter_database, storage_key_from_environment(), paths.database_lock
+        )
 
     url = os.getenv("JAFAR_SUPABASE_URL", "").strip()
     service_role_key = os.getenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", "").strip()

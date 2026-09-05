@@ -23,6 +23,14 @@ class DesktopPaths:
     cache: Path
     temporary: Path
 
+    @property
+    def matter_database(self) -> Path:
+        return self.application_support / "matters.sqlite3"
+
+    @property
+    def database_lock(self) -> Path:
+        return self.application_support / "matters.lock"
+
     def create(self) -> "DesktopPaths":
         for path in (self.application_support, self.logs, self.cache, self.temporary):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)

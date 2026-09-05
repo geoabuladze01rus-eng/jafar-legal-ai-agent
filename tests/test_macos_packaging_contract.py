@@ -90,3 +90,12 @@ def test_swift_supervisor_has_no_shell_and_uses_ephemeral_ipc() -> None:
     assert "Process()" in source
     assert "onUnexpectedTermination" in source
     assert "JAFAR_DESKTOP_PARENT_PID" in source
+
+
+def test_distribution_dry_run_builds_then_fails_closed_without_identity() -> None:
+    script = (ROOT / "scripts/package_macos_distribution.sh").read_text(encoding="utf-8")
+
+    assert "build_macos_release.sh" in script
+    assert "Nested executable inventory" in script
+    assert "Developer ID Application identity is unavailable" in script
+    assert "notarization was attempted" in script

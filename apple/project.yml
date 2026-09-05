@@ -16,8 +16,10 @@ targets:
     info:
       path: JafarApp/Info.plist
       properties:
-        CFBundleShortVersionString: "2.0.0"
+        CFBundleDisplayName: "JAFAR"
+        CFBundleShortVersionString: "2.1.0"
         CFBundleVersion: "1"
+        LSMinimumSystemVersion: "14.0"
         NSMicrophoneUsageDescription: "Джафар использует микрофон для голосовых команд."
         NSSpeechRecognitionUsageDescription: "Джафар использует распознавание речи для выполнения голосовых команд."
         JAFARCommandEndpoint: "$(JAFAR_COMMAND_ENDPOINT)"
@@ -26,3 +28,4 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.jafar.legal-ai
         PRODUCT_NAME: Jafar
+        ENABLE_HARDENED_RUNTIME: "YES"

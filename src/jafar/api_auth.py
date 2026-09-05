@@ -56,9 +56,16 @@ def validate_bearer_value(authorization: str | None) -> bool:
 
 async def api_auth_middleware(request: Request, call_next):
     path = request.url.path
-    # Production OAuth redirects keep their narrow callback exemption.  The desktop
-    # sidecar has no OAuth bootstrap surface and authenticates every private route.
-    if path in OAUTH_CALLBACK_PATHS and not is_desktop_runtime():
+    # Desktop authentication is deliberately evaluated before every server exemption.
+    # Adding an OAuth callback to OAUTH_CALLBACK_PATHS can therefore never make a
+    # desktop /v1 route public.
+    if is_desktop_runtime():
+        if path.startswith("/v1/") and not validate_bearer_value(request.headers.get("Authorization")):
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return await call_next(request)
+
+    # Server OAuth redirects retain their narrowly scoped callback exemption.
+    if path in OAUTH_CALLBACK_PATHS:
         return await call_next(request)
     if path.startswith("/v1/") and not validate_bearer_value(request.headers.get("Authorization")):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})

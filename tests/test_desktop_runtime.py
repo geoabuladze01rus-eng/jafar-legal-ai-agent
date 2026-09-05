@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import base64
+import importlib
+import os
+import sys
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -55,3 +60,27 @@ def test_desktop_ipc_requires_ephemeral_bearer_for_every_private_route(monkeypat
     assert client.get("/v1/private").status_code == 401
     assert client.get("/v1/oauth/google/callback").status_code == 401
     assert client.get("/v1/private", headers={"Authorization": "Bearer " + "a" * 32}).status_code == 200
+
+
+def test_sidecar_bootstraps_and_scrubs_storage_key_before_uvicorn(monkeypatch) -> None:
+    import jafar.desktop_key_material as key_material
+
+    importlib.reload(key_material)
+    monkeypatch.setenv("JAFAR_DESKTOP_IPC_TOKEN", "a" * 32)
+    monkeypatch.setenv("JAFAR_DESKTOP_STORAGE_KEY", base64.urlsafe_b64encode(b"k" * 32).decode().rstrip("="))
+    observed: dict[str, bool] = {}
+
+    def run(*_args, **_kwargs) -> None:
+        observed["scrubbed"] = "JAFAR_DESKTOP_STORAGE_KEY" not in __import__("os").environ
+
+    monkeypatch.setitem(sys.modules, "uvicorn", SimpleNamespace(run=run))
+    try:
+        assert main(["--host", LOOPBACK_HOST, "--port", "8124"]) == 0
+        assert observed["scrubbed"] is True
+    finally:
+        for name in (
+            "JAFAR_RUNTIME_MODE", "ENVIRONMENT", "JAFAR_PRODUCTION_SEND",
+            "JAFAR_TELEGRAM_POLLING_ENABLED", "JAFAR_CONFIDENTIAL_CLOUD_FALLBACK",
+            "JAFAR_DESKTOP_STATE_DIR", "JAFAR_DESKTOP_LOG_DIR", "JAFAR_DESKTOP_CACHE_DIR",
+        ):
+            os.environ.pop(name, None)

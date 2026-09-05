@@ -25,4 +25,7 @@ document or RAG store is created by this repository.  It must use the same encry
 payload boundary before being enabled.  The key is passed only to the directly
 spawned sidecar and is not inherited from the user's shell, but same-user privileged
 process inspection remains a macOS threat-model boundary; a future authenticated IPC
-key handoff can further reduce that in-memory exposure.
+key handoff can further reduce that in-memory exposure.  The sidecar consumes the raw
+Keychain value exactly once at bootstrap, derives separate Matter/corpus keys, and
+removes the raw environment entry before importing its ASGI application. Python's
+best-effort temporary-buffer clearing is not a guarantee of memory zeroization.

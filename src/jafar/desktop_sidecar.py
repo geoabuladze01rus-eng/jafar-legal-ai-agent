@@ -65,6 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["JAFAR_PRODUCTION_SEND"] = "false"
     os.environ["JAFAR_TELEGRAM_POLLING_ENABLED"] = "false"
     os.environ["JAFAR_CONFIDENTIAL_CLOUD_FALLBACK"] = "false"
+    # Derive process-local storage keys and remove the Keychain master material
+    # before importing the ASGI application or starting any background thread.
+    from .desktop_key_material import bootstrap_desktop_key_material
+
+    try:
+        bootstrap_desktop_key_material()
+    except RuntimeError:
+        print("JAFAR desktop backend storage bootstrap failed", file=sys.stderr)
+        return 2
     paths = desktop_paths().create()
     os.environ["JAFAR_DESKTOP_STATE_DIR"] = str(paths.application_support)
     os.environ["JAFAR_DESKTOP_LOG_DIR"] = str(paths.logs)

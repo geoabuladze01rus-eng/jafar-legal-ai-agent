@@ -22,4 +22,7 @@ but does not replace, macOS account controls, FileVault and secure backups.
 Limitations: IDs and timestamps remain visible metadata.  Application-controlled
 document/RAG persistence is not yet enabled for desktop beta, so no plaintext source
 document or RAG store is created by this repository.  It must use the same encrypted
-payload boundary before being enabled.
+payload boundary before being enabled.  The key is passed only to the directly
+spawned sidecar and is not inherited from the user's shell, but same-user privileged
+process inspection remains a macOS threat-model boundary; a future authenticated IPC
+key handoff can further reduce that in-memory exposure.

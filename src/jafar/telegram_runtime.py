@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -40,6 +42,29 @@ class TelegramBotHttpClient:
     def _url(self, method: str) -> str:
         return f"https://api.telegram.org/bot{self._bot_token}/{method}"
 
+    def _egress_config(self) -> tuple[str, str] | None:
+        if not settings.telegram_egress_enabled:
+            return None
+
+        url = (settings.telegram_egress_url or "").strip()
+        if not url:
+            supabase_url = os.getenv("JAFAR_SUPABASE_URL", "").strip().rstrip("/")
+            if supabase_url:
+                url = f"{supabase_url}/functions/v1/telegram-egress"
+
+        auth_token = (settings.telegram_egress_auth_token or "").strip()
+        if not auth_token:
+            auth_token = os.getenv("JAFAR_SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
+        if not url.startswith("https://"):
+            raise RuntimeError("Telegram egress requires an HTTPS TELEGRAM_EGRESS_URL")
+        if not auth_token:
+            raise RuntimeError(
+                "Telegram egress requires TELEGRAM_EGRESS_AUTH_TOKEN or "
+                "JAFAR_SUPABASE_SERVICE_ROLE_KEY"
+            )
+        return url, auth_token
+
     async def _post(self, method: str, **kwargs: Any) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=self.request_timeout) as client:
@@ -47,7 +72,9 @@ class TelegramBotHttpClient:
         except (httpx.TimeoutException, httpx.HTTPError):
             # A POST can reach Telegram even when the client never receives a response.
             # Treat transport ambiguity as uncertain delivery and never auto-retry it.
-            raise TelegramDeliveryUncertainError(f"Telegram {method} delivery uncertain") from None
+            raise TelegramDeliveryUncertainError(
+                f"Telegram {method} delivery uncertain"
+            ) from None
 
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"Telegram {method} HTTP {response.status_code}")
@@ -63,7 +90,54 @@ class TelegramBotHttpClient:
         result = payload.get("result")
         return dict(result) if isinstance(result, dict) else {}
 
+    async def _post_egress(
+        self,
+        method: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        config = self._egress_config()
+        if config is None:
+            raise RuntimeError("telegram_egress_not_enabled")
+        url, auth_token = config
+
+        try:
+            async with httpx.AsyncClient(timeout=self.request_timeout) as client:
+                response = await client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {auth_token}",
+                        "x-telegram-bot-token": self._bot_token,
+                        "content-type": "application/json",
+                    },
+                    json={"action": method, **payload},
+                )
+        except (httpx.TimeoutException, httpx.HTTPError):
+            # The Supabase relay may already have delivered the POST to Telegram.
+            # Preserve the same no-auto-retry semantics as the direct transport.
+            raise TelegramDeliveryUncertainError(
+                f"Telegram {method} delivery uncertain"
+            ) from None
+
+        if response.status_code < 200 or response.status_code >= 300:
+            raise RuntimeError(f"Telegram {method} egress HTTP {response.status_code}")
+        try:
+            envelope = response.json()
+        except ValueError:
+            raise RuntimeError(f"Telegram {method} egress returned invalid JSON") from None
+        if not isinstance(envelope, dict) or not envelope.get("ok"):
+            raise RuntimeError(f"Telegram {method} egress request failed")
+        telegram_payload = envelope.get("telegram")
+        if not isinstance(telegram_payload, dict) or not telegram_payload.get("ok"):
+            raise RuntimeError(f"Telegram {method} API request failed")
+        result = telegram_payload.get("result")
+        return dict(result) if isinstance(result, dict) else {}
+
     async def send_message(self, *, chat_id: int | str, text: str) -> dict[str, Any]:
+        if self._egress_config() is not None:
+            return await self._post_egress(
+                "sendMessage",
+                {"chat_id": str(chat_id), "text": text},
+            )
         return await self._post("sendMessage", json={"chat_id": chat_id, "text": text})
 
     async def send_photo(
@@ -78,6 +152,20 @@ class TelegramBotHttpClient:
     ) -> dict[str, Any]:
         if bool(photo_url) == bool(photo_bytes):
             raise ValueError("provide exactly one of photo_url or photo_bytes")
+
+        if self._egress_config() is not None:
+            payload: dict[str, Any] = {
+                "chat_id": str(chat_id),
+                "caption": caption,
+                "filename": filename,
+            }
+            if photo_url:
+                payload["photo_url"] = photo_url
+            else:
+                payload["photo_base64"] = base64.b64encode(photo_bytes or b"").decode(
+                    "ascii"
+                )
+            return await self._post_egress("sendPhoto", payload)
 
         data: dict[str, Any] = {"chat_id": str(chat_id)}
         if caption:
@@ -103,6 +191,21 @@ class TelegramBotHttpClient:
         """Send exactly one MP4 source through the same uncertain-POST semantics."""
         if bool(video_url) == bool(video_bytes):
             raise ValueError("provide exactly one of video_url or video_bytes")
+
+        if self._egress_config() is not None:
+            payload: dict[str, Any] = {
+                "chat_id": str(chat_id),
+                "caption": caption,
+                "filename": filename,
+            }
+            if video_url:
+                payload["video_url"] = video_url
+            else:
+                payload["video_base64"] = base64.b64encode(video_bytes or b"").decode(
+                    "ascii"
+                )
+            return await self._post_egress("sendVideo", payload)
+
         data: dict[str, Any] = {"chat_id": str(chat_id)}
         if caption:
             data["caption"] = caption
@@ -119,6 +222,35 @@ class TelegramBotHttpClient:
         options = poll.get("options")
         if not isinstance(options, list):
             raise ValueError("telegram_poll_options_invalid")
+
+        if self._egress_config() is not None:
+            correct_option_ids = poll.get("correct_option_ids")
+            correct_option_id: int | None = None
+            if correct_option_ids is not None:
+                if not isinstance(correct_option_ids, list):
+                    raise ValueError("telegram_poll_correct_options_invalid")
+                if len(correct_option_ids) > 1:
+                    raise ValueError(
+                        "telegram_quiz_egress_supports_one_correct_option"
+                    )
+                if correct_option_ids:
+                    correct_option_id = int(correct_option_ids[0])
+
+            payload: dict[str, Any] = {
+                "chat_id": str(chat_id),
+                "question": poll["question"],
+                "options": [str(option) for option in options],
+                "is_anonymous": bool(poll["is_anonymous"]),
+                "allows_multiple_answers": bool(poll["allows_multiple_answers"]),
+                "type": poll["type"],
+            }
+            if correct_option_id is not None:
+                payload["correct_option_id"] = correct_option_id
+            for key in ("explanation", "open_period", "close_date"):
+                if poll.get(key) is not None:
+                    payload[key] = poll[key]
+            return await self._post_egress("sendPoll", payload)
+
         data: dict[str, Any] = {
             "chat_id": str(chat_id),
             "question": poll["question"],
@@ -133,7 +265,10 @@ class TelegramBotHttpClient:
         }
         correct_option_ids = poll.get("correct_option_ids")
         if correct_option_ids is not None:
-            data["correct_option_ids"] = json.dumps(correct_option_ids, separators=(",", ":"))
+            data["correct_option_ids"] = json.dumps(
+                correct_option_ids,
+                separators=(",", ":"),
+            )
         for key in ("explanation", "open_period", "close_date"):
             if poll.get(key) is not None:
                 data[key] = str(poll[key])

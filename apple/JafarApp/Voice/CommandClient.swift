@@ -89,11 +89,13 @@ struct RemoteCommandClient: CommandClient {
     let endpoint: URL
     let session: URLSession
     let tokenStore: KeychainTokenStore
+    let ephemeralToken: String?
 
-    init(endpoint: URL, session: URLSession = .shared, tokenStore: KeychainTokenStore = KeychainTokenStore()) {
+    init(endpoint: URL, session: URLSession = .shared, tokenStore: KeychainTokenStore = KeychainTokenStore(), token: String? = nil) {
         self.endpoint = endpoint
         self.session = session
         self.tokenStore = tokenStore
+        self.ephemeralToken = token
     }
 
     func send(request: CommandRequest) async throws -> CommandResponse {
@@ -102,7 +104,7 @@ struct RemoteCommandClient: CommandClient {
         urlRequest.timeoutInterval = 60
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = tokenStore.read(), !token.isEmpty {
+        if let token = ephemeralToken ?? tokenStore.read(), !token.isEmpty {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         urlRequest.httpBody = try JSONEncoder().encode(request)

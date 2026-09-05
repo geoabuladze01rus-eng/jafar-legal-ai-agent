@@ -2,7 +2,21 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var voice: VoiceSessionViewModel
+    #if os(macOS)
+    private let backend: BackendRuntime?
+    #endif
 
+    #if os(macOS)
+    init(environment: VoiceCommandEnvironment = .current(), backend: BackendRuntime? = nil) {
+        _voice = StateObject(
+            wrappedValue: VoiceSessionViewModel(
+                commandClient: environment.client,
+                userId: environment.userId
+            )
+        )
+        self.backend = backend
+    }
+    #else
     init(environment: VoiceCommandEnvironment = .current()) {
         _voice = StateObject(
             wrappedValue: VoiceSessionViewModel(
@@ -11,6 +25,7 @@ struct ContentView: View {
             )
         )
     }
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -19,6 +34,15 @@ struct ContentView: View {
                     .font(.largeTitle.bold())
 
                 #if os(macOS)
+                if let backend {
+                    Text(backend.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(backend.isFailed ? .red : .secondary)
+                    if backend.isFailed {
+                        Button("Повторить") { Task { await backend.start() } }
+                            .buttonStyle(.bordered)
+                    }
+                }
                 LocalAIStatusView()
                 #endif
 

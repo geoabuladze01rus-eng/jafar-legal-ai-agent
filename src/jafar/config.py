@@ -1,4 +1,12 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def is_desktop_runtime() -> bool:
+    """Whether this process is the bundled, local-only macOS sidecar."""
+
+    return os.getenv("JAFAR_RUNTIME_MODE", "").strip().lower() == "desktop"
 
 
 class Settings(BaseSettings):
@@ -27,4 +35,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
-settings = Settings()
+# A packaged sidecar gets its deliberately small configuration from its supervisor.
+# In particular it must never discover a developer's working-directory .env file.
+settings = Settings(_env_file=None if is_desktop_runtime() else ".env")

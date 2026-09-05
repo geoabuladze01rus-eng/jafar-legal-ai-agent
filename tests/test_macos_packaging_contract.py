@@ -31,6 +31,8 @@ def test_packaging_ci_does_not_request_signing_secrets() -> None:
 
     assert "macos-15" in workflow
     assert "build_macos_release.sh" in workflow
+    assert "actions/setup-python@v5" in workflow
+    assert 'python-version: "3.12"' in workflow
     assert "secrets." not in workflow
 
 

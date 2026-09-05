@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     telegram_dry_run: bool = True
     telegram_editorial_mode: str = "APPROVE"
     telegram_owner_approver_id: str | None = None
+    telegram_egress_enabled: bool = False
+    telegram_egress_url: str | None = None
+    telegram_egress_auth_token: str | None = None
 
     jafar_mcp_auth_token: str | None = None
     jafar_mcp_public_url: str | None = None

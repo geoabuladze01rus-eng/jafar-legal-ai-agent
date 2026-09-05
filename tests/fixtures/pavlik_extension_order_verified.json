@@ -1,0 +1,49 @@
+{
+  "document": {
+    "filename": "Постановление о прподлении дом.ареста Павлику В.А..pdf",
+    "sha256": "a1695fe9a3ef7f6cf8041b809ee6953d858285219e75ab14f00ee5d9aef185ce",
+    "pages": 4,
+    "verification": "visually_verified"
+  },
+  "observations": [
+    {
+      "field": "case_number",
+      "value": "12604008104000012",
+      "page": 1
+    },
+    {
+      "field": "suspect",
+      "value": "Павлик Вадим Алексеевич",
+      "page": 3
+    },
+    {
+      "field": "date_of_birth",
+      "value": "17.11.1984",
+      "page": 3
+    },
+    {
+      "field": "investigator",
+      "value": "Орлов А.С.",
+      "page": 1
+    },
+    {
+      "field": "order_date",
+      "value": "28.07.2026",
+      "page": 1
+    },
+    {
+      "field": "detention_date",
+      "value": "25.06.2026",
+      "page": 2
+    },
+    {
+      "field": "house_arrest_until",
+      "value": "03.09.2026",
+      "page": 3
+    }
+  ],
+  "notes": [
+    "Values were checked against rendered page images and the embedded PDF text layer.",
+    "This fixture is a provenance contract, not a substitute for the source document."
+  ]
+}

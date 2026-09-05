@@ -60,10 +60,9 @@ class TelegramRuntime:
 
         if self.dry_run:
             logger.info(
-                "Telegram dry-run update=%s chat=%s draft=%r",
+                "Telegram dry-run update=%s chat=%s draft_ready=true",
                 update.get("update_id"),
                 result.comment.chat_id,
-                result.draft.decision.draft,
             )
             return
 
@@ -74,7 +73,11 @@ class TelegramRuntime:
         )
 
     async def handle_error(self, update: dict[str, Any], exc: Exception) -> None:
-        logger.exception("Telegram update %s failed", update.get("update_id"), exc_info=exc)
+        logger.error(
+            "Telegram update %s failed error_type=%s",
+            update.get("update_id"),
+            type(exc).__name__,
+        )
 
     async def run(self) -> None:
         await run_polling(self.receiver, self.handle_update, on_error=self.handle_error)

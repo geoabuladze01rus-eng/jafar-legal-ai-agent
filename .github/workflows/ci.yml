@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - release/jafar-2.0-consolidation
   workflow_dispatch:
 
 permissions:

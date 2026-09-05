@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from .error_safety import safe_exception_label
+
 
 @dataclass(frozen=True)
 class RecoveryJob:
@@ -29,5 +31,5 @@ class RecoveryQueueWorker:
                 self.retry_service.retry(storage_path=job.storage_path)
                 self.queue.complete(job_id=job.id)
             except Exception as exc:
-                self.queue.fail(job_id=job.id, error=f"{type(exc).__name__}: {exc}")
+                self.queue.fail(job_id=job.id, error=safe_exception_label(exc))
         return len(jobs)

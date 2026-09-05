@@ -15,9 +15,14 @@ targets:
       - path: JafarApp
     info:
       path: JafarApp/Info.plist
+      properties:
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "1"
+        NSMicrophoneUsageDescription: "Джафар использует микрофон для голосовых команд."
+        NSSpeechRecognitionUsageDescription: "Джафар использует распознавание речи для выполнения голосовых команд."
+        JAFARCommandEndpoint: "$(JAFAR_COMMAND_ENDPOINT)"
+        JAFARUserId: "$(JAFAR_USER_ID)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.jafar.legal-ai
         PRODUCT_NAME: Jafar
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Джафар использует распознавание речи для голосового управления."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Джафар использует микрофон для голосовых команд."

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .error_safety import safe_exception_label
+
 
 @dataclass(frozen=True, slots=True)
 class Command:
@@ -40,4 +42,9 @@ class JafarCommandBus:
             data = result if isinstance(result, dict) else {"result": result}
             return CommandResult("completed", "Команда выполнена.", command.request_id, data)
         except Exception as exc:
-            return CommandResult("error", "Ошибка выполнения команды.", command.request_id, {"error": str(exc)})
+            return CommandResult(
+                "error",
+                "Ошибка выполнения команды.",
+                command.request_id,
+                {"error_type": safe_exception_label(exc)},
+            )

@@ -6,6 +6,8 @@ from typing import Any, Protocol
 from .domains import DocumentTask
 from .privacy_policy import ProviderPrivacyPolicy
 
+_PROVIDER_FAILURES = (RuntimeError, ValueError, TypeError, PermissionError, OSError)
+
 
 @dataclass(frozen=True, slots=True)
 class ModelRequest:
@@ -16,6 +18,7 @@ class ModelRequest:
     verification: bool = False
     confidential: bool = True
     allowed_providers: tuple[str, ...] | None = None
+    matter_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +66,11 @@ class ModelRouter:
 
         if primary not in allowed or not self._available(primary):
             primary = self._first_available(
-                tuple(key for key in ("openai", "gemini", "deepseek", "nano_banana") if key in allowed)
+                tuple(
+                    key
+                    for key in ("ollama", "openai", "gemini", "deepseek", "nano_banana")
+                    if key in allowed
+                )
             )
             if primary is None:
                 raise RuntimeError("No permitted and available AI provider is available")
@@ -71,7 +78,11 @@ class ModelRouter:
         verifier = None
         if request.verification:
             verifier = self._first_available(
-                tuple(key for key in ("deepseek", "gemini", "openai") if key in allowed and key != primary)
+                tuple(
+                    key
+                    for key in ("openai", "deepseek", "gemini", "ollama")
+                    if key in allowed and key != primary
+                )
             )
             if verifier is None:
                 raise RuntimeError("Verification requested but no independent permitted provider is available")
@@ -79,7 +90,10 @@ class ModelRouter:
         return RoutingDecision(
             primary=primary,
             verifier=verifier,
-            reason=f"task={request.task}; confidential={request.confidential}",
+            reason=(
+                f"task={request.task}; confidential={request.confidential}; "
+                f"local_first={request.confidential and not request.requires_vision and not request.requires_google_context}"
+            ),
         )
 
     def run(self, request: ModelRequest) -> tuple[ModelResponse, ...]:
@@ -89,7 +103,7 @@ class ModelRouter:
         if decision.verifier:
             try:
                 responses.append(self.providers[decision.verifier].complete(request))
-            except Exception as exc:
+            except _PROVIDER_FAILURES as exc:
                 raise RuntimeError(
                     f"Independent verification provider {decision.verifier!r} failed"
                 ) from exc
@@ -98,6 +112,8 @@ class ModelRouter:
     def _preferred_provider(self, request: ModelRequest) -> str:
         if request.requires_vision or request.requires_google_context:
             return "gemini"
+        if request.confidential:
+            return "ollama"
         if request.task in {"coding", "technical_analysis", "second_opinion"}:
             return "deepseek"
         if request.task in {DocumentTask.LEGAL_ANALYSIS.value, DocumentTask.RISK_REVIEW.value}:
@@ -113,10 +129,10 @@ class ModelRouter:
         )
         candidates = (primary,) + tuple(
             key
-            for key in ("openai", "gemini", "deepseek", "nano_banana")
+            for key in ("ollama", "openai", "gemini", "deepseek", "nano_banana")
             if key != primary and key in allowed and self._available(key)
         )
-        last_error: Exception | None = None
+        last_error: BaseException | None = None
         for key in candidates:
             try:
                 response = self.providers[key].complete(request)
@@ -125,7 +141,7 @@ class ModelRouter:
                     metadata["routing_fallback_from"] = primary
                     return ModelResponse(response.provider, response.model, response.text, metadata)
                 return response
-            except Exception as exc:
+            except _PROVIDER_FAILURES as exc:
                 last_error = exc
         raise RuntimeError("All permitted AI providers failed during completion") from last_error
 

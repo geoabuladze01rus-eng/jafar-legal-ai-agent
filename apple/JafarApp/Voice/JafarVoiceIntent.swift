@@ -9,7 +9,19 @@ struct JafarVoiceIntent: AppIntent {
     var command: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: "Передаю команду Джафару: \(command)")
+        let environment = VoiceCommandEnvironment.current()
+        let response = try await environment.client.send(
+            request: CommandRequest(
+                text: command,
+                userId: environment.userId,
+                sourceDevice: "app_intent",
+                approved: false
+            )
+        )
+        if response.approvalRequired {
+            return .result(dialog: "\(response.message) Откройте Джафара и подтвердите действие.")
+        }
+        return .result(dialog: "\(response.message)")
     }
 }
 
@@ -18,9 +30,9 @@ struct JafarAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: JafarVoiceIntent(),
             phrases: [
-                "Спроси Джафара",
-                "Спросить Джафара",
-                "Команда Джафару"
+                "Спроси \(.applicationName)",
+                "Спросить \(.applicationName)",
+                "Команда \(.applicationName)"
             ],
             shortTitle: "Джафар",
             systemImageName: "waveform"

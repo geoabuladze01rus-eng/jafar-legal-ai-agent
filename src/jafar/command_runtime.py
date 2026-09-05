@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from .command_bus import JafarCommandBus
-from .matters import MatterStore
+from .matter_repository import MatterRepository
 from .tool_router import JafarToolRouter
 
 
@@ -20,7 +20,7 @@ class CommandRuntimeResult:
 class JafarCommandRuntime:
     """Single command facade shared by HTTP, voice and future chat clients."""
 
-    def __init__(self, matter_store: MatterStore) -> None:
+    def __init__(self, matter_store: MatterRepository) -> None:
         self.matter_store = matter_store
         self.bus = JafarCommandBus()
         self.router = JafarToolRouter(self.bus)

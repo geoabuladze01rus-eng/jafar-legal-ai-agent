@@ -27,7 +27,7 @@ def test_status_store_records_processing_failed_with_error():
     message = InboxMessage(
         message_id="msg-failed-status-test", sender="client@example.test", subject="Contract",
         received_at=datetime.now(timezone.utc), body_text="Review",
-        attachments=(InboxAttachment("contract.pdf", b"contract", "application/pdf"),),
+        attachments=(InboxAttachment("contract.txt", b"contract", "text/plain"),),
     )
 
     processor.process_message(message)
@@ -35,4 +35,4 @@ def test_status_store_records_processing_failed_with_error():
     assert [call[2] for call in statuses.calls] == [
         DocumentStatus.STORED, DocumentStatus.PROCESSING, DocumentStatus.FAILED
     ]
-    assert statuses.calls[-1][3] == "RuntimeError: AI provider unavailable"
+    assert statuses.calls[-1][3] == "RuntimeError"

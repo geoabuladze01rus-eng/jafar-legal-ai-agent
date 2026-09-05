@@ -34,7 +34,7 @@ def research_plan(request: EntityResearchRequest):
     if query_type == "auto":
         digits = "".join(ch for ch in request.query if ch.isdigit())
         query_type = "inn" if len(digits) == 10 else "ogrn" if len(digits) == 13 else "name"
-    return service.build_research_plan(EntityQuery(request.query, query_type))
+    return service.build_research_plan(EntityQuery.from_value(request.query, query_type))
 
 
 @router.post("/profile")

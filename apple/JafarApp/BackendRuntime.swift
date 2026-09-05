@@ -109,7 +109,7 @@ final class BackendSupervisor {
         }
 
         let port = try loopbackPort()
-        let token = randomToken()
+        let token = try randomToken()
         let storageKey = try DesktopStorageKey().loadOrCreate()
         let task = Process()
         task.executableURL = executable
@@ -161,9 +161,11 @@ final class BackendSupervisor {
         }
     }
 
-    private func randomToken() -> String {
+    private func randomToken() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw BackendSupervisorError.randomnessUnavailable
+        }
         return Data(bytes).base64EncodedString(options: [.endLineWithLineFeed])
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -216,5 +218,6 @@ enum BackendSupervisorError: Error {
     case exitedBeforeReady
     case timeout
     case portUnavailable
+    case randomnessUnavailable
 }
 #endif

@@ -90,6 +90,9 @@ def test_swift_supervisor_has_no_shell_and_uses_ephemeral_ipc() -> None:
     assert "Process()" in source
     assert "onUnexpectedTermination" in source
     assert "JAFAR_DESKTOP_PARENT_PID" in source
+    assert "let token = try randomToken()" in source
+    assert "SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess" in source
+    assert "randomnessUnavailable" in source
 
 
 def test_distribution_dry_run_builds_then_fails_closed_without_identity() -> None:

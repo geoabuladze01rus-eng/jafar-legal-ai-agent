@@ -31,8 +31,16 @@ class DesktopPaths:
     def database_lock(self) -> Path:
         return self.application_support / "matters.lock"
 
+    @property
+    def corpus_database(self) -> Path:
+        return self.application_support / "corpus.sqlite3"
+
+    @property
+    def documents(self) -> Path:
+        return self.application_support / "documents"
+
     def create(self) -> "DesktopPaths":
-        for path in (self.application_support, self.logs, self.cache, self.temporary):
+        for path in (self.application_support, self.logs, self.cache, self.temporary, self.documents):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             try:
                 path.chmod(0o700)

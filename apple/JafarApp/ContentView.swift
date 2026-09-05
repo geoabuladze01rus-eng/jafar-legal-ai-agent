@@ -18,6 +18,10 @@ struct ContentView: View {
                 Text("Джафар")
                     .font(.largeTitle.bold())
 
+                #if os(macOS)
+                LocalAIStatusView()
+                #endif
+
                 if !voice.transcript.isEmpty {
                     Text(voice.transcript)
                         .frame(maxWidth: .infinity, alignment: .leading)

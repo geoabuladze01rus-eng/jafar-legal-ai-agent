@@ -1,0 +1,27 @@
+name: JAFAR macOS Packaging
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-package:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build unsigned arm64 beta package
+        run: ./scripts/build_macos_release.sh
+      - name: Verify packaging output is ignored
+        run: git status --short --ignored dist/macos

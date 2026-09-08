@@ -48,6 +48,19 @@ def test_definite_failure_requires_explicit_retry_release() -> None:
     assert ledger.claim("p1", payload_hash=digest) is True
 
 
+def test_changed_payload_requires_new_publication_id_even_after_release() -> None:
+    ledger = InMemoryPublicationDeliveryLedger()
+    first = payload_hash({"text": "first"})
+    changed = payload_hash({"text": "changed"})
+
+    assert ledger.claim("p1", payload_hash=first) is True
+    ledger.mark_failed("p1", error_code="HTTP_400")
+    assert ledger.release_failed_for_retry("p1") is True
+
+    assert ledger.claim("p1", payload_hash=changed) is False
+    assert ledger.claim("p1", payload_hash=first) is True
+
+
 def test_audit_redacts_secrets_recursively() -> None:
     trail = AuditTrail()
     audit = PublicationAudit(trail)

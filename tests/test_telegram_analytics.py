@@ -50,7 +50,7 @@ def test_rates_only_exist_when_denominators_and_inputs_are_known() -> None:
     assert unknown.engagement_rate_percent is None
     assert zero_views.engagement_rate_percent is None
     assert known.err_percent == 50.0
-    assert known.engagement_rate_percent == 7.0
+    assert known.engagement_rate_percent == pytest.approx(7.0)
 
 
 def test_analyzer_uses_only_supplied_metrics_for_best_posts() -> None:

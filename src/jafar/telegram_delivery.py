@@ -56,7 +56,8 @@ class InMemoryPublicationDeliveryLedger:
 
     CLAIMED and UNCERTAIN records cannot be re-claimed. A definite FAILED record
     also stays blocked until an explicit operator retry resets it to PENDING.
-    SENT can never be re-claimed.
+    SENT can never be re-claimed. Once a Publication ID exists, changing its
+    payload hash is not a retry: it requires a new Publication ID.
     """
 
     def __init__(self) -> None:
@@ -64,14 +65,17 @@ class InMemoryPublicationDeliveryLedger:
 
     def claim(self, publication_id: str, *, payload_hash: str) -> bool:
         existing = self._records.get(publication_id)
-        if existing is not None and existing.state is not DeliveryLedgerState.PENDING:
-            return False
+        if existing is not None:
+            if existing.payload_hash != payload_hash:
+                return False
+            if existing.state is not DeliveryLedgerState.PENDING:
+                return False
         now = datetime.now(timezone.utc)
         self._records[publication_id] = DeliveryRecord(
             publication_id=publication_id,
             payload_hash=payload_hash,
             state=DeliveryLedgerState.CLAIMED,
-            claimed_at=existing.claimed_at if existing else now,
+            claimed_at=now,
             updated_at=now,
         )
         return True

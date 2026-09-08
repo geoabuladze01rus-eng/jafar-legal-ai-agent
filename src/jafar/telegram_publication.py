@@ -55,6 +55,7 @@ class DeliveryState(StrEnum):
     CLAIMED = "claimed"
     SENT = "sent"
     UNCERTAIN = "uncertain"
+    FAILED = "failed"
 
 
 class SourceEvidence(BaseModel):
@@ -114,6 +115,7 @@ class TelegramPublication(BaseModel):
     requires_fact_check: bool = True
     fact_check: FactCheckResult = Field(default_factory=FactCheckResult)
     risk: PublicationRisk = Field(default_factory=PublicationRisk)
+    editorial_blockers: list[str] = Field(default_factory=list)
     delivery_state: DeliveryState = DeliveryState.PENDING
 
     @model_validator(mode="after")
@@ -181,6 +183,7 @@ class TelegramPublication(BaseModel):
         if self.status is PublicationStatus.PUBLISHED and self.telegram_message_id is None:
             raise ValueError("Published status requires telegram_message_id")
 
+        self.editorial_blockers = sorted(set(item.strip() for item in self.editorial_blockers if item.strip()))
         if self.publication_id is None:
             self.publication_id = build_publication_id(self)
         return self
@@ -215,6 +218,8 @@ class TelegramPublication(BaseModel):
             reasons.append("already_published")
         if self.delivery_state is not DeliveryState.PENDING:
             reasons.append(f"delivery_state_{self.delivery_state.value}")
+        if self.editorial_blockers:
+            reasons.extend(f"editorial:{item}" for item in self.editorial_blockers)
         if self.requires_fact_check and self.fact_check.status is not FactCheckStatus.VERIFIED:
             reasons.append("fact_check_not_verified")
         if self.risk.current_case_risk:
@@ -258,9 +263,16 @@ class TelegramPublication(BaseModel):
         publication_type = PublicationType(str(fields.get("Publication Type", "text")))
         options = parse_options_json(fields.get("Options JSON"))
         correct_ids: list[int] = []
+        new_correct = fields.get("Correct Option IDs JSON")
         legacy_correct = fields.get("Correct Option ID")
-        if publication_type is PublicationType.QUIZ and legacy_correct not in (None, ""):
-            correct_ids = [int(legacy_correct)]
+        if publication_type is PublicationType.QUIZ:
+            if new_correct not in (None, ""):
+                parsed_correct = json.loads(str(new_correct))
+                if not isinstance(parsed_correct, list):
+                    raise ValueError("Correct Option IDs JSON must be a JSON array")
+                correct_ids = [int(item) for item in parsed_correct]
+            elif legacy_correct not in (None, ""):
+                correct_ids = [int(legacy_correct)]
         return cls(
             publication_id=_empty_to_none(fields.get("Publication ID")),
             publication_type=publication_type,
@@ -279,7 +291,9 @@ class TelegramPublication(BaseModel):
             publish_at=_coerce_datetime(fields.get("Publish Date")),
             status=PublicationStatus(str(fields.get("Status") or PublicationStatus.REVIEW.value)),
             telegram_message_id=_coerce_int(fields.get("Telegram Message ID")),
+            published_at=_coerce_datetime(fields.get("Published At")),
             last_error=_empty_to_none(fields.get("Last Error")),
+            delivery_state=DeliveryState(str(fields.get("Delivery State") or DeliveryState.PENDING.value)),
         )
 
 

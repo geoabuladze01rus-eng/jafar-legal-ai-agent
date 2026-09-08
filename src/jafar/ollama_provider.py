@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import TypeVar
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from .config import settings
 from .domains import DocumentTask, MatterType
 from .legal_models import LegalAnalysis
 from .model_router import ModelRequest, ModelResponse
+
+
+StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 @dataclass(frozen=True)
@@ -64,40 +68,25 @@ class OllamaLegalAnalyzer:
             if isinstance(model, dict)
         )
 
-    def analyze(
+    def complete_structured(
         self,
         *,
-        text: str,
-        task: DocumentTask,
-        matter_type: MatterType = MatterType.GENERAL,
-    ) -> LegalAnalysis:
-        if not text.strip():
-            raise ValueError("document text must not be empty")
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[StructuredModel],
+    ) -> StructuredModel:
+        """Return a schema-validated object using the configured local Ollama model.
 
-        schema = LegalAnalysis.model_json_schema()
-        schema_text = json.dumps(schema, ensure_ascii=False)
+        This is deliberately provider-generic enough for editorial workflows while
+        preserving the same loopback-only and timeout protections as legal analysis.
+        """
+
+        schema = response_model.model_json_schema()
         payload = {
             "model": self.config.model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are Jafar, a local legal document analysis assistant. "
-                        "Extract only information supported by the supplied document. "
-                        "Do not invent facts, authorities, deadlines, citations, or case law. "
-                        "If information is missing or uncertain, state that explicitly. "
-                        "Return only data matching the supplied JSON schema."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Task: {task.value}\nMatter type: {matter_type.value}\n\n"
-                        f"JSON schema:\n{schema_text}\n\n"
-                        "Analyze the following document:\n\n"
-                        + text
-                    ),
-                },
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             "stream": False,
             "format": schema,
@@ -108,9 +97,35 @@ class OllamaLegalAnalyzer:
         data = self._chat(payload)
         content = self._message_content(data)
         try:
-            return LegalAnalysis.model_validate_json(content)
+            return response_model.model_validate_json(content)
         except ValidationError as exc:
-            raise RuntimeError("Ollama returned invalid structured legal analysis") from exc
+            raise RuntimeError("Ollama returned invalid structured output") from exc
+
+    def analyze(
+        self,
+        *,
+        text: str,
+        task: DocumentTask,
+        matter_type: MatterType = MatterType.GENERAL,
+    ) -> LegalAnalysis:
+        if not text.strip():
+            raise ValueError("document text must not be empty")
+
+        return self.complete_structured(
+            system_prompt=(
+                "You are Jafar, a local legal document analysis assistant. "
+                "Extract only information supported by the supplied document. "
+                "Do not invent facts, authorities, deadlines, citations, or case law. "
+                "If information is missing or uncertain, state that explicitly. "
+                "Return only data matching the supplied JSON schema."
+            ),
+            user_prompt=(
+                f"Task: {task.value}\nMatter type: {matter_type.value}\n\n"
+                "Analyze the following document:\n\n"
+                + text
+            ),
+            response_model=LegalAnalysis,
+        )
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         try:

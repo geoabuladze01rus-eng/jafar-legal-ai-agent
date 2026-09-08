@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .telegram_editor import TelegramEditorialDraft
@@ -89,10 +90,9 @@ def publication_to_notion_properties(
         "Editorial Blockers": blockers_json,
     }
 
-    if len(publication.correct_option_ids) == 1:
-        properties["Correct Option ID"] = publication.correct_option_ids[0]
-    else:
-        properties["Correct Option ID"] = None
+    properties["Correct Option ID"] = (
+        publication.correct_option_ids[0] if len(publication.correct_option_ids) == 1 else None
+    )
 
     if publication.publish_at is not None:
         properties["date:Publish Date:start"] = publication.publish_at.isoformat()
@@ -133,15 +133,15 @@ def notion_properties_to_publication(fields: dict[str, Any]) -> TelegramPublicat
         correct_ids = [int(fields["Correct Option ID"])]
 
     source_evidence = _parse_source_evidence(fields.get("Source Evidence JSON"))
-    fact_status = FactCheckStatus(str(fields.get("Fact Check Status") or FactCheckStatus.PENDING.value))
+    fact_status = _parse_fact_status(fields.get("Fact Check Status"))
     fact_check = FactCheckResult(
         status=fact_status,
         sources=source_evidence,
         notes=_optional_text(fields.get("Fact Check Notes")),
     )
     risk = PublicationRisk(
-        legal_risk=RiskLevel(str(fields.get("Legal Risk") or RiskLevel.LOW.value)),
-        privacy_risk=RiskLevel(str(fields.get("Privacy Risk") or RiskLevel.LOW.value)),
+        legal_risk=_parse_risk_level(fields.get("Legal Risk"), fallback=RiskLevel.HIGH),
+        privacy_risk=_parse_risk_level(fields.get("Privacy Risk"), fallback=RiskLevel.HIGH),
         current_case_risk=_parse_checkbox(fields.get("Current Case Risk")),
     )
     blockers = _parse_string_list(fields.get("Editorial Blockers"))
@@ -163,7 +163,7 @@ def notion_properties_to_publication(fields: dict[str, Any]) -> TelegramPublicat
         "source_title": _optional_text(fields.get("Source Title")),
         "source_url": _optional_text(fields.get("Source URL")),
         "publish_at": _parse_datetime(fields, "Publish Date"),
-        "status": PublicationStatus(str(fields.get("Status") or PublicationStatus.REVIEW.value)),
+        "status": _parse_publication_status(fields.get("Status")),
         "telegram_message_id": _optional_int(fields.get("Telegram Message ID")),
         "published_at": _parse_datetime(fields, "Published At"),
         "last_error": _optional_text(fields.get("Last Error")),
@@ -171,9 +171,7 @@ def notion_properties_to_publication(fields: dict[str, Any]) -> TelegramPublicat
         "fact_check": fact_check,
         "risk": risk,
         "editorial_blockers": blockers,
-        "delivery_state": DeliveryState(
-            str(fields.get("Delivery State") or DeliveryState.PENDING.value)
-        ),
+        "delivery_state": _parse_delivery_state(fields.get("Delivery State")),
     }
     return TelegramPublication.model_validate(data)
 
@@ -225,15 +223,41 @@ def _optional_int(value: Any) -> int | None:
     return int(value)
 
 
-def _parse_datetime(fields: dict[str, Any], name: str):
-    from datetime import datetime
-
+def _parse_datetime(fields: dict[str, Any], name: str) -> datetime | None:
     value = fields.get(f"date:{name}:start", fields.get(name))
     if value in (None, ""):
         return None
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _parse_publication_status(value: Any) -> PublicationStatus:
+    try:
+        return PublicationStatus(str(value or PublicationStatus.REVIEW.value))
+    except ValueError:
+        return PublicationStatus.REVIEW
+
+
+def _parse_delivery_state(value: Any) -> DeliveryState:
+    try:
+        return DeliveryState(str(value or DeliveryState.PENDING.value))
+    except ValueError:
+        return DeliveryState.UNCERTAIN
+
+
+def _parse_fact_status(value: Any) -> FactCheckStatus:
+    try:
+        return FactCheckStatus(str(value or FactCheckStatus.PENDING.value))
+    except ValueError:
+        return FactCheckStatus.FAILED
+
+
+def _parse_risk_level(value: Any, *, fallback: RiskLevel) -> RiskLevel:
+    try:
+        return RiskLevel(str(value or RiskLevel.LOW.value))
+    except ValueError:
+        return fallback
 
 
 def _notion_checkbox(value: bool) -> str:

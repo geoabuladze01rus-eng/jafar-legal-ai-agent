@@ -89,7 +89,15 @@ The canonical stack includes long-term legal memory, Matter resolution, approval
 
 The Telegram subsystem for «Уголовка наизнанку» is built around a human `Ready` gate, fail-closed legal/privacy/current-case checks, persistent delivery idempotency, explicit reconciliation for ambiguous sends and approved versioned visual assets. AI may prepare `Review` drafts but may not approve publication.
 
+The production publication path is **Notion → Supabase Cloud → Telegram**. Supabase owns
+the five-minute Notion sync, one-minute publisher schedule, final Notion revalidation,
+atomic claim, restricted Telegram egress and durable delivery ledger. Make scenario
+`7305820` is an inactive rollback path, not a production dependency. An always-on Mac,
+local polling process and GitHub Actions are not required for scheduled delivery.
+
 Production operations, v2→v3 cutover, rollback, durable delivery states and controlled end-to-end acceptance are documented in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+The release checklist and external limitations are documented in
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
 ## Security invariants
 

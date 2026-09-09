@@ -2,6 +2,20 @@
 
 This runbook describes the current safe operating model for JAFAR's Telegram editorial and publication pipeline.
 
+## CURRENT PRODUCTION STATE
+
+- **Primary runtime:** Supabase Cloud.
+- **Primary publication chain:** Notion → Supabase → Telegram.
+- **Make v2 (`7305820`):** rollback-only and inactive.
+- **MacBook:** not required for scheduled publication.
+- Cloud publisher: enabled, non-dry-run.
+- Notion sync: enabled, non-dry-run.
+- Publisher cron: every minute; Notion sync cron: every five minutes.
+- Production destination: Telegram channel chat ID `-1004412524447`.
+
+This state is operational configuration, not permission to create an unscheduled test post.
+No diagnostic procedure in this runbook sends Telegram content.
+
 ## 1. Non-negotiable editorial identity
 
 - Channel: `@iznanka_ugolovki` («Уголовка наизнанку»).
@@ -74,7 +88,9 @@ Normal lifecycle:
 
 `Draft → Review → Ready → In progress/claimed → Published/sent`
 
-A planned item may be moved to `Ready` only when it is already part of the user-approved content plan and all safety/editorial checks are complete.
+A planned item may be moved to `Ready` only by a human operator when it is already part
+of the user-approved content plan and all safety/editorial checks are complete. AI may
+create or revise `Draft`/`Review`; it never supplies the `Ready` decision.
 
 Before `Ready`, verify:
 
@@ -187,6 +203,16 @@ On `uncertain`:
 
 If Telegram returns a message ID but Supabase SENT commit is ambiguous, publisher rechecks durable delivery. If SENT with the same ID is confirmed, the result is accepted; otherwise state becomes `uncertain`.
 
+### Normal flow
+
+`Ready/pending → final Notion guard → atomic claimed → Telegram send → durable sent/message_id → Notion Published`
+
+### Failure flow
+
+- A definite validation or configuration failure before claim creates no Telegram attempt.
+- Once a send begins, any transport/non-OK/missing-response ambiguity becomes `uncertain`.
+- If durable `sent` exists and Notion writeback fails, repair only Notion. Never resend.
+
 ## 8. Secret handling and egress security
 
 Never place in source, Notion content, logs, audit metadata or error text:
@@ -232,6 +258,12 @@ At normal idle health:
 - no reconciliation-required rows;
 - Make v2 inactive.
 
+The read-only health contract is implemented in
+`src/jafar/telegram_production_health.py`. It treats disabled/non-live cloud configs,
+missing token, inactive/stale/non-successful cron, stale claims, uncertain deliveries,
+reconciliation work, or an active Make v2 as blockers. Failed rows and short-lived
+non-stale claims are surfaced without automatically retrying them.
+
 Cron jobs:
 
 - publisher: `* * * * *`;
@@ -276,7 +308,9 @@ Rollback is a delivery-state reconciliation operation, not just a toggle.
 
 The ChatGPT task `TG контент по плану` may prepare only items already in the user-approved plan.
 
-It must not call Make or Telegram directly. Its responsibility is to leave a complete safe Notion card in `Ready`; Supabase Cloud handles delivery.
+It must not call Make or Telegram directly. It may leave a complete safe Notion card in
+`Review`. A human operator performs the explicit `Review → Ready` transition; Supabase
+Cloud then handles delivery.
 
 For photo posts it must use approved `Visual Asset Key + Visual Category`. Legacy Drive ID / Photo URL are not the primary production path.
 

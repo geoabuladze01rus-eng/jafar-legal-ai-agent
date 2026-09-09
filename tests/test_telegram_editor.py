@@ -25,9 +25,9 @@ class FakeEditorialProvider:
 def base_payload(**overrides):
     value = {
         "title": "Что следователь видит в этой ситуации",
-        "hook": "На бумаге всё выглядит просто. В деле — нет.",
+        "hook": "⚠️ На бумаге всё выглядит просто. В деле — нет.",
         "recommended_publication_type": "text",
-        "content": "Разбираем процессуальную механику без выдуманных обстоятельств.",
+        "content": "🔎 Разбираем процессуальную механику без выдуманных обстоятельств.",
         "author_value_add": "Показываем, как этот эпизод оценивается изнутри следственной логики.",
         "legal_claims": [],
         "risk_flags": [],
@@ -43,6 +43,7 @@ def test_editor_prompt_fixes_author_status_and_schema_has_no_status() -> None:
     result = service.create_publication(topic="Тема", source_text="Подтверждённые факты")
 
     assert "НЕ адвокат" in provider.system_prompt
+    assert "2–5 уместных смысловых эмодзи" in provider.system_prompt
     assert "status" not in TelegramEditorialDraft.model_fields
     assert result.publication.status is PublicationStatus.REVIEW
 
@@ -87,13 +88,32 @@ def test_news_without_source_url_gets_machine_blocker() -> None:
 
 def test_incorrect_advocate_status_is_blocked() -> None:
     provider = FakeEditorialProvider(
-        base_payload(content="Адвокат Артур Чернов объясняет процессуальную ситуацию.")
+        base_payload(content="🔎 Адвокат Артур Чернов объясняет процессуальную ситуацию. ✅")
     )
     result = TelegramEditorialService(provider).create_publication(
         topic="Тема",
         source_text="Факт",
     )
     assert "incorrect_author_status" in result.publication.editorial_blockers
+
+
+def test_plain_text_without_emoji_gets_machine_blocker() -> None:
+    provider = FakeEditorialProvider(
+        base_payload(
+            hook="На бумаге всё выглядит просто. В деле — нет.",
+            content="Разбираем процессуальную механику без выдуманных обстоятельств.",
+        )
+    )
+    result = TelegramEditorialService(provider).create_publication(
+        topic="Тема",
+        source_text="Факт",
+    )
+
+    assert "telegram_emoji_style_missing" in result.publication.editorial_blockers
+    result.publication.status = PublicationStatus.READY
+    decision = result.publication.publish_decision(now=datetime.now(timezone.utc))
+    assert decision.allowed is False
+    assert "editorial:telegram_emoji_style_missing" in decision.reasons
 
 
 def test_legal_claims_force_pending_fact_check() -> None:
@@ -124,7 +144,9 @@ def test_photo_recommendation_without_asset_stays_valid_review_text() -> None:
 
 
 def test_personal_data_is_routed_to_review_risk() -> None:
-    provider = FakeEditorialProvider(base_payload(content="Телефон +7 (918) 123-45-67 указан в материале."))
+    provider = FakeEditorialProvider(
+        base_payload(content="🔎 Телефон +7 (918) 123-45-67 указан в материале. ✅")
+    )
     result = TelegramEditorialService(provider).create_publication(
         topic="Тема",
         source_text="Факт",

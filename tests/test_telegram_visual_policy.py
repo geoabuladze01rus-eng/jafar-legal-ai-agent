@@ -4,11 +4,31 @@ from jafar.notion_publication import (
     notion_properties_to_publication,
     publication_to_notion_properties,
 )
-from jafar.telegram_publication import FactCheckResult, FactCheckStatus, TelegramPublication
+from jafar.telegram_editor import TelegramEditorialService
+from jafar.telegram_publication import (
+    FactCheckResult,
+    FactCheckStatus,
+    PublicationStatus,
+    TelegramPublication,
+)
 
 
 def _verified() -> FactCheckResult:
     return FactCheckResult(status=FactCheckStatus.VERIFIED)
+
+
+class _EditorialProvider:
+    def complete_structured(self, *, system_prompt, user_prompt, response_model):
+        return response_model.model_validate(
+            {
+                "title": "Что делать до поездки к следователю",
+                "hook": "⚠️ Сначала выясните свой процессуальный статус.",
+                "recommended_publication_type": "text",
+                "content": "🔎 Уточните, кто и зачем вас вызывает, прежде чем ехать.",
+                "legal_claims": [],
+                "risk_flags": [],
+            }
+        )
 
 
 def test_visual_required_text_is_fail_closed_even_with_asset() -> None:
@@ -100,3 +120,31 @@ def test_visual_asset_changes_content_fingerprint() -> None:
     )
 
     assert one.content_fingerprint != two.content_fingerprint
+
+
+def test_editor_blocks_ordinary_post_until_visual_metadata_exists() -> None:
+    result = TelegramEditorialService(_EditorialProvider()).create_publication(
+        topic="Вызов к следователю",
+        source_text="Подтверждённый исходный материал",
+    )
+
+    assert result.publication.status is PublicationStatus.REVIEW
+    assert result.publication.visual_required is True
+    assert "visual_asset_missing" in result.publication.editorial_blockers
+    assert "visual_category_missing" in result.publication.editorial_blockers
+
+
+def test_editor_accepts_assigned_visual_metadata_but_does_not_approve() -> None:
+    result = TelegramEditorialService(_EditorialProvider()).create_publication(
+        topic="Вызов к следователю",
+        source_text="Подтверждённый исходный материал",
+        visual_asset_id="drive-file-123",
+        visual_category="what_to_do",
+    )
+
+    assert result.publication.status is PublicationStatus.REVIEW
+    assert result.publication.visual_required is True
+    assert result.publication.visual_asset_id == "drive-file-123"
+    assert result.publication.visual_category == "what_to_do"
+    assert "visual_asset_missing" not in result.publication.editorial_blockers
+    assert "visual_category_missing" not in result.publication.editorial_blockers

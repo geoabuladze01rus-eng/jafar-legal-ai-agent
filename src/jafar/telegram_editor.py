@@ -37,6 +37,13 @@ EDITOR_SYSTEM_PROMPT = """
 HOOK → ситуация → конфликт/проблема → объяснение автора → практический вывод → CTA,
 только если CTA действительно уместен.
 
+Telegram-оформление обычного текстового/фото-поста:
+- используй 2–5 уместных смысловых эмодзи на публикацию;
+- допустим один эмодзи в hook, цифровые эмодзи 1️⃣–5️⃣ в практическом списке
+  и один эмодзи у вывода/CTA;
+- не ставь эмодзи внутрь точных цитат закона, номеров статей, судебных реквизитов;
+- не делай «ёлку», не используй ряды декоративных эмодзи, огонь или сирены ради кликбейта.
+
 Правила достоверности:
 - не выдумывай факты, номера дел, судебные акты, нормы, даты, цитаты или источники;
 - если правовой тезис требует проверки, вынеси его в legal_claims;
@@ -162,6 +169,11 @@ class TelegramEditorialService:
             blockers.append("news_source_url_missing")
         if _misstates_author_status("\n".join([draft.title, draft.hook, draft.content])):
             blockers.append("incorrect_author_status")
+        if (
+            draft.recommended_publication_type in {PublicationType.TEXT, PublicationType.PHOTO}
+            and _emoji_count("\n".join([draft.hook, draft.content, draft.cta or ""])) < 2
+        ):
+            blockers.append("telegram_emoji_style_missing")
 
         full_text = "\n".join(
             part
@@ -238,3 +250,9 @@ def _misstates_author_status(text: str) -> bool:
     )
     lowered = text.lower()
     return any(re.search(pattern, lowered, re.IGNORECASE) for pattern in patterns)
+
+
+def _emoji_count(text: str) -> int:
+    pictograms = re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", text)
+    keycaps = re.findall(r"[0-9#*]\ufe0f?\u20e3", text)
+    return len(pictograms) + len(keycaps)

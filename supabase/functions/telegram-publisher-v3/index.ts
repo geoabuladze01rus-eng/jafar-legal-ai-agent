@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 type QueueRow = {
   publication_id: string;
+  source_notion_page_id: string | null;
   status: string;
   publication_type: "text" | "photo" | "poll" | "quiz";
   scheduled_at: string;
@@ -86,9 +87,7 @@ async function authorized(req: Request): Promise<boolean> {
   const expected = (await fetchExpectedWorkerSecret()).trim();
   if (!expected || supplied.length !== expected.length) return false;
   let diff = 0;
-  for (let i = 0; i < supplied.length; i++) {
-    diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
+  for (let i = 0; i < supplied.length; i++) diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
 }
 
@@ -105,13 +104,10 @@ async function fetchConfig(): Promise<PublisherConfig> {
 
 async function fetchDue(limit: number): Promise<QueueRow[]> {
   const now = encodeURIComponent(new Date().toISOString());
-  const url = `${SUPABASE_URL}/rest/v1/telegram_publication_queue`
-    + `?status=eq.Ready&delivery_state=eq.pending&reconciliation_required=eq.false`
-    + `&scheduled_at=lte.${now}&order=scheduled_at.asc,publication_id.asc&limit=${limit}`;
-  const response = await fetch(url, {
-    headers: serviceHeaders(),
-    signal: AbortSignal.timeout(10000),
-  });
+  const url = `${SUPABASE_URL}/rest/v1/telegram_publication_queue` +
+    `?status=eq.Ready&delivery_state=eq.pending&reconciliation_required=eq.false` +
+    `&scheduled_at=lte.${now}&order=scheduled_at.asc,publication_id.asc&limit=${limit}`;
+  const response = await fetch(url, { headers: serviceHeaders(), signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`queue_fetch_${response.status}`);
   return await response.json() as QueueRow[];
 }
@@ -144,6 +140,23 @@ async function resolveVisual(row: QueueRow): Promise<VisualAsset | null> {
   return first as VisualAsset;
 }
 
+async function revalidateNotion(row: QueueRow): Promise<string[]> {
+  if (!row.source_notion_page_id?.trim()) return ["notion_source_missing"];
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-notion-guard-v3`, {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify(row),
+    signal: AbortSignal.timeout(22000),
+  });
+  if (!response.ok) return ["notion_guard_unavailable"];
+  let body: Record<string, unknown> = {};
+  try { body = await response.json(); } catch { return ["notion_guard_non_json"]; }
+  if (body.ok !== true) return ["notion_guard_unavailable"];
+  if (body.allowed === true) return [];
+  const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).filter(Boolean) : [];
+  return reasons.length ? reasons : ["notion_guard_blocked"];
+}
+
 function validate(row: QueueRow, visual: VisualAsset | null): string[] {
   const reasons: string[] = [];
   if (row.status !== "Ready") reasons.push("status_not_ready");
@@ -156,9 +169,7 @@ function validate(row: QueueRow, visual: VisualAsset | null): string[] {
   if (row.delivery_state !== "pending") reasons.push("delivery_state_not_pending");
   if (row.reconciliation_required) reasons.push("reconciliation_required");
   if (row.telegram_message_id !== null) reasons.push("already_has_telegram_message_id");
-  if (!Array.isArray(row.editorial_blockers) || row.editorial_blockers.length) {
-    reasons.push("editorial_blockers_present");
-  }
+  if (!Array.isArray(row.editorial_blockers) || row.editorial_blockers.length) reasons.push("editorial_blockers_present");
 
   if (row.publication_type === "text") {
     if (!row.content.trim()) reasons.push("text_missing");
@@ -174,23 +185,15 @@ function validate(row: QueueRow, visual: VisualAsset | null): string[] {
     const options = normalizeOptions(row.options);
     if (!question) reasons.push("question_missing");
     if (question.length > 300) reasons.push("question_too_long");
-    if (options.length < 2 || options.length > 12 || options.some((x) => !x)) {
-      reasons.push("invalid_options");
-    }
+    if (options.length < 2 || options.length > 12 || options.some((x) => !x)) reasons.push("invalid_options");
     if (options.some((x) => x.length > 100)) reasons.push("option_too_long");
     if (row.publication_type === "quiz") {
       const ids = normalizeCorrectIds(row.correct_option_ids);
-      if (
-        !ids.length
-        || new Set(ids).size !== ids.length
-        || ids.some((id) => id < 0 || id >= options.length)
-      ) {
+      if (!ids.length || new Set(ids).size !== ids.length || ids.some((id) => id < 0 || id >= options.length)) {
         reasons.push("invalid_correct_option_ids");
       }
       if ((row.explanation ?? "").length > 200) reasons.push("explanation_too_long");
-      if (((row.explanation ?? "").match(/\n/g) ?? []).length > 2) {
-        reasons.push("explanation_too_many_line_feeds");
-      }
+      if (((row.explanation ?? "").match(/\n/g) ?? []).length > 2) reasons.push("explanation_too_many_line_feeds");
     }
   } else {
     reasons.push("publication_type_invalid");
@@ -220,11 +223,7 @@ async function sha256Hex(value: unknown): Promise<string> {
   return Array.from(digest).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function buildEgressPayload(
-  row: QueueRow,
-  config: PublisherConfig,
-  visual: VisualAsset | null,
-) {
+function buildEgressPayload(row: QueueRow, config: PublisherConfig, visual: VisualAsset | null) {
   if (row.publication_type === "text") {
     return { action: "sendMessage", chat_id: config.chat_id, text: row.content };
   }
@@ -261,11 +260,7 @@ async function egress(payload: Record<string, unknown>): Promise<Record<string, 
     signal: AbortSignal.timeout(70000),
   });
   let body: Record<string, unknown> = {};
-  try {
-    body = await response.json();
-  } catch {
-    body = { ok: false, error: "non_json_egress_response" };
-  }
+  try { body = await response.json(); } catch { body = { ok: false, error: "non_json_egress_response" }; }
   return { ...body, _http_status: response.status };
 }
 
@@ -292,9 +287,7 @@ async function markUncertain(publicationId: string, note: string) {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    return json({ ok: false, error: "supabase_runtime_missing" }, 500);
-  }
+  if (!SUPABASE_URL || !SERVICE_KEY) return json({ ok: false, error: "supabase_runtime_missing" }, 500);
 
   try {
     if (!(await authorized(req))) return json({ ok: false, error: "unauthorized" }, 401);
@@ -303,11 +296,7 @@ Deno.serve(async (req: Request) => {
   }
 
   let body: Record<string, unknown> = {};
-  try {
-    body = await req.json();
-  } catch {
-    body = {};
-  }
+  try { body = await req.json(); } catch { body = {}; }
   const mode = body.mode === "publish" ? "publish" : "preflight";
 
   try {
@@ -322,14 +311,17 @@ Deno.serve(async (req: Request) => {
       let visual: VisualAsset | null = null;
       let visualError: string | null = null;
       if (row.publication_type === "photo") {
-        try {
-          visual = await resolveVisual(row);
-        } catch (error) {
-          visualError = error instanceof Error ? error.message : "visual_resolve_error";
-        }
+        try { visual = await resolveVisual(row); } catch (error) { visualError = error instanceof Error ? error.message : "visual_resolve_error"; }
       }
       const reasons = validate(row, visual);
       if (visualError) reasons.push("visual_resolver_failed");
+      if (reasons.length === 0) {
+        try {
+          reasons.push(...await revalidateNotion(row));
+        } catch {
+          reasons.push("notion_revalidation_failed");
+        }
+      }
       const payloadHash = await sha256Hex(stableHashInput(row, config, visual));
 
       const item: Record<string, unknown> = {
@@ -347,7 +339,6 @@ Deno.serve(async (req: Request) => {
         candidates.push(item);
         continue;
       }
-
       if (!config.enabled || config.dry_run) {
         candidates.push({ ...item, outcome: "publish_blocked_by_config" });
         continue;
@@ -368,11 +359,7 @@ Deno.serve(async (req: Request) => {
           p_payload_hash: payloadHash,
         });
       } catch (error) {
-        candidates.push({
-          ...item,
-          outcome: "claim_error",
-          error_type: error instanceof Error ? error.name : "UnknownError",
-        });
+        candidates.push({ ...item, outcome: "claim_error", error_type: error instanceof Error ? error.name : "UnknownError" });
         continue;
       }
       if (!claimed) {
@@ -384,19 +371,12 @@ Deno.serve(async (req: Request) => {
       try {
         sendResult = await egress(buildEgressPayload(row, config, visual));
       } catch (error) {
-        await markUncertain(
-          row.publication_id,
-          `telegram_egress_transport_error:${error instanceof Error ? error.name : "UnknownError"}`,
-        );
+        await markUncertain(row.publication_id, `telegram_egress_transport_error:${error instanceof Error ? error.name : "UnknownError"}`);
         candidates.push({ ...item, outcome: "uncertain", reason: "egress_transport_error" });
         continue;
       }
-
       if (sendResult.ok !== true) {
-        await markUncertain(
-          row.publication_id,
-          `telegram_egress_non_ok:http=${String(sendResult._http_status ?? "unknown")}`,
-        );
+        await markUncertain(row.publication_id, `telegram_egress_non_ok:http=${String(sendResult._http_status ?? "unknown")}`);
         candidates.push({ ...item, outcome: "uncertain", reason: "egress_non_ok" });
         continue;
       }
@@ -416,36 +396,17 @@ Deno.serve(async (req: Request) => {
         candidates.push({ ...item, outcome: "sent", telegram_message_id: messageId });
       } catch {
         try {
-          const delivery = await rpc<Record<string, unknown> | null>(
-            "get_telegram_publication_delivery",
-            { p_publication_id: row.publication_id },
-          );
-          if (
-            delivery
-            && delivery.state === "sent"
-            && Number(delivery.telegram_message_id) === messageId
-          ) {
-            candidates.push({
-              ...item,
-              outcome: "sent_confirmed_after_commit_error",
-              telegram_message_id: messageId,
-            });
+          const delivery = await rpc<Record<string, unknown> | null>("get_telegram_publication_delivery", {
+            p_publication_id: row.publication_id,
+          });
+          if (delivery && delivery.state === "sent" && Number(delivery.telegram_message_id) === messageId) {
+            candidates.push({ ...item, outcome: "sent_confirmed_after_commit_error", telegram_message_id: messageId });
           } else {
             await markUncertain(row.publication_id, "telegram_sent_but_database_commit_ambiguous");
-            candidates.push({
-              ...item,
-              outcome: "uncertain",
-              telegram_message_id: messageId,
-              reason: "database_commit_ambiguous",
-            });
+            candidates.push({ ...item, outcome: "uncertain", telegram_message_id: messageId, reason: "database_commit_ambiguous" });
           }
         } catch {
-          candidates.push({
-            ...item,
-            outcome: "uncertain",
-            telegram_message_id: messageId,
-            reason: "database_reconciliation_unavailable",
-          });
+          candidates.push({ ...item, outcome: "uncertain", telegram_message_id: messageId, reason: "database_reconciliation_unavailable" });
         }
       }
     }

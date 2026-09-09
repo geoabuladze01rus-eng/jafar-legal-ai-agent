@@ -44,10 +44,12 @@ Telegram-оформление обычного текстового/фото-п�
 - не ставь эмодзи внутрь точных цитат закона, номеров статей, судебных реквизитов;
 - не делай «ёлку», не используй ряды декоративных эмодзи, огонь или сирены ради кликбейта.
 
-Визуал обычного редакционного поста обязателен. AI может предложить image_prompt,
-но не имеет права считать визуал одобренным. До публикации отдельный media-stage должен
-назначить approved visual category и approved asset. Если asset не назначен, материал
-остаётся на Review и не должен иметь текстового fallback в production.
+Ты можешь предложить image_prompt для любого обычного поста. Но тип публикации имеет
+строгое техническое значение: text — один текстовый Telegram message без обязательного
+media; photo — один SendPhoto с обязательным approved visual asset. Если выбираешь photo,
+AI не имеет права считать визуал одобренным: отдельный media-stage должен назначить
+approved visual category и approved asset key. До назначения asset материал остаётся Review.
+Никогда не понижай photo до text ради обхода media-stage в production.
 
 Правила достоверности:
 - не выдумывай факты, номера дел, судебные акты, нормы, даты, цитаты или источники;
@@ -146,6 +148,7 @@ class TelegramEditorialService:
         source_url: str | None = None,
         is_news: bool = False,
         photo_url: str | None = None,
+        visual_asset_key: str | None = None,
         visual_asset_id: str | None = None,
         visual_category: str | None = None,
         current_case: bool = False,
@@ -182,11 +185,8 @@ class TelegramEditorialService:
         ):
             blockers.append("telegram_emoji_style_missing")
 
-        visual_required = draft.recommended_publication_type in {
-            PublicationType.TEXT,
-            PublicationType.PHOTO,
-        }
-        if visual_required and not (visual_asset_id or "").strip():
+        visual_required = draft.recommended_publication_type is PublicationType.PHOTO
+        if visual_required and not (visual_asset_key or "").strip():
             blockers.append("visual_asset_missing")
         if visual_required and not (visual_category or "").strip():
             blockers.append("visual_category_missing")
@@ -201,9 +201,14 @@ class TelegramEditorialService:
             risk_assessment = self.risk_guard.assess(full_text, current_case=True)
 
         actual_type = draft.recommended_publication_type
-        if actual_type is PublicationType.PHOTO and not photo_url:
-            # Keep a valid payload in Review until the media resolver attaches the approved asset.
-            # No production text fallback is allowed because visual_required remains true.
+        if (
+            actual_type is PublicationType.PHOTO
+            and not photo_url
+            and not (visual_asset_key or "").strip()
+        ):
+            # Keep a structurally valid Review record until the media-stage assigns
+            # an approved asset key. The blocker prevents publication, and the
+            # recommended type remains PHOTO so the operator knows the intended form.
             actual_type = PublicationType.TEXT
             blockers.append("photo_asset_missing")
 
@@ -221,6 +226,7 @@ class TelegramEditorialService:
             image_prompt=draft.image_prompt,
             photo_url=photo_url,
             visual_required=visual_required,
+            visual_asset_key=visual_asset_key,
             visual_asset_id=visual_asset_id,
             visual_category=visual_category,
             question=draft.question if actual_type in {PublicationType.POLL, PublicationType.QUIZ} else None,

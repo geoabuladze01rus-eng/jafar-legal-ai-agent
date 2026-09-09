@@ -2,12 +2,27 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const ALLOWED_CHAT_IDS = new Set(["8999343417", "-1004412524447"]);
 const ALLOWED_ACTIONS = new Set(["probe", "sendMessage", "sendPhoto", "sendVideo", "sendPoll"]);
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function internalAuthorized(req: Request): boolean {
+  if (!SERVICE_KEY) return false;
+  const supplied = req.headers.get("authorization")?.trim() ?? "";
+  return constantTimeEqual(supplied, `Bearer ${SERVICE_KEY}`);
 }
 
 function requireString(value: unknown, name: string): string {
@@ -22,24 +37,25 @@ function decodeBase64(value: string): Uint8Array {
   return out;
 }
 
-async function tokenFromVault(): Promise<string> {
-  const url = Deno.env.get("SUPABASE_URL") ?? "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!url || !serviceKey) return "";
+async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("supabase_runtime_missing");
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${SERVICE_KEY}`,
+      apikey: SERVICE_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error(`rpc_${name}_${response.status}`);
+  return await response.json() as T;
+}
 
+async function tokenFromVault(): Promise<string> {
   try {
-    const response = await fetch(`${url}/rest/v1/rpc/get_telegram_bot_token_for_egress`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        "content-type": "application/json",
-      },
-      body: "{}",
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) return "";
-    const value = await response.json();
+    const value = await rpc<unknown>("get_telegram_bot_token_for_egress", {});
     return typeof value === "string" ? value.trim() : "";
   } catch {
     return "";
@@ -58,10 +74,7 @@ function normalizePollOptions(value: unknown): string[] {
   });
 }
 
-function normalizeCorrectOptionIds(
-  body: Record<string, unknown>,
-  optionCount: number,
-): number[] {
+function normalizeCorrectOptionIds(body: Record<string, unknown>, optionCount: number): number[] {
   const raw = Array.isArray(body.correct_option_ids)
     ? body.correct_option_ids
     : body.correct_option_id !== undefined && body.correct_option_id !== null
@@ -70,9 +83,9 @@ function normalizeCorrectOptionIds(
 
   const ids = raw.map(Number);
   if (
-    ids.length === 0
-    || ids.some((id) => !Number.isInteger(id) || id < 0 || id >= optionCount)
-    || new Set(ids).size !== ids.length
+    ids.length === 0 ||
+    ids.some((id) => !Number.isInteger(id) || id < 0 || id >= optionCount) ||
+    new Set(ids).size !== ids.length
   ) {
     return [];
   }
@@ -81,6 +94,7 @@ function normalizeCorrectOptionIds(
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  if (!internalAuthorized(req)) return json({ ok: false, error: "internal_authorization_required" }, 403);
 
   let body: Record<string, unknown>;
   try {
@@ -99,7 +113,7 @@ Deno.serve(async (req: Request) => {
         method: "GET",
         redirect: "manual",
         signal: AbortSignal.timeout(8000),
-        headers: { "User-Agent": "JAFAR-Telegram-Egress-Probe/2.0" },
+        headers: { "User-Agent": "JAFAR-Telegram-Egress-Probe/3.0" },
       });
       return json({
         ok: response.status >= 200 && response.status < 500,
@@ -137,9 +151,7 @@ Deno.serve(async (req: Request) => {
         text,
         disable_web_page_preview: Boolean(body.disable_web_page_preview ?? false),
       };
-      if (typeof body.parse_mode === "string" && body.parse_mode) {
-        payload.parse_mode = body.parse_mode;
-      }
+      if (typeof body.parse_mode === "string" && body.parse_mode) payload.parse_mode = body.parse_mode;
 
       telegramResponse = await fetch(endpoint, {
         method: "POST",
@@ -166,9 +178,7 @@ Deno.serve(async (req: Request) => {
 
       if (type === "quiz") {
         const correctIds = normalizeCorrectOptionIds(body, options.length);
-        if (!correctIds.length) {
-          return json({ ok: false, error: "invalid_correct_option_ids" }, 400);
-        }
+        if (!correctIds.length) return json({ ok: false, error: "invalid_correct_option_ids" }, 400);
         payload.correct_option_ids = correctIds;
         if (typeof body.explanation === "string" && body.explanation.trim()) {
           payload.explanation = body.explanation.trim();

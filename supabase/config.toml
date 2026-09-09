@@ -3,3 +3,9 @@ verify_jwt = false
 
 [functions.document-pipeline-worker-v3]
 verify_jwt = false
+
+[functions.telegram-publisher-v3]
+verify_jwt = false
+
+[functions.telegram-notion-sync-v3]
+verify_jwt = false

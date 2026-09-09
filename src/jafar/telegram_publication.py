@@ -98,6 +98,7 @@ class TelegramPublication(BaseModel):
     image_prompt: str | None = None
     photo_url: str | None = None
     visual_required: bool = False
+    visual_asset_key: str | None = None
     visual_asset_id: str | None = None
     visual_category: str | None = None
 
@@ -128,6 +129,11 @@ class TelegramPublication(BaseModel):
         if self.published_at is not None and self.published_at.tzinfo is None:
             raise ValueError("published_at must be timezone-aware")
 
+        self.photo_url = _empty_to_none(self.photo_url)
+        self.visual_asset_key = _empty_to_none(self.visual_asset_key)
+        self.visual_asset_id = _empty_to_none(self.visual_asset_id)
+        self.visual_category = _empty_to_none(self.visual_category)
+
         if self.publication_type is PublicationType.TEXT:
             if not self.content.strip():
                 raise ValueError("text publication requires content")
@@ -135,8 +141,10 @@ class TelegramPublication(BaseModel):
                 raise ValueError(f"text exceeds Telegram limit of {TELEGRAM_TEXT_MAX} characters")
 
         elif self.publication_type is PublicationType.PHOTO:
-            if not _is_http_url(self.photo_url):
-                raise ValueError("photo publication requires an http(s) photo_url")
+            if not _is_http_url(self.photo_url) and not self.visual_asset_key:
+                raise ValueError(
+                    "photo publication requires an http(s) photo_url or approved visual_asset_key"
+                )
             effective_caption = (self.caption if self.caption is not None else self.content).strip()
             if len(effective_caption) > TELEGRAM_CAPTION_MAX:
                 raise ValueError(
@@ -186,8 +194,6 @@ class TelegramPublication(BaseModel):
         if self.status is PublicationStatus.PUBLISHED and self.telegram_message_id is None:
             raise ValueError("Published status requires telegram_message_id")
 
-        self.visual_asset_id = _empty_to_none(self.visual_asset_id)
-        self.visual_category = _empty_to_none(self.visual_category)
         self.editorial_blockers = sorted(set(item.strip() for item in self.editorial_blockers if item.strip()))
         if self.publication_id is None:
             self.publication_id = build_publication_id(self)
@@ -205,6 +211,7 @@ class TelegramPublication(BaseModel):
                 _normalize(self.caption or ""),
                 _normalize(self.question or ""),
                 json.dumps(self.options, ensure_ascii=False, separators=(",", ":")),
+                _normalize(self.visual_asset_key or ""),
                 _normalize(self.visual_asset_id or ""),
                 _normalize(self.visual_category or ""),
             ]
@@ -236,22 +243,34 @@ class TelegramPublication(BaseModel):
         if self.risk.legal_risk in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
             reasons.append("legal_risk_requires_review")
         if self.visual_required:
-            if not self.visual_asset_id:
-                reasons.append("visual_asset_missing")
+            if not self.visual_asset_key:
+                reasons.append("visual_asset_key_missing")
             if not self.visual_category:
                 reasons.append("visual_category_missing")
             if self.publication_type is PublicationType.TEXT:
                 reasons.append("visual_required_but_text")
         return PublishDecision(allowed=not reasons, reasons=reasons)
 
-    def telegram_payload(self, *, chat_id: int | str) -> dict[str, Any]:
+    def telegram_payload(
+        self,
+        *,
+        chat_id: int | str,
+        resolved_photo: str | bytes | None = None,
+    ) -> dict[str, Any]:
         if self.publication_type is PublicationType.TEXT:
             return {"method": "sendMessage", "chat_id": chat_id, "text": self.content}
         if self.publication_type is PublicationType.PHOTO:
+            photo: str | bytes | None = resolved_photo or self.photo_url
+            if photo is None:
+                if self.visual_asset_key:
+                    raise ValueError(
+                        "visual_asset_key must be resolved to photo bytes or URL before sendPhoto"
+                    )
+                raise ValueError("photo payload is missing media")
             payload: dict[str, Any] = {
                 "method": "sendPhoto",
                 "chat_id": chat_id,
-                "photo": self.photo_url,
+                "photo": photo,
             }
             effective_caption = self.caption if self.caption is not None else self.content
             if effective_caption:
@@ -297,6 +316,7 @@ class TelegramPublication(BaseModel):
             image_prompt=_empty_to_none(fields.get("Image Prompt")),
             photo_url=_empty_to_none(fields.get("Photo URL")),
             visual_required=_coerce_bool(fields.get("Visual Required")),
+            visual_asset_key=_empty_to_none(fields.get("Visual Asset Key")),
             visual_asset_id=_empty_to_none(fields.get("Visual Drive File ID")),
             visual_category=_empty_to_none(fields.get("Visual Category")),
             question=_empty_to_none(fields.get("Question")),

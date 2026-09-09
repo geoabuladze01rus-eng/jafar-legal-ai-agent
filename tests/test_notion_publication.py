@@ -46,6 +46,36 @@ def test_ai_editorial_record_stays_review_in_notion() -> None:
     assert json.loads(props["Legal Claims JSON"]) == ["Норма требует проверки"]
 
 
+def test_empty_editorial_blockers_serialize_as_physically_empty_notion_field() -> None:
+    publication = TelegramPublication(
+        publication_type="text",
+        content="Материал",
+        requires_fact_check=False,
+        fact_check=FactCheckResult(status=FactCheckStatus.NOT_REQUIRED),
+        editorial_blockers=[],
+    )
+
+    props = publication_to_notion_properties(publication)
+    restored = notion_properties_to_publication(props)
+
+    assert props["Editorial Blockers"] == ""
+    assert restored.editorial_blockers == []
+
+
+def test_nonempty_editorial_blockers_remain_json_array() -> None:
+    publication = TelegramPublication(
+        publication_type="text",
+        content="Материал",
+        requires_fact_check=False,
+        fact_check=FactCheckResult(status=FactCheckStatus.NOT_REQUIRED),
+        editorial_blockers=["incorrect_author_status"],
+    )
+
+    props = publication_to_notion_properties(publication)
+
+    assert json.loads(props["Editorial Blockers"]) == ["incorrect_author_status"]
+
+
 def test_poll_options_are_stored_as_current_input_poll_option_objects() -> None:
     publication = TelegramPublication(
         publication_type="quiz",

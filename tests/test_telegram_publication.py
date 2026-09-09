@@ -67,16 +67,53 @@ def test_privacy_risk_is_fail_closed() -> None:
     assert "privacy_risk_requires_review" in post.publish_decision().reasons
 
 
-def test_photo_requires_url_and_caption_limit() -> None:
+def test_photo_requires_url_or_approved_asset_key() -> None:
     with pytest.raises(ValidationError):
         TelegramPublication(publication_type="photo", content="caption")
-    post = TelegramPublication(
+
+    legacy = TelegramPublication(
         publication_type="photo",
         photo_url="https://example.com/image.jpg",
         caption="caption",
         requires_fact_check=False,
     )
-    assert post.telegram_payload(chat_id="@channel")["method"] == "sendPhoto"
+    assert legacy.telegram_payload(chat_id="@channel")["photo"] == "https://example.com/image.jpg"
+
+
+def test_photo_asset_key_requires_resolution_before_send() -> None:
+    post = TelegramPublication(
+        publication_type="photo",
+        visual_required=True,
+        visual_asset_key="what_to_do:v1",
+        visual_category="what_to_do",
+        caption="caption",
+        status="Ready",
+        fact_check=verified(),
+    )
+
+    assert post.publish_decision().allowed is True
+    with pytest.raises(ValueError, match="must be resolved"):
+        post.telegram_payload(chat_id="@channel")
+
+    media = b"jpeg-bytes"
+    payload = post.telegram_payload(chat_id="@channel", resolved_photo=media)
+    assert payload["method"] == "sendPhoto"
+    assert payload["photo"] == media
+    assert payload["caption"] == "caption"
+
+
+def test_visual_required_is_fail_closed_without_asset_key_or_category() -> None:
+    post = TelegramPublication(
+        publication_type="photo",
+        photo_url="https://example.com/image.jpg",
+        visual_required=True,
+        status="Ready",
+        fact_check=verified(),
+    )
+    decision = post.publish_decision()
+    assert decision.allowed is False
+    assert "visual_asset_key_missing" in decision.reasons
+    assert "visual_category_missing" in decision.reasons
 
 
 def test_poll_normalizes_legacy_options_json() -> None:
@@ -136,6 +173,22 @@ def test_publication_id_and_fingerprint_are_deterministic() -> None:
     )
     assert one.publication_id == two.publication_id
     assert one.content_fingerprint == two.content_fingerprint
+
+
+def test_visual_asset_key_changes_content_fingerprint() -> None:
+    one = TelegramPublication(
+        publication_type="photo",
+        visual_asset_key="what_to_do:v1",
+        visual_category="what_to_do",
+        requires_fact_check=False,
+    )
+    two = TelegramPublication(
+        publication_type="photo",
+        visual_asset_key="what_to_do:v2",
+        visual_category="what_to_do",
+        requires_fact_check=False,
+    )
+    assert one.content_fingerprint != two.content_fingerprint
 
 
 def test_risk_guard_detects_and_redacts_personal_data() -> None:

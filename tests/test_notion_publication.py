@@ -103,6 +103,32 @@ def test_v3_round_trip_preserves_safety_state() -> None:
     assert restored.content_fingerprint == publication.content_fingerprint
 
 
+def test_visual_asset_fields_round_trip() -> None:
+    publication = TelegramPublication(
+        publication_type="photo",
+        content="Подпись",
+        visual_required=True,
+        visual_asset_key="what_to_do:v1",
+        visual_asset_id="legacy-drive-file-id",
+        visual_category="what_to_do",
+        requires_fact_check=False,
+        fact_check=FactCheckResult(status=FactCheckStatus.NOT_REQUIRED),
+    )
+
+    props = publication_to_notion_properties(publication)
+    restored = notion_properties_to_publication(props)
+
+    assert props["Visual Asset Key"] == "what_to_do:v1"
+    assert props["Visual Drive File ID"] == "legacy-drive-file-id"
+    assert props["Visual Category"] == "what_to_do"
+    assert props["Visual Required"] == "__YES__"
+    assert restored.visual_asset_key == "what_to_do:v1"
+    assert restored.visual_asset_id == "legacy-drive-file-id"
+    assert restored.visual_category == "what_to_do"
+    assert restored.visual_required is True
+    assert restored.content_fingerprint == publication.content_fingerprint
+
+
 def test_uncertain_delivery_sets_reconciliation_flag() -> None:
     publication = TelegramPublication(
         publication_type="text",

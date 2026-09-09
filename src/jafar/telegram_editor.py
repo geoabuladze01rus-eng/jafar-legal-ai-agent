@@ -44,6 +44,11 @@ Telegram-оформление обычного текстового/фото-п�
 - не ставь эмодзи внутрь точных цитат закона, номеров статей, судебных реквизитов;
 - не делай «ёлку», не используй ряды декоративных эмодзи, огонь или сирены ради кликбейта.
 
+Визуал обычного редакционного поста обязателен. AI может предложить image_prompt,
+но не имеет права считать визуал одобренным. До публикации отдельный media-stage должен
+назначить approved visual category и approved asset. Если asset не назначен, материал
+остаётся на Review и не должен иметь текстового fallback в production.
+
 Правила достоверности:
 - не выдумывай факты, номера дел, судебные акты, нормы, даты, цитаты или источники;
 - если правовой тезис требует проверки, вынеси его в legal_claims;
@@ -141,6 +146,8 @@ class TelegramEditorialService:
         source_url: str | None = None,
         is_news: bool = False,
         photo_url: str | None = None,
+        visual_asset_id: str | None = None,
+        visual_category: str | None = None,
         current_case: bool = False,
     ) -> EditorialResult:
         if not topic.strip():
@@ -175,6 +182,15 @@ class TelegramEditorialService:
         ):
             blockers.append("telegram_emoji_style_missing")
 
+        visual_required = draft.recommended_publication_type in {
+            PublicationType.TEXT,
+            PublicationType.PHOTO,
+        }
+        if visual_required and not (visual_asset_id or "").strip():
+            blockers.append("visual_asset_missing")
+        if visual_required and not (visual_category or "").strip():
+            blockers.append("visual_category_missing")
+
         full_text = "\n".join(
             part
             for part in [draft.title, draft.hook, draft.content, draft.cta or ""]
@@ -186,8 +202,8 @@ class TelegramEditorialService:
 
         actual_type = draft.recommended_publication_type
         if actual_type is PublicationType.PHOTO and not photo_url:
-            # Keep a valid text payload in Review while preserving the visual recommendation.
-            # The Notion adapter records the recommendation separately for the media stage.
+            # Keep a valid payload in Review until the media resolver attaches the approved asset.
+            # No production text fallback is allowed because visual_required remains true.
             actual_type = PublicationType.TEXT
             blockers.append("photo_asset_missing")
 
@@ -204,6 +220,9 @@ class TelegramEditorialService:
             hashtags=draft.hashtags,
             image_prompt=draft.image_prompt,
             photo_url=photo_url,
+            visual_required=visual_required,
+            visual_asset_id=visual_asset_id,
+            visual_category=visual_category,
             question=draft.question if actual_type in {PublicationType.POLL, PublicationType.QUIZ} else None,
             options=draft.options if actual_type in {PublicationType.POLL, PublicationType.QUIZ} else [],
             correct_option_ids=(

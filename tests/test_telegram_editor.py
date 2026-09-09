@@ -60,6 +60,19 @@ def test_ai_can_never_approve_publication() -> None:
     assert "status_not_ready" in result.publication.publish_decision().reasons
 
 
+def test_text_draft_does_not_require_visual_asset() -> None:
+    provider = FakeEditorialProvider(base_payload(image_prompt="Optional editorial visual concept"))
+    result = TelegramEditorialService(provider).create_publication(
+        topic="Тема",
+        source_text="Факт",
+    )
+
+    assert result.publication.publication_type is PublicationType.TEXT
+    assert result.publication.visual_required is False
+    assert "visual_asset_missing" not in result.publication.editorial_blockers
+    assert "visual_category_missing" not in result.publication.editorial_blockers
+
+
 def test_news_without_author_value_add_gets_machine_blocker() -> None:
     provider = FakeEditorialProvider(base_payload(author_value_add=""))
     result = TelegramEditorialService(provider).create_publication(
@@ -140,7 +153,33 @@ def test_photo_recommendation_without_asset_stays_valid_review_text() -> None:
     )
     assert result.draft.recommended_publication_type is PublicationType.PHOTO
     assert result.publication.publication_type is PublicationType.TEXT
+    assert result.publication.visual_required is True
+    assert "visual_asset_missing" in result.publication.editorial_blockers
+    assert "visual_category_missing" in result.publication.editorial_blockers
     assert "photo_asset_missing" in result.publication.editorial_blockers
+
+
+def test_photo_recommendation_with_approved_asset_key_stays_photo() -> None:
+    provider = FakeEditorialProvider(
+        base_payload(
+            recommended_publication_type="photo",
+            image_prompt="Cinematic investigator office, no identifiable people",
+        )
+    )
+    result = TelegramEditorialService(provider).create_publication(
+        topic="Тема",
+        source_text="Факт",
+        visual_asset_key="what_to_do:v1",
+        visual_category="what_to_do",
+    )
+
+    assert result.publication.publication_type is PublicationType.PHOTO
+    assert result.publication.visual_required is True
+    assert result.publication.visual_asset_key == "what_to_do:v1"
+    assert result.publication.visual_category == "what_to_do"
+    assert "visual_asset_missing" not in result.publication.editorial_blockers
+    assert "visual_category_missing" not in result.publication.editorial_blockers
+    assert "photo_asset_missing" not in result.publication.editorial_blockers
 
 
 def test_personal_data_is_routed_to_review_risk() -> None:
@@ -164,3 +203,4 @@ def test_recommended_publish_at_must_be_timezone_aware() -> None:
 def test_prompt_constant_contains_editorial_structure() -> None:
     assert "HOOK" in EDITOR_SYSTEM_PROMPT
     assert "author_value_add" in EDITOR_SYSTEM_PROMPT
+    assert "approved visual asset" in EDITOR_SYSTEM_PROMPT

@@ -4,6 +4,9 @@ verify_jwt = false
 [functions.document-pipeline-worker-v3]
 verify_jwt = false
 
+[functions.telegram-egress]
+verify_jwt = true
+
 [functions.telegram-publisher-v3]
 verify_jwt = false
 

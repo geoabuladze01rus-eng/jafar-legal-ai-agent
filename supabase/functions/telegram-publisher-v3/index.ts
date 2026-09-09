@@ -276,8 +276,18 @@ async function egress(payload: Record<string, unknown>): Promise<Record<string, 
 }
 
 function extractMessageId(result: Record<string, unknown>): number | null {
-  const id = Number(result.telegram_message_id);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  const currentId = Number(result.telegram_message_id);
+  if (Number.isInteger(currentId) && currentId > 0) return currentId;
+
+  // Rolling-deploy compatibility only: the previous egress wrapped Telegram's
+  // response. Never log or return that legacy body; remove after every deployment
+  // is confirmed on the sanitized telegram_message_id contract.
+  const telegram = result.telegram;
+  if (!telegram || typeof telegram !== "object") return null;
+  const message = (telegram as Record<string, unknown>).result;
+  if (!message || typeof message !== "object") return null;
+  const legacyId = Number((message as Record<string, unknown>).message_id);
+  return Number.isInteger(legacyId) && legacyId > 0 ? legacyId : null;
 }
 
 async function markUncertain(publicationId: string, note: string) {

@@ -118,6 +118,8 @@ def test_post_send_failures_are_uncertain_and_commit_ambiguity_is_reconciled() -
     assert 'outcome: "uncertain"' in source
     assert 'outcome: "sent_confirmed_after_commit_error"' in source
     assert "mark_telegram_publication_failed_v3" not in source
+    assert "Rolling-deploy compatibility only" in source
+    assert "legacyId" in source
 
 
 def test_notion_writeback_failure_cannot_trigger_a_resend() -> None:

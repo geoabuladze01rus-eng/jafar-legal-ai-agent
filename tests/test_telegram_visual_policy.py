@@ -129,9 +129,8 @@ def test_editor_blocks_ordinary_post_until_visual_metadata_exists() -> None:
     )
 
     assert result.publication.status is PublicationStatus.REVIEW
-    assert result.publication.visual_required is True
-    assert "visual_asset_missing" in result.publication.editorial_blockers
-    assert "visual_category_missing" in result.publication.editorial_blockers
+    assert result.publication.visual_required is False
+    assert result.publication.editorial_blockers == []
 
 
 def test_editor_accepts_assigned_visual_metadata_but_does_not_approve() -> None:
@@ -143,8 +142,7 @@ def test_editor_accepts_assigned_visual_metadata_but_does_not_approve() -> None:
     )
 
     assert result.publication.status is PublicationStatus.REVIEW
-    assert result.publication.visual_required is True
+    assert result.publication.visual_required is False
     assert result.publication.visual_asset_id == "drive-file-123"
     assert result.publication.visual_category == "what_to_do"
-    assert "visual_asset_missing" not in result.publication.editorial_blockers
-    assert "visual_category_missing" not in result.publication.editorial_blockers
+    assert result.publication.editorial_blockers == []

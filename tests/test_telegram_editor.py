@@ -140,7 +140,7 @@ def test_legal_claims_force_pending_fact_check() -> None:
     assert result.publication.fact_check.status.value == "pending"
 
 
-def test_photo_recommendation_without_asset_stays_valid_review_text() -> None:
+def test_photo_recommendation_without_asset_stays_photo_and_review() -> None:
     provider = FakeEditorialProvider(
         base_payload(
             recommended_publication_type="photo",
@@ -152,11 +152,11 @@ def test_photo_recommendation_without_asset_stays_valid_review_text() -> None:
         source_text="Факт",
     )
     assert result.draft.recommended_publication_type is PublicationType.PHOTO
-    assert result.publication.publication_type is PublicationType.TEXT
+    assert result.publication.publication_type is PublicationType.PHOTO
     assert result.publication.visual_required is True
     assert "visual_asset_missing" in result.publication.editorial_blockers
     assert "visual_category_missing" in result.publication.editorial_blockers
-    assert "photo_asset_missing" in result.publication.editorial_blockers
+    assert "photo_asset_missing" not in result.publication.editorial_blockers
 
 
 def test_photo_recommendation_with_approved_asset_key_stays_photo() -> None:

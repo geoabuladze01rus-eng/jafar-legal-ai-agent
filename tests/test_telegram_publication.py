@@ -68,8 +68,9 @@ def test_privacy_risk_is_fail_closed() -> None:
 
 
 def test_photo_requires_url_or_approved_asset_key() -> None:
-    with pytest.raises(ValidationError):
-        TelegramPublication(publication_type="photo", content="caption")
+    draft = TelegramPublication(publication_type="photo", content="caption")
+    assert draft.status.value == "Review"
+    assert "visual_asset_key_missing" in draft.publish_decision().reasons
 
     legacy = TelegramPublication(
         publication_type="photo",
@@ -114,6 +115,32 @@ def test_visual_required_is_fail_closed_without_asset_key_or_category() -> None:
     assert decision.allowed is False
     assert "visual_asset_key_missing" in decision.reasons
     assert "visual_category_missing" in decision.reasons
+
+
+def test_not_required_fact_check_is_publishable() -> None:
+    post = ready_text(
+        requires_fact_check=False,
+        fact_check=FactCheckResult(status=FactCheckStatus.NOT_REQUIRED),
+    )
+
+    assert post.publish_decision().allowed is True
+
+
+def test_pending_fact_check_is_blocked_even_if_legacy_flag_is_false() -> None:
+    post = ready_text(
+        requires_fact_check=False,
+        fact_check=FactCheckResult(status=FactCheckStatus.PENDING),
+    )
+
+    assert post.publish_decision().allowed is False
+    assert "fact_check_not_verified" in post.publish_decision().reasons
+
+
+def test_medium_and_high_legal_risk_are_blocked() -> None:
+    for risk in (RiskLevel.MEDIUM, RiskLevel.HIGH):
+        post = ready_text(risk=PublicationRisk(legal_risk=risk))
+        assert post.publish_decision().allowed is False
+        assert "legal_risk_requires_review" in post.publish_decision().reasons
 
 
 def test_poll_normalizes_legacy_options_json() -> None:

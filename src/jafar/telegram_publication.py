@@ -97,6 +97,9 @@ class TelegramPublication(BaseModel):
 
     image_prompt: str | None = None
     photo_url: str | None = None
+    visual_required: bool = False
+    visual_asset_id: str | None = None
+    visual_category: str | None = None
 
     question: str | None = None
     options: list[str] = Field(default_factory=list)
@@ -183,6 +186,8 @@ class TelegramPublication(BaseModel):
         if self.status is PublicationStatus.PUBLISHED and self.telegram_message_id is None:
             raise ValueError("Published status requires telegram_message_id")
 
+        self.visual_asset_id = _empty_to_none(self.visual_asset_id)
+        self.visual_category = _empty_to_none(self.visual_category)
         self.editorial_blockers = sorted(set(item.strip() for item in self.editorial_blockers if item.strip()))
         if self.publication_id is None:
             self.publication_id = build_publication_id(self)
@@ -200,6 +205,8 @@ class TelegramPublication(BaseModel):
                 _normalize(self.caption or ""),
                 _normalize(self.question or ""),
                 json.dumps(self.options, ensure_ascii=False, separators=(",", ":")),
+                _normalize(self.visual_asset_id or ""),
+                _normalize(self.visual_category or ""),
             ]
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -228,6 +235,13 @@ class TelegramPublication(BaseModel):
             reasons.append("privacy_risk_requires_review")
         if self.risk.legal_risk in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
             reasons.append("legal_risk_requires_review")
+        if self.visual_required:
+            if not self.visual_asset_id:
+                reasons.append("visual_asset_missing")
+            if not self.visual_category:
+                reasons.append("visual_category_missing")
+            if self.publication_type is PublicationType.TEXT:
+                reasons.append("visual_required_but_text")
         return PublishDecision(allowed=not reasons, reasons=reasons)
 
     def telegram_payload(self, *, chat_id: int | str) -> dict[str, Any]:
@@ -282,6 +296,9 @@ class TelegramPublication(BaseModel):
             cta=_empty_to_none(fields.get("CTA")),
             image_prompt=_empty_to_none(fields.get("Image Prompt")),
             photo_url=_empty_to_none(fields.get("Photo URL")),
+            visual_required=_coerce_bool(fields.get("Visual Required")),
+            visual_asset_id=_empty_to_none(fields.get("Visual Drive File ID")),
+            visual_category=_empty_to_none(fields.get("Visual Category")),
             question=_empty_to_none(fields.get("Question")),
             options=options,
             correct_option_ids=correct_ids,
@@ -347,6 +364,12 @@ def _coerce_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).upper() in {"__YES__", "TRUE", "1", "YES"}
 
 
 def _coerce_datetime(value: Any) -> datetime | None:

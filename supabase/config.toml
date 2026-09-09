@@ -17,4 +17,4 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.telegram-bot-access-v3]
-verify_jwt = false
+verify_jwt = true

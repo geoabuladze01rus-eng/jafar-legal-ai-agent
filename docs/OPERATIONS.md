@@ -24,7 +24,7 @@ Production path:
 - `telegram-notion-sync-v3`
   - cron: every 5 minutes
   - config: `enabled=true`, `dry_run=false`
-  - reads only Telegram + Ready Notion items
+  - reads Telegram + Ready Notion items
   - upserts only safe `pending` queue rows
   - writes terminal delivery state back to Notion
 - `telegram-publisher-v3`
@@ -39,8 +39,9 @@ Production path:
   - additionally requires the service-role Bearer internally
   - allowlisted chat IDs only
 - `telegram-bot-access-v3`
-  - read-only `getMe + getChatMember` operational probe
-  - never sends a Telegram message
+  - **retired after cutover verification**
+  - now returns HTTP 410 and requires JWT
+  - not part of production runtime
 
 ### Make — rollback only
 
@@ -205,14 +206,9 @@ Production secrets live in Supabase Vault/runtime.
 
 A normal anon/authenticated Supabase JWT is insufficient to send through the bot.
 
-## 9. Bot/channel access probe
+## 9. Historical bot/channel access verification
 
-`telegram-bot-access-v3` performs only Telegram read-only operations:
-
-- `getMe`;
-- `getChatMember`.
-
-At the 2026-09-09 cutover it confirmed:
+A temporary read-only probe was used during the 2026-09-09 cutover for Telegram `getMe` and `getChatMember` only. It confirmed:
 
 - bot username `Djafar23_bot`;
 - bot ID `8551049942`;
@@ -221,7 +217,7 @@ At the 2026-09-09 cutover it confirmed:
 - `can_edit_messages=true`;
 - `can_delete_messages=true`.
 
-No Telegram message was created by this probe.
+No Telegram message was created by this probe. The probe was then retired: `telegram-bot-access-v3` now requires JWT and returns HTTP 410.
 
 ## 10. Production health
 
@@ -240,6 +236,8 @@ Cron jobs:
 
 - publisher: `* * * * *`;
 - Notion sync: `*/5 * * * *`.
+
+A ChatGPT condition-watch named `TG cloud health` checks the cloud configs, cron freshness, due/claimed/uncertain state, reconciliation flags and that Make v2 remains inactive. It must notify only on a real problem and must never perform a Telegram send or retry as a diagnostic action.
 
 Cron SQL success alone does not prove Telegram delivery. Durable SENT + real Telegram message ID is authoritative for a completed publication.
 
@@ -296,7 +294,7 @@ Do not claim full CI green unless a runner actually executed the tests.
 
 Do not blindly reactivate historical scenario IDs `6855238`, `7274887`, `7305466`, `7305508`, `7305212`, `7306564`.
 
-Make v3 `7311904` is not production. Probe/test utilities must not be used to send hidden public technical posts.
+Make v3 `7311904` is not production. `telegram-bot-access-v3` is retired. Probe/test utilities must not be used to send hidden public technical posts.
 
 ## 16. Remaining acceptance item
 

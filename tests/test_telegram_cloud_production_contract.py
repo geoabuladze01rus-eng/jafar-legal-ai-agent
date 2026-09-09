@@ -138,6 +138,8 @@ def test_egress_is_service_role_only_vault_only_and_not_a_generic_proxy() -> Non
     assert "[functions.telegram-egress]\nverify_jwt = true" in config
     assert "internalAuthorized(req)" in source
     assert "`Bearer ${SERVICE_KEY}`" in source
+    assert '"-1004412524447"' in source
+    assert "ALLOWED_CHAT_IDS.has(chatId)" in source
     assert 'rpc<unknown>("get_telegram_bot_token_for_egress", {})' in source
     assert "x-telegram-bot-token" not in source
     assert 'new Set(["sendMessage", "sendPhoto", "sendPoll"])' in source

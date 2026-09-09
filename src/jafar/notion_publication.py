@@ -50,10 +50,14 @@ def publication_to_notion_properties(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    blockers_json = json.dumps(
-        publication.editorial_blockers,
-        ensure_ascii=False,
-        separators=(",", ":"),
+    blockers_json = (
+        json.dumps(
+            publication.editorial_blockers,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if publication.editorial_blockers
+        else ""
     )
 
     properties: dict[str, Any] = {

@@ -201,16 +201,6 @@ class TelegramEditorialService:
             risk_assessment = self.risk_guard.assess(full_text, current_case=True)
 
         actual_type = draft.recommended_publication_type
-        if (
-            actual_type is PublicationType.PHOTO
-            and not photo_url
-            and not (visual_asset_key or "").strip()
-        ):
-            # Keep a structurally valid Review record until the media-stage assigns
-            # an approved asset key. The blocker prevents publication, and the
-            # recommended type remains PHOTO so the operator knows the intended form.
-            actual_type = PublicationType.TEXT
-            blockers.append("photo_asset_missing")
 
         requires_fact_check = bool(draft.legal_claims)
         fact_check = FactCheckResult(

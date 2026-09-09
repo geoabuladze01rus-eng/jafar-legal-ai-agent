@@ -69,8 +69,7 @@ async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
     signal: AbortSignal.timeout(12000),
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`rpc_${name}_${response.status}:${text.slice(0, 240)}`);
+    throw new Error(`rpc_${name}_${response.status}`);
   }
   if (response.status === 204) return undefined as T;
   return await response.json() as T;
@@ -178,6 +177,17 @@ function validate(row: QueueRow, visual: VisualAsset | null): string[] {
     if (!row.visual_asset_key?.trim()) reasons.push("visual_asset_key_missing");
     if (!row.visual_category?.trim()) reasons.push("visual_category_missing");
     if (!visual) reasons.push("visual_asset_unresolved");
+    if (visual) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(visual.mime_type)) {
+        reasons.push("visual_mime_invalid");
+      }
+      try {
+        const byteLength = atob(visual.data_base64).length;
+        if (byteLength === 0 || byteLength > 10 * 1024 * 1024) reasons.push("visual_size_invalid");
+      } catch {
+        reasons.push("visual_base64_invalid");
+      }
+    }
     const caption = (row.caption ?? row.content ?? "").trim();
     if (caption.length > 1024) reasons.push("caption_too_long");
   } else if (row.publication_type === "poll" || row.publication_type === "quiz") {
@@ -234,6 +244,7 @@ function buildEgressPayload(row: QueueRow, config: PublisherConfig, visual: Visu
       chat_id: config.chat_id,
       photo_base64: visual.data_base64,
       filename: visual.filename,
+      mime_type: visual.mime_type,
       caption: (row.caption ?? row.content ?? "").trim(),
     };
   }
@@ -265,12 +276,7 @@ async function egress(payload: Record<string, unknown>): Promise<Record<string, 
 }
 
 function extractMessageId(result: Record<string, unknown>): number | null {
-  const telegram = result.telegram;
-  if (!telegram || typeof telegram !== "object") return null;
-  const payload = telegram as Record<string, unknown>;
-  const message = payload.result;
-  if (!message || typeof message !== "object") return null;
-  const id = Number((message as Record<string, unknown>).message_id);
+  const id = Number(result.telegram_message_id);
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
@@ -406,6 +412,7 @@ Deno.serve(async (req: Request) => {
             candidates.push({ ...item, outcome: "uncertain", telegram_message_id: messageId, reason: "database_commit_ambiguous" });
           }
         } catch {
+          await markUncertain(row.publication_id, "telegram_sent_database_reconciliation_unavailable");
           candidates.push({ ...item, outcome: "uncertain", telegram_message_id: messageId, reason: "database_reconciliation_unavailable" });
         }
       }

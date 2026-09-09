@@ -1,3 +1,124 @@
+-- Reconcile the cloud Telegram objects that existed operationally before this
+-- contract was committed. Defaults are deliberately non-sending. Every statement
+-- preserves existing production rows and secrets.
+create table if not exists public.telegram_publisher_config (
+  id smallint primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  dry_run boolean not null default true,
+  chat_id text not null default '-1004412524447',
+  batch_size integer not null default 3 check (batch_size between 1 and 20),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.telegram_publisher_config(id, enabled, dry_run, chat_id, batch_size)
+values (1, false, true, '-1004412524447', 3)
+on conflict (id) do nothing;
+
+alter table public.telegram_publisher_config enable row level security;
+revoke all on public.telegram_publisher_config from public, anon, authenticated;
+grant select, update on public.telegram_publisher_config to service_role;
+
+create table if not exists public.telegram_publication_queue (
+  publication_id text primary key,
+  source_notion_page_id text,
+  status text not null default 'Review'
+    check (status in ('Draft','Review','Ready','In progress','Published','Error')),
+  publication_type text not null
+    check (publication_type in ('text','photo','poll','quiz')),
+  scheduled_at timestamptz not null,
+  content text not null default '',
+  caption text,
+  question text,
+  options jsonb not null default '[]'::jsonb check (jsonb_typeof(options) = 'array'),
+  correct_option_ids jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(correct_option_ids) = 'array'),
+  explanation text,
+  visual_asset_key text,
+  visual_category text,
+  fact_check_status text not null default 'pending'
+    check (fact_check_status in ('pending','verified','unverified','failed','not_required')),
+  legal_risk text not null default 'high'
+    check (legal_risk in ('low','medium','high','critical')),
+  privacy_risk text not null default 'high'
+    check (privacy_risk in ('low','medium','high','critical')),
+  current_case_risk boolean not null default true,
+  editorial_blockers jsonb not null default '["unreviewed"]'::jsonb
+    check (jsonb_typeof(editorial_blockers) = 'array'),
+  content_fingerprint text not null check (content_fingerprint ~ '^[0-9a-f]{64}$'),
+  delivery_state text not null default 'pending'
+    check (delivery_state in ('pending','claimed','sent','failed','uncertain')),
+  delivery_payload_hash text,
+  reconciliation_required boolean not null default false,
+  telegram_message_id bigint,
+  published_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint telegram_queue_sent_requires_message_id
+    check (delivery_state <> 'sent' or telegram_message_id is not null),
+  constraint telegram_queue_payload_hash_format
+    check (delivery_payload_hash is null or delivery_payload_hash ~ '^[0-9a-f]{64}$')
+);
+
+create index if not exists telegram_publication_queue_due_idx
+  on public.telegram_publication_queue(scheduled_at, publication_id)
+  where status='Ready' and delivery_state='pending' and reconciliation_required=false;
+
+alter table public.telegram_publication_queue enable row level security;
+revoke all on public.telegram_publication_queue from public, anon, authenticated;
+grant select, insert, update on public.telegram_publication_queue to service_role;
+
+create or replace function public.get_jafar_worker_secret_for_publisher()
+returns text
+language sql
+stable
+security definer
+set search_path = public, vault
+as $$
+  select decrypted_secret
+  from vault.decrypted_secrets
+  where name='Jafar worker authentication secret'
+  limit 1;
+$$;
+
+create or replace function public.get_telegram_bot_token_for_egress()
+returns text
+language sql
+stable
+security definer
+set search_path = public, vault
+as $$
+  select decrypted_secret
+  from vault.decrypted_secrets
+  where name in ('telegram_bot_token','Telegram bot token')
+  order by case when name='telegram_bot_token' then 0 else 1 end
+  limit 1;
+$$;
+
+create or replace function public.telegram_bot_token_present()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, vault
+as $$
+  select exists (
+    select 1 from vault.decrypted_secrets
+    where name in ('telegram_bot_token','Telegram bot token')
+      and coalesce(btrim(decrypted_secret),'') <> ''
+  );
+$$;
+
+revoke all on function public.get_jafar_worker_secret_for_publisher()
+  from public, anon, authenticated;
+revoke all on function public.get_telegram_bot_token_for_egress()
+  from public, anon, authenticated;
+revoke all on function public.telegram_bot_token_present()
+  from public, anon, authenticated;
+grant execute on function public.get_jafar_worker_secret_for_publisher() to service_role;
+grant execute on function public.get_telegram_bot_token_for_egress() to service_role;
+grant execute on function public.telegram_bot_token_present() to service_role;
+
 create table if not exists public.telegram_notion_sync_config (
   id smallint primary key default 1 check (id = 1),
   enabled boolean not null default false,
@@ -63,14 +184,17 @@ begin
   if v_scheduled_at is null then
     raise exception 'scheduled_at_required' using errcode='P0001';
   end if;
-  if v_fact not in ('pending','verified','unverified','failed','not_required') then
-    raise exception 'fact_check_status_invalid' using errcode='P0001';
+  if v_fact not in ('verified','not_required') then
+    raise exception 'fact_check_not_verified' using errcode='P0001';
   end if;
-  if v_legal not in ('low','medium','high','critical') then
-    raise exception 'legal_risk_invalid' using errcode='P0001';
+  if v_legal <> 'low' then
+    raise exception 'legal_risk_not_low' using errcode='P0001';
   end if;
-  if v_privacy not in ('low','medium','high','critical') then
-    raise exception 'privacy_risk_invalid' using errcode='P0001';
+  if v_privacy <> 'low' then
+    raise exception 'privacy_risk_not_low' using errcode='P0001';
+  end if;
+  if coalesce((p_row->>'current_case_risk')::boolean,false) then
+    raise exception 'current_case_risk' using errcode='P0001';
   end if;
   if v_fingerprint !~ '^[0-9a-f]{64}$' then
     raise exception 'content_fingerprint_invalid' using errcode='P0001';
@@ -83,6 +207,9 @@ begin
   end if;
   if jsonb_typeof(coalesce(p_row->'editorial_blockers','[]'::jsonb)) <> 'array' then
     raise exception 'editorial_blockers_invalid' using errcode='P0001';
+  end if;
+  if jsonb_array_length(coalesce(p_row->'editorial_blockers','[]'::jsonb)) <> 0 then
+    raise exception 'editorial_blockers_present' using errcode='P0001';
   end if;
 
   select * into v_existing
@@ -474,6 +601,62 @@ begin
       'jafar-telegram-notion-sync-v3',
       '*/5 * * * *',
       'select public.run_telegram_notion_sync_v3_tick();'
+    );
+  end if;
+end $$;
+
+create or replace function public.run_telegram_publisher_v3_tick()
+returns bigint
+language plpgsql
+security definer
+set search_path = public, vault, net
+as $$
+declare
+  cfg public.telegram_publisher_config%rowtype;
+  project_url text;
+  worker_secret text;
+  request_id bigint;
+begin
+  select * into cfg from public.telegram_publisher_config where id=1;
+  if not found or cfg.enabled is not true then return null; end if;
+
+  select decrypted_secret into project_url
+  from vault.decrypted_secrets where name='project_url' limit 1;
+  select decrypted_secret into worker_secret
+  from vault.decrypted_secrets
+  where name='Jafar worker authentication secret' limit 1;
+
+  if coalesce(btrim(project_url),'')='' or coalesce(btrim(worker_secret),'')='' then
+    return null;
+  end if;
+
+  request_id := net.http_post(
+    url := rtrim(project_url,'/') || '/functions/v1/telegram-publisher-v3',
+    headers := jsonb_build_object(
+      'content-type','application/json',
+      'x-jafar-worker-secret',worker_secret
+    ),
+    body := jsonb_build_object(
+      'mode','publish',
+      'limit',greatest(1,least(coalesce(cfg.batch_size,3),20))
+    ),
+    timeout_milliseconds := 80000
+  );
+  return request_id;
+end;
+$$;
+
+revoke all on function public.run_telegram_publisher_v3_tick()
+  from public, anon, authenticated;
+grant execute on function public.run_telegram_publisher_v3_tick() to service_role;
+
+do $$
+begin
+  if not exists (select 1 from cron.job where jobname='jafar-telegram-publisher-v3') then
+    perform cron.schedule(
+      'jafar-telegram-publisher-v3',
+      '* * * * *',
+      'select public.run_telegram_publisher_v3_tick();'
     );
   end if;
 end $$;

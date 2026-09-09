@@ -157,7 +157,7 @@ def notion_properties_to_publication(fields: dict[str, Any]) -> TelegramPublicat
     data = {
         "publication_id": _optional_text(fields.get("Publication ID")),
         "publication_type": publication_type,
-        "title": _optional_text(fields.get("Name")),
+        "title": _notion_title(fields),
         "content": str(fields.get("Content") or ""),
         "caption": _optional_text(fields.get("Caption")),
         "cta": _optional_text(fields.get("CTA")),
@@ -227,6 +227,16 @@ def _optional_text(value: Any) -> str | None:
     if value in (None, ""):
         return None
     return str(value)
+
+
+def _notion_title(fields: dict[str, Any]) -> str | None:
+    """Discard the synthetic Notion title used when the canonical title is empty."""
+
+    title = _optional_text(fields.get("Name"))
+    publication_id = _optional_text(fields.get("Publication ID"))
+    if title in {publication_id, "Telegram publication"}:
+        return None
+    return title
 
 
 def _optional_int(value: Any) -> int | None:

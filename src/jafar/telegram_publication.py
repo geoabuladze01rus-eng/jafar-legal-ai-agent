@@ -141,7 +141,11 @@ class TelegramPublication(BaseModel):
                 raise ValueError(f"text exceeds Telegram limit of {TELEGRAM_TEXT_MAX} characters")
 
         elif self.publication_type is PublicationType.PHOTO:
-            if not _is_http_url(self.photo_url) and not self.visual_asset_key:
+            if (
+                self.status not in {PublicationStatus.DRAFT, PublicationStatus.REVIEW}
+                and not _is_http_url(self.photo_url)
+                and not self.visual_asset_key
+            ):
                 raise ValueError(
                     "photo publication requires an http(s) photo_url or approved visual_asset_key"
                 )
@@ -159,9 +163,9 @@ class TelegramPublication(BaseModel):
                 raise ValueError(
                     f"poll question exceeds Telegram limit of {TELEGRAM_POLL_QUESTION_MAX} characters"
                 )
-            if not 1 <= len(self.options) <= TELEGRAM_POLL_OPTIONS_MAX:
+            if not 2 <= len(self.options) <= TELEGRAM_POLL_OPTIONS_MAX:
                 raise ValueError(
-                    f"poll/quiz requires 1-{TELEGRAM_POLL_OPTIONS_MAX} answer options"
+                    f"poll/quiz requires 2-{TELEGRAM_POLL_OPTIONS_MAX} answer options"
                 )
             for option in self.options:
                 if not option.strip():
@@ -234,21 +238,29 @@ class TelegramPublication(BaseModel):
             reasons.append(f"delivery_state_{self.delivery_state.value}")
         if self.editorial_blockers:
             reasons.extend(f"editorial:{item}" for item in self.editorial_blockers)
-        if self.requires_fact_check and self.fact_check.status is not FactCheckStatus.VERIFIED:
+        if self.fact_check.status not in {
+            FactCheckStatus.VERIFIED,
+            FactCheckStatus.NOT_REQUIRED,
+        }:
             reasons.append("fact_check_not_verified")
         if self.risk.current_case_risk:
             reasons.append("current_case_risk")
         if self.risk.privacy_risk is not RiskLevel.LOW:
             reasons.append("privacy_risk_requires_review")
-        if self.risk.legal_risk in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
+        if self.risk.legal_risk is not RiskLevel.LOW:
             reasons.append("legal_risk_requires_review")
         if self.visual_required:
             if not self.visual_asset_key:
-                reasons.append("visual_asset_key_missing")
+                reasons.append("visual_asset_missing")
             if not self.visual_category:
                 reasons.append("visual_category_missing")
             if self.publication_type is PublicationType.TEXT:
                 reasons.append("visual_required_but_text")
+        if self.publication_type is PublicationType.PHOTO:
+            if not self.visual_asset_key:
+                reasons.append("visual_asset_key_missing")
+            if not self.visual_required and not self.visual_category:
+                reasons.append("visual_category_missing")
         return PublishDecision(allowed=not reasons, reasons=reasons)
 
     def telegram_payload(

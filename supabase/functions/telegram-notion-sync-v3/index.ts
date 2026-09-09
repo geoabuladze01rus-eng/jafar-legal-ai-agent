@@ -183,6 +183,15 @@ function notionRow(page: NotionPage) {
   if (deliveryState !== "pending") reasons.push("delivery_state_not_pending");
   if (reconciliationRequired) reasons.push("reconciliation_required");
   if (telegramMessageId !== null) reasons.push("already_has_telegram_message_id");
+  if (!["verified", "not_required"].includes(row.fact_check_status)) {
+    reasons.push("fact_check_not_verified");
+  }
+  if (row.legal_risk !== "low") reasons.push("legal_risk_not_low");
+  if (row.privacy_risk !== "low") reasons.push("privacy_risk_not_low");
+  if (row.current_case_risk) reasons.push("current_case_risk");
+  if (!Array.isArray(row.editorial_blockers) || row.editorial_blockers.length) {
+    reasons.push("editorial_blockers_present");
+  }
   if (visualRequired && publicationType !== "photo") reasons.push("visual_required_but_not_photo");
   if (publicationType === "photo") {
     if (!row.visual_asset_key) reasons.push("visual_asset_key_missing");

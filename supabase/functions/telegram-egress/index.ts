@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const ALLOWED_CHAT_IDS = new Set(["8999343417", "-1004412524447"]);
-const ALLOWED_ACTIONS = new Set(["probe", "sendMessage", "sendPhoto", "sendVideo", "sendPoll"]);
+const ALLOWED_ACTIONS = new Set(["sendMessage", "sendPhoto", "sendPoll"]);
+const ALLOWED_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -75,11 +76,7 @@ function normalizePollOptions(value: unknown): string[] {
 }
 
 function normalizeCorrectOptionIds(body: Record<string, unknown>, optionCount: number): number[] {
-  const raw = Array.isArray(body.correct_option_ids)
-    ? body.correct_option_ids
-    : body.correct_option_id !== undefined && body.correct_option_id !== null
-      ? [body.correct_option_id]
-      : [];
+  const raw = Array.isArray(body.correct_option_ids) ? body.correct_option_ids : [];
 
   const ids = raw.map(Number);
   if (
@@ -106,33 +103,7 @@ Deno.serve(async (req: Request) => {
   const action = String(body.action ?? "");
   if (!ALLOWED_ACTIONS.has(action)) return json({ ok: false, error: "action_not_allowed" }, 400);
 
-  if (action === "probe") {
-    const started = Date.now();
-    try {
-      const response = await fetch("https://api.telegram.org", {
-        method: "GET",
-        redirect: "manual",
-        signal: AbortSignal.timeout(8000),
-        headers: { "User-Agent": "JAFAR-Telegram-Egress-Probe/3.0" },
-      });
-      return json({
-        ok: response.status >= 200 && response.status < 500,
-        telegram_reachable: true,
-        telegram_status: response.status,
-        elapsed_ms: Date.now() - started,
-      });
-    } catch (error) {
-      return json({
-        ok: false,
-        telegram_reachable: false,
-        error_type: error instanceof Error ? error.name : "UnknownError",
-        elapsed_ms: Date.now() - started,
-      }, 502);
-    }
-  }
-
-  let token = req.headers.get("x-telegram-bot-token")?.trim() ?? "";
-  if (!token) token = await tokenFromVault();
+  const token = await tokenFromVault();
   if (!token || token.length < 20 || /\s/.test(token)) {
     return json({ ok: false, error: "telegram_token_missing" }, 401);
   }
@@ -162,7 +133,11 @@ Deno.serve(async (req: Request) => {
     } else if (action === "sendPoll") {
       const question = requireString(body.question, "question");
       const options = normalizePollOptions(body.options);
-      if (options.length < 2 || options.length > 12 || options.some((x) => !x)) {
+      if (question.length > 300) return json({ ok: false, error: "poll_question_too_long" }, 400);
+      if (
+        options.length < 2 || options.length > 12 ||
+        options.some((x) => !x || x.length > 100)
+      ) {
         return json({ ok: false, error: "invalid_poll_options" }, 400);
       }
 
@@ -177,12 +152,21 @@ Deno.serve(async (req: Request) => {
       };
 
       if (type === "quiz") {
+        if (body.allows_multiple_answers === true) {
+          return json({ ok: false, error: "quiz_multiple_answers_not_supported" }, 400);
+        }
         const correctIds = normalizeCorrectOptionIds(body, options.length);
         if (!correctIds.length) return json({ ok: false, error: "invalid_correct_option_ids" }, 400);
         payload.correct_option_ids = correctIds;
         if (typeof body.explanation === "string" && body.explanation.trim()) {
-          payload.explanation = body.explanation.trim();
+          const explanation = body.explanation.trim();
+          if (explanation.length > 200 || (explanation.match(/\n/g) ?? []).length > 2) {
+            return json({ ok: false, error: "invalid_quiz_explanation" }, 400);
+          }
+          payload.explanation = explanation;
         }
+      } else if (Array.isArray(body.correct_option_ids) && body.correct_option_ids.length) {
+        return json({ ok: false, error: "regular_poll_has_correct_option_ids" }, 400);
       }
 
       if (body.open_period !== undefined && body.open_period !== null) {
@@ -207,17 +191,14 @@ Deno.serve(async (req: Request) => {
         signal: AbortSignal.timeout(20000),
       });
     } else {
-      const isPhoto = action === "sendPhoto";
-      const mediaField = isPhoto ? "photo" : "video";
-      const urlKey = isPhoto ? "photo_url" : "video_url";
-      const b64Key = isPhoto ? "photo_base64" : "video_base64";
       const filename = typeof body.filename === "string" && body.filename.trim()
         ? body.filename.trim()
-        : isPhoto ? "image.jpg" : "video.mp4";
+        : "image.jpg";
 
       const caption = typeof body.caption === "string" ? body.caption : "";
-      const mediaUrl = typeof body[urlKey] === "string" ? String(body[urlKey]) : "";
-      const mediaB64 = typeof body[b64Key] === "string" ? String(body[b64Key]) : "";
+      if (caption.length > 1024) return json({ ok: false, error: "caption_too_long" }, 400);
+      const mediaUrl = typeof body.photo_url === "string" ? body.photo_url.trim() : "";
+      const mediaB64 = typeof body.photo_base64 === "string" ? body.photo_base64 : "";
       if (!!mediaUrl === !!mediaB64) {
         return json({ ok: false, error: "provide_exactly_one_media_source" }, 400);
       }
@@ -230,21 +211,23 @@ Deno.serve(async (req: Request) => {
       }
 
       if (mediaUrl) {
-        form.set(mediaField, mediaUrl);
+        let parsed: URL;
+        try { parsed = new URL(mediaUrl); } catch { return json({ ok: false, error: "photo_url_invalid" }, 400); }
+        if (parsed.protocol !== "https:") return json({ ok: false, error: "photo_url_invalid" }, 400);
+        form.set("photo", mediaUrl);
       } else {
-        const bytes = decodeBase64(mediaB64);
-        const maxBytes = isPhoto ? 10 * 1024 * 1024 : 20 * 1024 * 1024;
-        if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) {
+        const mime = typeof body.mime_type === "string" ? body.mime_type.trim().toLowerCase() : "";
+        if (!ALLOWED_PHOTO_MIME_TYPES.has(mime)) {
+          return json({ ok: false, error: "photo_mime_invalid" }, 400);
+        }
+        let bytes: Uint8Array;
+        try { bytes = decodeBase64(mediaB64); } catch {
+          return json({ ok: false, error: "photo_base64_invalid" }, 400);
+        }
+        if (bytes.byteLength === 0 || bytes.byteLength > 10 * 1024 * 1024) {
           return json({ ok: false, error: "media_size_invalid" }, 400);
         }
-        const mime = isPhoto
-          ? filename.toLowerCase().endsWith(".png")
-            ? "image/png"
-            : filename.toLowerCase().endsWith(".webp")
-              ? "image/webp"
-              : "image/jpeg"
-          : "video/mp4";
-        form.set(mediaField, new Blob([bytes], { type: mime }), filename);
+        form.set("photo", new Blob([bytes], { type: mime }), filename);
       }
 
       telegramResponse = await fetch(endpoint, {
@@ -261,16 +244,19 @@ Deno.serve(async (req: Request) => {
     }, 502);
   }
 
-  let telegramBody: unknown = null;
+  let telegramMessageId: number | null = null;
   try {
-    telegramBody = await telegramResponse.json();
-  } catch {
-    telegramBody = { ok: false, description: "non_json_telegram_response" };
-  }
+    const body = await telegramResponse.json() as Record<string, unknown>;
+    const result = body?.result;
+    const rawId = result && typeof result === "object"
+      ? Number((result as Record<string, unknown>).message_id)
+      : NaN;
+    if (Number.isInteger(rawId) && rawId > 0) telegramMessageId = rawId;
+  } catch {}
 
   return json({
-    ok: telegramResponse.ok,
+    ok: telegramResponse.ok && telegramMessageId !== null,
     telegram_status: telegramResponse.status,
-    telegram: telegramBody,
+    telegram_message_id: telegramMessageId,
   }, telegramResponse.ok ? 200 : 502);
 });

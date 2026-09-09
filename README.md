@@ -85,6 +85,12 @@ The repository contains the Apple client for iOS/macOS, authenticated API access
 
 The canonical stack includes long-term legal memory, Matter resolution, approval/reconciliation primitives, audit boundaries and controlled execution. Consequential legal or external actions must not be executed silently.
 
+### Telegram editorial automation
+
+The Telegram subsystem for «Уголовка наизнанку» is built around a human `Ready` gate, fail-closed legal/privacy/current-case checks, persistent delivery idempotency, explicit reconciliation for ambiguous sends and approved versioned visual assets. AI may prepare `Review` drafts but may not approve publication.
+
+Production operations, v2→v3 cutover, rollback, durable delivery states and controlled end-to-end acceptance are documented in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ## Security invariants
 
 1. No credentials, tokens, private documents or client secrets belong in Git.

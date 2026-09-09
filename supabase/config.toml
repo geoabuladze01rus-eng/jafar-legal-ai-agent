@@ -15,3 +15,6 @@ verify_jwt = false
 
 [functions.telegram-notion-guard-v3]
 verify_jwt = true
+
+[functions.telegram-bot-access-v3]
+verify_jwt = false

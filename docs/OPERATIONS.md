@@ -1,33 +1,56 @@
 # Telegram production operations — «Уголовка наизнанку»
 
-This runbook describes the safe operating model for JAFAR's Telegram editorial and publication pipeline.
+This runbook describes the current safe operating model for JAFAR's Telegram editorial and publication pipeline.
 
 ## 1. Non-negotiable editorial identity
 
 - Channel: `@iznanka_ugolovki` («Уголовка наизнанку»).
 - Author: Артур Чернов — **юрист, бывший следователь**.
 - Артур Чернов **не является адвокатом**. Generated copy, prompts and automation must never call him an advocate or imply advocate status.
-- AI may create `Review` drafts and recommendations. **AI must never set `Ready` or `Published`.**
-- `Ready` is the explicit human approval gate.
+- Work only from the user-approved content plan. Do not invent an extra publication merely to preserve frequency.
 - Never publish current-case details, personal data, client strategy, invented legal facts, invented metrics or invented sources.
 - No technical/test post may be sent to the public channel without explicit operator authorization.
 
-## 2. Current production topology
+## 2. Current production topology — after 2026-09-09 cutover
 
-### Stable scheduler
+Primary runtime is now Supabase Cloud and does not depend on an always-on MacBook, GitHub Actions, or Make operations.
 
-- Make scenario `7305820`
-- `Telegram @iznanka_ugolovki — Production Scheduler v2 — LIVE`
-- Expected state while v3 is being developed: **ACTIVE**
-- Polling interval: 15 minutes
+Production path:
 
-### Candidate scheduler
+`approved Notion plan item → Status=Ready → telegram-notion-sync-v3 → telegram_publication_queue → telegram-publisher-v3 → telegram-egress → Telegram → durable SENT → Notion writeback`
 
-- Make scenario `7311904`
-- `Telegram @iznanka_ugolovki — Production Scheduler v3 — OFF`
-- Expected state before controlled cutover: **INACTIVE**
+### Supabase Cloud — LIVE
 
-Never let v2 and v3 own the same `Ready` queue during a cutover test.
+- `telegram-notion-sync-v3`
+  - cron: every 5 minutes
+  - config: `enabled=true`, `dry_run=false`
+  - reads only Telegram + Ready Notion items
+  - upserts only safe `pending` queue rows
+  - writes terminal delivery state back to Notion
+- `telegram-publisher-v3`
+  - cron: every minute
+  - config: `enabled=true`, `dry_run=false`
+  - sends only due `Ready/pending` rows after all gates pass
+- `telegram-notion-guard-v3`
+  - read-only final Notion revalidation before atomic claim
+  - prevents publication of a stale Supabase row if Notion was changed or canceled after sync
+- `telegram-egress`
+  - `verify_jwt=true`
+  - additionally requires the service-role Bearer internally
+  - allowlisted chat IDs only
+- `telegram-bot-access-v3`
+  - read-only `getMe + getChatMember` operational probe
+  - never sends a Telegram message
+
+### Make — rollback only
+
+Scenario `7305820` is intentionally **INACTIVE** and renamed:
+
+`Telegram @iznanka_ugolovki — Production Scheduler v2 — ROLLBACK (OFF)`
+
+Do not reactivate it while Supabase Cloud Publisher is live unless the rollback procedure below has been completed and duplicate-delivery risk is zero.
+
+Make v3 scenario `7311904` remains experimental/off and is not part of production.
 
 ### Notion
 
@@ -36,104 +59,78 @@ Database: `Social Media Content Calendar`
 - Database ID: `3d43c9c6-76b4-8031-98da-c2484ffe3cef`
 - Data source ID: `3d43c9c6-76b4-80d6-ac3e-000bf86b2d20`
 
+Notion is the editorial/operator-facing source. Supabase is the durable delivery authority.
+
 ### Supabase durable state
 
-- `public.telegram_publication_delivery` — persistent delivery/idempotency ledger.
+- `public.telegram_publication_queue` — cloud delivery queue and Notion linkage.
+- `public.telegram_publication_delivery` — persistent idempotency/delivery ledger.
 - `public.telegram_visual_assets` — versioned operator-approved visual assets.
-
-Notion is the editorial/operator-facing state. Supabase is the durable protection against duplicate delivery.
 
 ## 3. Publication lifecycle
 
 Normal lifecycle:
 
-`Draft → Review → Ready → In progress → Published`
+`Draft → Review → Ready → In progress/claimed → Published/sent`
 
-Only a human/operator may move `Review → Ready`.
+A planned item may be moved to `Ready` only when it is already part of the user-approved content plan and all safety/editorial checks are complete.
 
 Before `Ready`, verify:
 
-- text is approved;
-- author status is correct;
-- legal claims are fact-checked when required;
-- privacy risk is low;
-- current-case risk is false;
-- legal risk is acceptable;
-- editorial blockers are empty;
-- due date/time is intentional;
+- `Platform=Telegram`;
+- `Publication ID` is present and unique;
+- `Publish Date` is the approved date/time;
+- `Publication Type` is valid;
+- `Content Fingerprint` is a lowercase 64-character SHA-256;
+- `Fact Check Status` is `verified` or `not_required`;
+- `Legal Risk=low`;
+- `Privacy Risk=low`;
+- `Current Case Risk=false`;
+- `Editorial Blockers` is empty;
+- `Delivery State=pending`;
+- `Reconciliation Required=false`;
+- `Telegram Message ID` is empty;
 - type-specific payload is complete;
 - approved visual asset is assigned for `photo`.
 
-## 4. v3 pre-send gate
+## 4. Final Notion revalidation
 
-v3 must reject a row unless all applicable conditions are satisfied:
+Supabase queue state is not sufficient by itself.
 
-- `Platform = Telegram`
-- `Status = Ready`
-- `Publication ID` present
-- `Publish Date` due
-- `Publication Type ∈ {text, photo, poll, quiz}`
-- `Fact Check Status ∈ {verified, not_required}`
-- `Legal Risk = low`
-- `Privacy Risk = low`
-- `Current Case Risk = false`
-- `Delivery State = pending`
-- `Reconciliation Required = false`
-- `Editorial Blockers` empty
-- type-specific content/question/options present
-- for `text`: `Visual Required = false`
-- for `photo`: approved visual resolver must succeed before Telegram is called
+Immediately before atomic claim, `telegram-publisher-v3` calls `telegram-notion-guard-v3` for the source page. Publication is blocked if the current Notion page no longer matches the queued item.
 
-`pending`, `unverified`, `failed` or an unknown fact-check state must not pass.
+The guard rechecks at least:
 
-A failed gate is not a reason to weaken the gate. Fix the editorial record instead.
+- Platform and Status;
+- Publication ID and type;
+- Publish Date;
+- Content Fingerprint;
+- Fact Check Status;
+- legal/privacy/current-case risk;
+- Editorial Blockers;
+- Delivery State / Reconciliation Required / Telegram Message ID;
+- text/caption or poll/quiz payload;
+- visual asset key/category for photo.
 
-## 5. Canonical Notion fields
+This prevents a post that was changed from `Ready` to `Review` from being sent from a stale queue row.
 
-Core:
-
-- `Name`, `Status`, `Platform`, `Publication ID`, `Publication Type`
-- `Content`, `Caption`, `CTA`, `Hashtags`
-- `Publish Date`, `Source Title`, `Source URL`
-- `Question`, `Options JSON`, `Correct Option IDs JSON`, `Explanation`
-- `Telegram Message ID`, `Published At`, `Last Error`
-
-Safety/editorial:
-
-- `Fact Check Status`, `Fact Check Notes`, `Source Evidence JSON`
-- `Legal Risk`, `Privacy Risk`, `Current Case Risk`
-- `Editorial Blockers`, `Author Value Add`, `Legal Claims JSON`
-- `Content Fingerprint`
-
-Delivery:
-
-- `Delivery State`, `Delivery Payload Hash`, `Reconciliation Required`
-
-Visual:
-
-- `Visual Required`
-- `Visual Asset Key`
-- `Visual Category`
-- `Visual Drive File ID` — legacy compatibility only
-- `Photo URL` — legacy compatibility only
-
-## 6. Telegram payload contract
+## 5. Telegram payload contract
 
 ### Text
 
-`text` means one `sendMessage` operation and has no mandatory media. AI may still suggest an `image_prompt`, but that recommendation is not a delivery dependency for a text message.
+`text` means one `sendMessage` operation. `Visual Required=false`.
 
 ### Photo
 
-Preferred v3 path:
+Preferred path:
 
-`Visual Asset Key + Visual Category → Supabase resolver → approved Base64 → binary → sendPhoto`
+`Visual Asset Key + Visual Category → resolve_telegram_visual_asset → approved Base64 → telegram-egress sendPhoto`
 
-Do not pass a `Visual Asset Key` as if it were a URL.
+Do not use `Visual Drive File ID` or `Photo URL` as the primary production path.
 
 ### Poll
 
-`Options JSON` is a JSON-serialized list of `InputPollOption`-compatible objects, for example:
+Use a JSON list of InputPollOption-compatible objects, for example:
 
 ```json
 [{"text":"Да"},{"text":"Нет"}]
@@ -141,11 +138,9 @@ Do not pass a `Visual Asset Key` as if it were a URL.
 
 ### Quiz
 
-Use `correct_option_ids` / `Correct Option IDs JSON`.
+Use `correct_option_ids` / `Correct Option IDs JSON`. Do not regress to legacy singular `correct_option_id`.
 
-Do not regress to legacy singular `correct_option_id`.
-
-## 7. Approved visual assets
+## 6. Approved visual assets
 
 A production asset must have:
 
@@ -155,178 +150,158 @@ A production asset must have:
 - filename and MIME type;
 - lowercase 64-character SHA-256;
 - non-empty Base64 data;
-- `approved = true`;
-- `active = true`.
+- `approved=true`;
+- `active=true`.
 
 Canonical RPC:
 
 `resolve_telegram_visual_asset(p_asset_key, p_category)`
 
-It is fail-closed. Blank/mismatched keys, inactive/unapproved assets, invalid hash or missing binary must stop publication before Telegram.
+It is fail-closed. Invalid/missing/unapproved assets stop publication before Telegram.
 
-Do not overwrite approved content under an existing versioned key. Create a new key/version.
-
-## 8. Durable delivery ledger
+## 7. Durable delivery and idempotency
 
 States:
 
-- `pending` — may be claimed
-- `claimed` — one delivery attempt owns the publication
-- `sent` — delivery confirmed; never resend
-- `failed` — definite **pre-send** failure; retry requires explicit operator release
-- `uncertain` — outcome may include a successful Telegram send; never automatically retry
+- `pending` — eligible for atomic claim;
+- `claimed` — one attempt owns the publication;
+- `sent` — confirmed; never resend;
+- `failed` — definite pre-send failure; explicit operator release required;
+- `uncertain` — Telegram may have accepted the message; never automatically retry.
 
-A `Publication ID` is tied to its payload hash. If content/payload changes after an attempt, create a new Publication ID rather than pretending it is the same retry.
+The payload hash is tied to the Publication ID. Do not mutate a previously attempted publication into a different message and treat it as the same retry.
 
-### Critical send-error rule
+### Direct Telegram error rule
 
-Until Make exposes and we validate a reliable error classification that proves Telegram could not have accepted a request, **any error raised directly by a Telegram send module is treated as `uncertain`**, not `failed`.
+Any ambiguous transport/non-OK result after atomic claim becomes `uncertain`, not retryable `failed`.
 
-This applies to text, photo, poll and quiz.
+On `uncertain`:
 
-On direct send error:
+- do not resend;
+- set `Reconciliation Required=true`;
+- preserve any known Telegram Message ID;
+- reconcile against trustworthy Telegram/durable evidence.
 
-- durable ledger → `uncertain`;
-- Notion → `Error`;
-- `Delivery State = uncertain`;
-- `Reconciliation Required = true`;
-- `Last Error` must say `DO NOT RETRY`;
-- no automatic release/retry.
+### Database commit ambiguity
 
-This conservative rule prevents duplicate public posts after timeouts, connection drops or lost responses.
+If Telegram returns a message ID but Supabase SENT commit is ambiguous, publisher rechecks durable delivery. If SENT with the same ID is confirmed, the result is accepted; otherwise state becomes `uncertain`.
 
-### Explicit retry rule
+## 8. Secret handling and egress security
 
-Only a genuinely definite `failed` record may be returned to `pending`, and only through the explicit operator release RPC after the failure is understood.
-
-Never release `claimed`, `sent` or `uncertain` as an ordinary retry.
-
-### Reconciliation rule
-
-For `uncertain`:
-
-1. Do not resend.
-2. Check Telegram/channel state manually or through a trustworthy read-only mechanism.
-3. If the post exists, reconcile durable state to `sent` with the real Telegram message ID.
-4. Repair Notion `Published` state only after durable state is confirmed.
-5. If delivery is proven absent, use a documented operator recovery procedure; never bypass idempotency ad hoc.
-
-## 9. Failure modes
-
-### Notion claim fails after durable claim
-
-Telegram has not been called yet. This is a definite pre-send failure and may be recorded `failed`. Correct the Notion issue before explicit release.
-
-### Visual resolver fails
-
-Telegram has not been called. Record a definite pre-send failure, correct/approve the asset or key/category, then explicitly release if appropriate.
-
-### Telegram send module errors
-
-Outcome is ambiguous by default. Record `uncertain`, require reconciliation, **do not retry**.
-
-### Telegram succeeds but Supabase `sent` commit fails
-
-Notion must show `uncertain` and preserve the returned Telegram Message ID when available. Do not resend; reconcile durable state.
-
-### Supabase `sent` succeeds but Notion `Published` writeback fails
-
-Durable ledger is authoritative: the message is already sent. Do not resend. Repair Notion writeback only.
-
-## 10. Production health
-
-`telegram_production_health.py` treats these as hard blockers:
-
-- Notion unavailable;
-- Telegram unavailable;
-- production scheduler unexpectedly disabled;
-- stale claims;
-- uncertain deliveries;
-- reconciliation-required records.
-
-Failed records are warnings, not automatic retries.
-
-Health checks must remain read-only and must not call publication methods.
-
-## 11. Secret handling
-
-Never place these in source, Notion content, logs, audit metadata or error text:
+Never place in source, Notion content, logs, audit metadata or error text:
 
 - Telegram bot token;
 - Supabase service-role key;
 - Notion integration secret;
-- authorization headers;
-- API keys/passwords.
+- worker authentication secret;
+- authorization headers.
 
-Delivery/audit code must sanitize bearer and Telegram-token-like values before persistence.
+Production secrets live in Supabase Vault/runtime.
 
-Connection/scenario IDs may be documented; credentials may not.
+`telegram-egress` is protected twice:
 
-## 12. Controlled v3 acceptance
+1. Supabase JWT verification;
+2. exact service-role Bearer check inside the function.
 
-Safe default is **pre-send acceptance**, not a public test.
+A normal anon/authenticated Supabase JWT is insufficient to send through the bot.
 
-1. Confirm v2 is the only active production scheduler.
-2. Confirm v3 is OFF.
-3. Confirm the live `Ready`/`In progress` queue is understood and clean.
-4. Use an explicitly synthetic row.
-5. Ensure v2 cannot consume the synthetic row during the test.
-6. Physically block the target Telegram send module or use a no-send probe.
-7. Run one controlled v3 execution.
-8. Verify Publication ID, exact payload hash, atomic durable claim, Notion claim, and type-specific pre-send processing.
-9. For photo, verify resolver + Base64-to-binary conversion.
-10. Confirm no Telegram send occurred.
-11. Reset synthetic Notion/ledger state.
-12. Return v3 to OFF and restore the stable production scheduler state.
+## 9. Bot/channel access probe
 
-The photo pre-send path has already been demonstrated with `what_to_do:v1` → `what_to_do_v1.jpg` and valid binary decode. That acceptance created no public Telegram post.
+`telegram-bot-access-v3` performs only Telegram read-only operations:
 
-A real Telegram E2E send requires explicit operator authorization.
+- `getMe`;
+- `getChatMember`.
 
-## 13. v2 → v3 cutover
+At the 2026-09-09 cutover it confirmed:
 
-1. Finish code/migration review and automated gates.
-2. Pass pre-send acceptance for text/photo/poll/quiz.
-3. Ensure there are no uncertain deliveries, stale claims or reconciliation-required rows.
-4. Review every `Ready` item.
-5. Deactivate v2 and confirm it has no incomplete execution.
-6. Activate v3.
-7. Observe the first scheduled run with a known queue.
-8. Verify durable `sent`, real Telegram Message ID and Notion `Published` after the first real publication.
-9. Keep v2 inactive as rollback fallback during an observation period.
+- bot username `Djafar23_bot`;
+- bot ID `8551049942`;
+- channel membership status `administrator`;
+- `can_post_messages=true`;
+- `can_edit_messages=true`;
+- `can_delete_messages=true`.
 
-## 14. Rollback
+No Telegram message was created by this probe.
 
-If v3 behaves unexpectedly:
+## 10. Production health
 
-1. Deactivate v3 immediately.
-2. Do not blindly reactivate v2 while any v3 record is `claimed`, `sent` or `uncertain`.
-3. Reconcile durable in-flight records.
-4. Repair stale Notion `In progress` state only after reconciliation.
-5. Reactivate v2 only when duplicate-delivery risk is zero.
+At normal idle health:
 
-Rollback is a state-reconciliation operation, not just a scenario toggle.
+- cloud sync enabled/non-dry;
+- cloud publisher enabled/non-dry;
+- Telegram token present;
+- `due_ready_count=0` unless a post is due;
+- `claimed_count=0` outside an active send;
+- `uncertain_count=0`;
+- no reconciliation-required rows;
+- Make v2 inactive.
+
+Cron jobs:
+
+- publisher: `* * * * *`;
+- Notion sync: `*/5 * * * *`.
+
+Cron SQL success alone does not prove Telegram delivery. Durable SENT + real Telegram message ID is authoritative for a completed publication.
+
+## 11. Cutover record — 2026-09-09
+
+The cloud cutover was performed in an empty Ready window.
+
+Verified before/at cutover:
+
+- Notion Ready count: 0;
+- Supabase due-ready count: 0;
+- claimed count: 0;
+- uncertain count: 0;
+- Telegram token present;
+- bot administrator/posting rights confirmed by read-only Bot API probe;
+- Make v2 had zero incomplete executions and was deactivated;
+- Notion cloud sync passed `200 OK`;
+- publisher runtime became `enabled=true`, `dry_run=false`.
+
+The first real scheduled Cloud Publisher delivery after this cutover must be observed and verified with durable SENT, Telegram Message ID and Notion Published writeback.
+
+## 12. Rollback to Make v2
+
+If cloud publisher behaves unexpectedly:
+
+1. Set `telegram_publisher_config.enabled=false` immediately.
+2. Do not reactivate Make while any cloud record is `claimed`, `sent` but not reconciled, or `uncertain`.
+3. Reconcile in-flight durable records and Notion state.
+4. Confirm `claimed_count=0`, `uncertain_count=0`, no reconciliation-required rows, and no due cloud item can still send.
+5. Only then reactivate Make scenario `7305820`.
+6. Keep cloud publisher disabled until the root cause is fixed and a new cutover is prepared.
+
+Rollback is a delivery-state reconciliation operation, not just a toggle.
+
+## 13. Scheduled editorial task
+
+The ChatGPT task `TG контент по плану` may prepare only items already in the user-approved plan.
+
+It must not call Make or Telegram directly. Its responsibility is to leave a complete safe Notion card in `Ready`; Supabase Cloud handles delivery.
+
+For photo posts it must use approved `Visual Asset Key + Visual Category`. Legacy Drive ID / Photo URL are not the primary production path.
+
+If there is no approved planned card, it must not invent one.
+
+## 14. Source control and CI
+
+Canonical implementation is maintained in PR #71 / branch `feat/jafar-production-complete`.
+
+GitHub Actions runner/budget availability is not part of the production runtime. Runtime continues on Supabase even when GitHub-hosted CI cannot obtain a runner.
+
+Do not claim full CI green unless a runner actually executed the tests.
 
 ## 15. Deprecated / temporary scenarios
 
 Do not blindly reactivate historical scenario IDs `6855238`, `7274887`, `7305466`, `7305508`, `7305212`, `7306564`.
 
-One-off reset/probe utilities must remain inactive after use.
+Make v3 `7311904` is not production. Probe/test utilities must not be used to send hidden public technical posts.
 
-## 16. Definition of production-ready v3
+## 16. Remaining acceptance item
 
-v3 is ready only when:
+The architecture and no-send/pre-send tests are complete enough for cloud production ownership, but the **first real post delivered by Supabase Cloud after cutover remains the final live acceptance event**.
 
-- human `Ready` gate is preserved;
-- author status rule is enforced;
-- fact-check is fail-closed with only `verified | not_required` accepted;
-- privacy/current-case/legal risk gates are active;
-- persistent atomic ledger is active;
-- direct Telegram send errors become `uncertain`, not retryable `failed`;
-- approved visual resolver is source-controlled and tested;
-- photo binary path passes pre-send acceptance;
-- current poll/quiz API contract is used;
-- health checks are read-only;
-- automated tests/linters are green on a working runner;
-- no secrets are present;
-- no public technical test is sent without explicit authorization.
+After that post, verify all three layers agree:
+
+`Telegram message exists ↔ durable ledger = sent with same message ID ↔ Notion = Published/sent`

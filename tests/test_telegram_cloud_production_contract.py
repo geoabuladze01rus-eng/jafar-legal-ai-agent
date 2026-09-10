@@ -14,6 +14,9 @@ DELIVERY_MIGRATION = (
 SYNC_MIGRATION = (
     ROOT / "supabase/migrations/20260909171103_telegram_notion_sync_v3_contract.sql"
 )
+SCHEDULED_MIGRATION = (
+    ROOT / "supabase/migrations/20260910100000_enable_scheduled_telegram_publication.sql"
+)
 HARDENING_MIGRATION = (
     ROOT / "supabase/migrations/20260909171106_harden_telegram_cloud_contract.sql"
 )
@@ -50,8 +53,8 @@ def test_final_notion_guard_runs_before_atomic_claim_and_detects_ready_to_review
     assert publisher.index("revalidateNotion(row)") < publisher.index(
         'rpc<boolean>("claim_telegram_publication_queue_v3"'
     )
-    assert 'status !== "Ready"' in guard
-    assert 'reasons.push("notion_status_not_ready")' in guard
+    assert '["Ready", "Scheduled"].includes(status) === false' in guard
+    assert 'reasons.push("notion_status_not_scheduled")' in guard
     for field in (
         "Publication ID",
         "Publication Type",
@@ -184,11 +187,14 @@ def test_poll_quiz_use_current_bot_api_contract_and_limits() -> None:
     assert "quiz_multiple_answers_not_supported" in egress
 
 
-def test_notion_sync_is_ready_only_and_cannot_overwrite_delivery_authority() -> None:
+def test_notion_sync_accepts_scheduled_and_cannot_overwrite_delivery_authority() -> None:
     sync = _read(NOTION_SYNC)
     sql = _read(SYNC_MIGRATION)
 
-    assert 'status: { equals: "Ready" }' in sync
+    assert '{ property: "Status", status: { equals: "Ready" } }' in sync
+    assert '{ property: "Status", status: { equals: "Scheduled" } }' in sync
+    assert '["Ready", "Scheduled"].includes(row.status) === false' in sync
+    assert 'status_not_scheduled' in sync
     assert "fact_check_not_verified" in sync
     assert "legal_risk_not_low" in sync
     assert "privacy_risk_not_low" in sync
@@ -202,6 +208,14 @@ def test_notion_sync_is_ready_only_and_cannot_overwrite_delivery_authority() -> 
     assert "raise exception 'privacy_risk_not_low'" in sql
     assert "raise exception 'current_case_risk'" in sql
     assert "raise exception 'editorial_blockers_present'" in sql
+
+
+def test_scheduled_source_status_is_normalized_to_internal_ready_queue() -> None:
+    sql = _read(SCHEDULED_MIGRATION).lower()
+
+    assert "not in ('ready','scheduled')" in sql
+    assert "insert into public.telegram_publication_queue" in sql
+    assert "grant execute on function public.upsert_telegram_publication_from_notion_v3(text,jsonb)" in sql
 
 
 def test_cloud_schema_is_reproducible_and_secret_rpcs_are_service_role_only() -> None:

@@ -12,10 +12,10 @@ DELIVERY_MIGRATION = (
     ROOT / "supabase/migrations/20260908193000_add_telegram_publication_delivery.sql"
 )
 SYNC_MIGRATION = (
-    ROOT / "supabase/migrations/20260909161000_telegram_notion_sync_v3_contract.sql"
+    ROOT / "supabase/migrations/20260909171103_telegram_notion_sync_v3_contract.sql"
 )
 HARDENING_MIGRATION = (
-    ROOT / "supabase/migrations/20260909190000_harden_telegram_cloud_contract.sql"
+    ROOT / "supabase/migrations/20260909171106_harden_telegram_cloud_contract.sql"
 )
 
 

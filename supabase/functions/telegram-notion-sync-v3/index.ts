@@ -173,7 +173,7 @@ function notionRow(page: NotionPage) {
 
   const reasons: string[] = [];
   if (selectName(p["Platform"]) !== "Telegram") reasons.push("platform_not_telegram");
-  if (row.status !== "Ready") reasons.push("status_not_ready");
+  if (["Ready", "Scheduled"].includes(row.status) === false) reasons.push("status_not_scheduled");
   if (!publicationId) reasons.push("publication_id_missing");
   if (!["text", "photo", "poll", "quiz"].includes(publicationType)) {
     reasons.push("publication_type_invalid");
@@ -213,7 +213,12 @@ async function notionQueryReady(token: string, dataSourceId: string, limit: numb
       filter: {
         and: [
           { property: "Platform", select: { equals: "Telegram" } },
-          { property: "Status", status: { equals: "Ready" } },
+          {
+            or: [
+              { property: "Status", status: { equals: "Ready" } },
+              { property: "Status", status: { equals: "Scheduled" } },
+            ],
+          },
         ],
       },
       sorts: [{ property: "Publish Date", direction: "ascending" }],

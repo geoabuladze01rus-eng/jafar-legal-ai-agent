@@ -189,7 +189,7 @@ Deno.serve(async (req: Request) => {
     const visualRequired = checkboxValue(p["Visual Required"]);
 
     if (platform !== "Telegram") reasons.push("notion_platform_not_telegram");
-    if (status !== "Ready") reasons.push("notion_status_not_ready");
+    if (["Ready", "Scheduled"].includes(status) === false) reasons.push("notion_status_not_scheduled");
     if (publicationId !== expected.publication_id) reasons.push("notion_publication_id_mismatch");
     if (publicationType !== expected.publication_type) reasons.push("notion_publication_type_mismatch");
     if (!sameInstant(publishDate, expected.scheduled_at)) reasons.push("notion_publish_date_mismatch");

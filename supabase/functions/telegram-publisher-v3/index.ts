@@ -140,7 +140,11 @@ async function resolveVisual(row: QueueRow): Promise<VisualAsset | null> {
 }
 
 async function revalidateNotion(row: QueueRow): Promise<string[]> {
-  if (!row.source_notion_page_id?.trim()) return ["notion_source_missing"];
+  const source = row.source_notion_page_id?.trim() ?? "";
+  // Trusted autopilot rows are created by a service-role-only RPC and do not
+  // have a Notion page. They still pass every queue validation gate below.
+  if (source.startsWith("autopilot:")) return [];
+  if (!source) return ["notion_source_missing"];
   const response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-notion-guard-v3`, {
     method: "POST",
     headers: serviceHeaders(),

@@ -129,7 +129,23 @@ async function generateText(plan: EditorialPlan): Promise<Record<string, unknown
     }),
     signal: AbortSignal.timeout(90000),
   });
-  if (!response.ok) throw new Error("openai_text_failed");
+  if (!response.ok) {
+    let code = "unknown";
+    try {
+      const errorBody = await response.json() as Record<string, unknown>;
+      const errorObject = errorBody.error;
+      if (errorObject && typeof errorObject === "object") {
+        const candidate = (errorObject as Record<string, unknown>).code ??
+          (errorObject as Record<string, unknown>).type;
+        if (typeof candidate === "string") {
+          code = candidate.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+        }
+      }
+    } catch {
+      // Keep only the HTTP classification when OpenAI returns no JSON body.
+    }
+    throw new Error(`openai_text_http_${response.status}_${code}`);
+  }
 
   const payload = await response.json() as Record<string, unknown>;
   const choices = payload.choices;

@@ -54,10 +54,26 @@ base as (
 next_slots as (
   select
     s.*,
-    (
-      b.today
-      + ((s.day_of_week - extract(isodow from b.today)::integer + 7) % 7)
-    )::date + s.local_time as local_datetime
+    case
+      when (
+        (
+          b.today
+          + ((s.day_of_week - extract(isodow from b.today)::integer + 7) % 7)
+        )::date + s.local_time
+      ) at time zone 'Europe/Moscow' > now()
+      then (
+        (
+          b.today
+          + ((s.day_of_week - extract(isodow from b.today)::integer + 7) % 7)
+        )::date + s.local_time
+      )
+      else (
+        (
+          b.today
+          + ((s.day_of_week - extract(isodow from b.today)::integer + 7) % 7)
+        )::date + s.local_time + interval '7 days'
+      )
+    end as local_datetime
   from slots s cross join base b
 )
 insert into public.jafar_editorial_plan (
@@ -70,7 +86,6 @@ select
   theme,
   prompt_context
 from next_slots
-where (local_datetime at time zone 'Europe/Moscow') > now()
 on conflict (slot_key, scheduled_at) do nothing;
 
 create or replace function public.enqueue_jafar_editorial_publication_v1(

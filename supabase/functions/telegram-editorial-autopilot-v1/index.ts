@@ -22,20 +22,20 @@ function json(data: unknown, status = 200) {
 
 function serviceHeaders() {
   return {
-    authorization: \`Bearer \${SERVICE_KEY}\`,
+    authorization: `Bearer ${SERVICE_KEY}`,
     apikey: SERVICE_KEY,
     "content-type": "application/json",
   };
 }
 
 async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(\`\${SUPABASE_URL}/rest/v1/rpc/\${name}\`, {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error(\`rpc_\${name}_\${response.status}\`);
+  if (!response.ok) throw new Error(`rpc_${name}_${response.status}`);
   if (response.status === 204) return undefined as T;
   return await response.json() as T;
 }
@@ -56,20 +56,20 @@ async function authorized(req: Request): Promise<boolean> {
 
 async function fetchDuePlans(limit: number): Promise<EditorialPlan[]> {
   const now = encodeURIComponent(new Date().toISOString());
-  const url = \`\${SUPABASE_URL}/rest/v1/jafar_editorial_plan\` +
-    \`?status=eq.pending&scheduled_at=lte.\${now}\` +
-    \`&order=scheduled_at.asc,plan_id.asc&limit=\${limit}\`;
+  const url = `${SUPABASE_URL}/rest/v1/jafar_editorial_plan` +
+    `?status=eq.pending&scheduled_at=lte.${now}` +
+    `&order=scheduled_at.asc,plan_id.asc&limit=${limit}`;
   const response = await fetch(url, {
     headers: serviceHeaders(),
     signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error(\`plan_fetch_\${response.status}\`);
+  if (!response.ok) throw new Error(`plan_fetch_${response.status}`);
   return await response.json() as EditorialPlan[];
 }
 
 async function markPlanError(planId: string, code: string): Promise<void> {
   await fetch(
-    \`\${SUPABASE_URL}/rest/v1/jafar_editorial_plan?plan_id=eq.\${encodeURIComponent(planId)}&status=eq.pending\`,
+    `${SUPABASE_URL}/rest/v1/jafar_editorial_plan?plan_id=eq.${encodeURIComponent(planId)}&status=eq.pending`,
     {
       method: "PATCH",
       headers: { ...serviceHeaders(), prefer: "return=minimal" },
@@ -87,8 +87,8 @@ function textPrompt(plan: EditorialPlan): string {
   const quiz = plan.publication_type === "quiz";
   return [
     "Подготовь одну публикацию для российского Telegram-канала юридической практики JAFAR.",
-    \`Тема слота: \${plan.theme}\`,
-    \`Контекст редакционного плана: \${plan.prompt_context}\`,
+    `Тема слота: ${plan.theme}`,
+    `Контекст редакционного плана: ${plan.prompt_context}`,
     "Пиши на русском, спокойно и понятно, без персональной юридической консультации.",
     "Используй только общеобразовательные и evergreen-формулировки; не придумывай номера дел, статистику, цитаты и актуальные события.",
     "Не включай реальные имена, телефоны, адреса, документы, персональные данные или инструкции по обходу закона.",
@@ -112,7 +112,7 @@ async function generateText(plan: EditorialPlan): Promise<Record<string, unknown
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      authorization: \`Bearer \${OPENAI_API_KEY}\`,
+      authorization: `Bearer ${OPENAI_API_KEY}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({
@@ -153,14 +153,14 @@ async function generateImage(plan: EditorialPlan): Promise<Record<string, unknow
   const response = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
     headers: {
-      authorization: \`Bearer \${OPENAI_API_KEY}\`,
+      authorization: `Bearer ${OPENAI_API_KEY}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({
       model: "gpt-image-1",
       prompt: [
         "Создай квадратную редакционную иллюстрацию для российского юридического Telegram-канала.",
-        \`Тема: \${plan.theme}.\`,
+        `Тема: ${plan.theme}.`,
         "Стиль: сдержанный тёмный кинематографичный editorial, глубокий синий и графитовый фон, аккуратный контраст, профессиональная атмосфера.",
         "Без людей крупным планом, лиц, читаемого текста, логотипов, документов с данными, номеров дел, оружия и шок-контента.",
         "Изображение должно быть нейтральным, символическим и пригодным для публикации.",

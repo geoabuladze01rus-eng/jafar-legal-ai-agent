@@ -86,20 +86,20 @@ async function markPlanError(planId: string, code: string): Promise<void> {
 function textPrompt(plan: EditorialPlan): string {
   const quiz = plan.publication_type === "quiz";
   return [
-    "Подготовь одну текстовую публикацию для российского Telegram-канала юридической практики JAFAR.",
+    "Подготовь одну публикацию для российского Telegram-канала юридической практики JAFAR.",
     `Тема слота: ${plan.theme}`,
     `Контекст редакционного плана: ${plan.prompt_context}`,
     "Пиши на русском, спокойно и понятно, без персональной юридической консультации.",
     "Используй только общеобразовательные и evergreen-формулировки; не придумывай номера дел, статистику, цитаты и актуальные события.",
     "Не включай реальные имена, телефоны, адреса, документы, персональные данные или инструкции по обходу закона.",
-    "Отделяй общую информацию от мнения, добавь короткий практический вывод и 2–5 уместных эмодзи.",
+    "Отделяй общую информацию от мнения и добавь короткий практический вывод.",
     quiz
       ? "Это квиз: подготовь ровно 4 коротких варианта ответа, один правильный, correct_option_ids — массив с одним zero-based индексом."
-      : "Это экспертный текстовый материал с сильным заголовком и полезным объяснением. Добавь 2–5 уместных эмодзи, не перегружай ими текст.",
+      : "Это экспертный материал с сильным заголовком и полезным объяснением.",
     "Верни только валидный JSON без markdown и без дополнительных полей:",
     JSON.stringify({
       content: "текст публикации 500-1200 знаков",
-      caption: "оставь пустым — визуализация отключена",
+      caption: "подпись к визуалу до 700 знаков",
       question: quiz ? "вопрос квиза до 180 знаков" : "",
       options: quiz ? ["вариант 1", "вариант 2", "вариант 3", "вариант 4"] : [],
       correct_option_ids: quiz ? [0] : [],
@@ -165,10 +165,46 @@ async function generateText(plan: EditorialPlan): Promise<Record<string, unknown
   return payload;
 }
 
-async function enqueue(plan: EditorialPlan, textResponse: Record<string, unknown>) {
-  return await rpc<Record<string, unknown>>("enqueue_jafar_editorial_text_publication_v1", {
+async function generateImage(plan: EditorialPlan): Promise<Record<string, unknown>> {
+  const response = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${OPENAI_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-image-1",
+      prompt: [
+        "Создай квадратную редакционную иллюстрацию для российского юридического Telegram-канала.",
+        `Тема: ${plan.theme}.`,
+        "Стиль: сдержанный тёмный кинематографичный editorial, глубокий синий и графитовый фон, аккуратный контраст, профессиональная атмосфера.",
+        "Без людей крупным планом, лиц, читаемого текста, логотипов, документов с данными, номеров дел, оружия и шок-контента.",
+        "Изображение должно быть нейтральным, символическим и пригодным для публикации.",
+      ].join(" "),
+      size: "1024x1024",
+      quality: "low",
+      output_format: "jpeg",
+      response_format: "b64_json",
+    }),
+    signal: AbortSignal.timeout(180000),
+  });
+  if (!response.ok) throw new Error("openai_image_failed");
+
+  const payload = await response.json() as Record<string, unknown>;
+  const data = payload.data;
+  if (!Array.isArray(data) || !data.length) throw new Error("openai_image_empty");
+  const first = data[0];
+  if (!first || typeof first !== "object") throw new Error("openai_image_invalid");
+  const b64 = (first as Record<string, unknown>).b64_json;
+  if (typeof b64 !== "string" || b64.length < 100) throw new Error("openai_image_empty");
+  return payload;
+}
+
+async function enqueue(plan: EditorialPlan, textResponse: Record<string, unknown>, imageResponse: Record<string, unknown>) {
+  return await rpc<Record<string, unknown>>("enqueue_jafar_editorial_publication_v1", {
     p_plan_id: plan.plan_id,
     p_text_response: textResponse,
+    p_image_response: imageResponse,
   });
 }
 

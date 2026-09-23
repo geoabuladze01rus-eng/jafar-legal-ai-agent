@@ -60,11 +60,13 @@ while IFS= read -r forbidden; do
   [[ "$forbidden" == "$OUTPUT_DIR/_internal/certifi/cacert.pem" ]] && continue
   die "forbidden credential or repository artifact found in backend bundle"
 done < <(find "$OUTPUT_DIR" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
-for forbidden_path in "$ROOT_DIR" "$HOME"; do
-  if grep -a -F -R -l "$forbidden_path" "$OUTPUT_DIR" >/dev/null 2>&1; then
-    die "local development path found in backend bundle"
-  fi
-done
+
+if grep -a -F -R -l "$ROOT_DIR" "$OUTPUT_DIR" >/dev/null 2>&1; then
+  die "project checkout path found in backend bundle"
+fi
+if grep -a -F -R -l "$HOME" "$OUTPUT_DIR" >/dev/null 2>&1; then
+  die "build-user home path found in backend bundle"
+fi
 if grep -a -E -R -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR" >/dev/null 2>&1; then
   die "credential marker found in backend bundle"
 fi

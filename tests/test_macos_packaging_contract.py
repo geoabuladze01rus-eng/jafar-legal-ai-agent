@@ -34,13 +34,15 @@ def test_notarization_script_requires_developer_id_and_stored_profile() -> None:
     assert "notarytool" not in script or "No submission was performed" in script
 
 
-def test_packaging_ci_does_not_request_signing_secrets() -> None:
+def test_packaging_ci_uses_non_home_python_and_no_signing_secrets() -> None:
     workflow = (ROOT / ".github/workflows/macos-packaging.yml").read_text(encoding="utf-8")
 
     assert "macos-15" in workflow
     assert "build_macos_release.sh" in workflow
-    assert "actions/setup-python@v5" in workflow
-    assert 'python-version: "3.12"' in workflow
+    assert "brew install python@3.12 xcodegen" in workflow
+    assert "brew --prefix python@3.12" in workflow
+    assert "JAFAR_BUILD_PYTHON" in workflow
+    assert "actions/setup-python" not in workflow
     assert "secrets." not in workflow
 
 

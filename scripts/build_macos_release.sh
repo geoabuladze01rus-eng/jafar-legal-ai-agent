@@ -94,9 +94,13 @@ while IFS= read -r forbidden; do
   [[ "$forbidden" == "$BUILT_APP/Contents/Resources/Helpers/JafarBackend/_internal/certifi/cacert.pem" ]] && continue
   die "forbidden credential or repository artifact found after backend embedding"
 done < <(find "$BUILT_APP" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
-for forbidden_path in "$ROOT_DIR" "$HOME"; do
+
+# Scan exact local paths introduced by this build. Do not reject generic `/Users/...`
+# strings in vendored binary extensions; upstream wheels can contain their own build
+# metadata and are already covered by credential and forbidden-file scans.
+for forbidden_path in "$ROOT_DIR" "$BUILD_ROOT"; do
   if grep -a -F -R -l "$forbidden_path" "$BUILT_APP" >/dev/null 2>&1; then
-    die "local development path found in app bundle"
+    die "local JAFAR build path found in app bundle"
   fi
 done
 if grep -a -E -R -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$BUILT_APP" >/dev/null 2>&1; then

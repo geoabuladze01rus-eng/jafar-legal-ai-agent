@@ -17,6 +17,7 @@ die() { echo "error: $*" >&2; exit 1; }
 [[ "$ARCH" == "arm64" ]] || die "only Apple Silicon arm64 is supported"
 command -v "$BUILD_PYTHON" >/dev/null || die "Python 3.12 build interpreter is required"
 command -v file >/dev/null || die "file is required"
+command -v grep >/dev/null || die "grep is required"
 command -v shasum >/dev/null || die "shasum is required"
 
 PYTHON_VERSION="$($BUILD_PYTHON -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')"
@@ -60,11 +61,11 @@ while IFS= read -r forbidden; do
   die "forbidden credential or repository artifact found in backend bundle"
 done < <(find "$OUTPUT_DIR" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
 for forbidden_path in "$ROOT_DIR" "$HOME"; do
-  if rg -a -F -l "$forbidden_path" "$OUTPUT_DIR" >/dev/null; then
+  if grep -a -F -R -l "$forbidden_path" "$OUTPUT_DIR" >/dev/null 2>&1; then
     die "local development path found in backend bundle"
   fi
 done
-if rg -a -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR" >/dev/null; then
+if grep -a -E -R -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR" >/dev/null 2>&1; then
   die "credential marker found in backend bundle"
 fi
 

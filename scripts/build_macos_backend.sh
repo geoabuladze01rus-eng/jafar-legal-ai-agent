@@ -13,6 +13,32 @@ trap cleanup EXIT
 
 die() { echo "error: $*" >&2; exit 1; }
 
+find_first_literal_match() {
+  local needle="$1"
+  local root="$2"
+  local candidate
+  while IFS= read -r -d '' candidate; do
+    if grep -a -F -q -- "$needle" "$candidate"; then
+      printf '%s\n' "${candidate#"$root"/}"
+      return 0
+    fi
+  done < <(find "$root" -type f -print0)
+  return 1
+}
+
+find_first_regex_match() {
+  local pattern="$1"
+  local root="$2"
+  local candidate
+  while IFS= read -r -d '' candidate; do
+    if grep -a -E -q -- "$pattern" "$candidate"; then
+      printf '%s\n' "${candidate#"$root"/}"
+      return 0
+    fi
+  done < <(find "$root" -type f -print0)
+  return 1
+}
+
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS backend packaging must run on macOS"
 [[ "$ARCH" == "arm64" ]] || die "only Apple Silicon arm64 is supported"
 command -v "$BUILD_PYTHON" >/dev/null || die "Python 3.12 build interpreter is required"
@@ -61,14 +87,14 @@ while IFS= read -r forbidden; do
   die "forbidden credential or repository artifact found in backend bundle"
 done < <(find "$OUTPUT_DIR" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
 
-if grep -a -F -R -l "$ROOT_DIR" "$OUTPUT_DIR" >/dev/null 2>&1; then
-  die "project checkout path found in backend bundle"
+if offending_component="$(find_first_literal_match "$ROOT_DIR" "$OUTPUT_DIR")"; then
+  die "project checkout path found in backend bundle component: $offending_component"
 fi
-if grep -a -F -R -l "$HOME" "$OUTPUT_DIR" >/dev/null 2>&1; then
-  die "build-user home path found in backend bundle"
+if offending_component="$(find_first_literal_match "$HOME" "$OUTPUT_DIR")"; then
+  die "build-user home path found in backend bundle component: $offending_component"
 fi
-if grep -a -E -R -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR" >/dev/null 2>&1; then
-  die "credential marker found in backend bundle"
+if offending_component="$(find_first_regex_match 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR")"; then
+  die "credential marker found in backend bundle component: $offending_component"
 fi
 
 (

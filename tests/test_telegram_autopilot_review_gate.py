@@ -21,6 +21,7 @@ def test_autopilot_cannot_self_certify_ready_publication() -> None:
     assert "new.fact_check_status := 'pending'" in sql
     assert "new.legal_risk := 'medium'" in sql
     assert "new.privacy_risk := 'medium'" in sql
+    assert "new.current_case_risk := true" in sql
     assert "autopilot_human_review_required" in sql
     assert "before update" not in sql
 
@@ -44,6 +45,7 @@ def test_publisher_still_requires_ready_and_clean_safety_fields() -> None:
     assert "fact_check_not_verified" in source
     assert 'row.legal_risk !== "low"' in source
     assert 'row.privacy_risk !== "low"' in source
+    assert "current_case_risk" in source
     assert "editorial_blockers_present" in source
 
 

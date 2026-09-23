@@ -16,6 +16,7 @@ def test_macos_packaging_script_is_fail_closed_and_unsigned_by_default() -> None
     assert "build_macos_backend.sh" in script
     assert "Contents/Resources/Helpers" in script
     assert '"$HELPERS_DIR/JafarBackend"' in script
+    assert 'for forbidden_path in "$ROOT_DIR" "$BUILD_ROOT"' in script
     assert "grep -a -F -R -l" in script
     assert "grep -a -E -R -l" in script
     assert "BINARY_STRINGS" in script
@@ -83,8 +84,11 @@ def test_backend_packaging_is_one_folder_arm64_and_scans_artifacts() -> None:
     assert "only Apple Silicon arm64" in script
     assert "JAFAR_DESKTOP_IPC_TOKEN" not in script
     assert "runtime-manifest.sha256" in script
-    assert "grep -a -F -R -l" in script
-    assert "grep -a -E -R -l" in script
+    assert "find_first_literal_match" in script
+    assert "find_first_regex_match" in script
+    assert "PYTHON_PREFIX" in script
+    assert 'for forbidden_path in "$ROOT_DIR" "$BUILD_ROOT" "$PYTHON_PREFIX"' in script
+    assert 'grep -a -F -q -- "$HOME" "$EXECUTABLE"' in script
     assert "rg -" not in script
     assert "PyInstaller one-folder sidecar" in decision
     assert (ROOT / "docs/MACOS_BACKEND_RUNTIME_MAP.md").is_file()

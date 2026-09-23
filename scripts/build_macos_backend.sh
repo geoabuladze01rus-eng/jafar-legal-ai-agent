@@ -47,6 +47,7 @@ command -v grep >/dev/null || die "grep is required"
 command -v shasum >/dev/null || die "shasum is required"
 
 PYTHON_VERSION="$($BUILD_PYTHON -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')"
+PYTHON_PREFIX="$($BUILD_PYTHON -c 'import sys; print(sys.prefix)')"
 [[ "$PYTHON_VERSION" == "3.12" ]] || die "Python 3.12 is required, found $PYTHON_VERSION"
 [[ "$($BUILD_PYTHON -c 'import platform; print(platform.machine())')" == "arm64" ]] || die "arm64 Python is required"
 
@@ -87,11 +88,17 @@ while IFS= read -r forbidden; do
   die "forbidden credential or repository artifact found in backend bundle"
 done < <(find "$OUTPUT_DIR" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
 
-if offending_component="$(find_first_literal_match "$ROOT_DIR" "$OUTPUT_DIR")"; then
-  die "project checkout path found in backend bundle component: $offending_component"
-fi
-if offending_component="$(find_first_literal_match "$HOME" "$OUTPUT_DIR")"; then
-  die "build-user home path found in backend bundle component: $offending_component"
+# Scan exact paths introduced by this build rather than banning every `/Users/...`
+# string globally. Prebuilt third-party wheels can legitimately contain their own
+# upstream build paths; those are not local JAFAR source leaks. Our checkout,
+# temporary build root, interpreter prefix, and own executable HOME remain forbidden.
+for forbidden_path in "$ROOT_DIR" "$BUILD_ROOT" "$PYTHON_PREFIX"; do
+  if offending_component="$(find_first_literal_match "$forbidden_path" "$OUTPUT_DIR")"; then
+    die "local build path found in backend bundle component: $offending_component"
+  fi
+done
+if grep -a -F -q -- "$HOME" "$EXECUTABLE"; then
+  die "build-user home path found in JafarBackend executable"
 fi
 if offending_component="$(find_first_regex_match 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$OUTPUT_DIR")"; then
   die "credential marker found in backend bundle component: $offending_component"

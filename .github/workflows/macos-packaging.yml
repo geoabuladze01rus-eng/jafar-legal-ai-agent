@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - integration/jafar-2.1-canonical
   workflow_dispatch:
 
 permissions:

@@ -29,6 +29,7 @@ command -v xcodebuild >/dev/null || die "xcodebuild is required"
 command -v hdiutil >/dev/null || die "hdiutil is required on macOS"
 command -v shasum >/dev/null || die "shasum is required"
 command -v strip >/dev/null || die "strip is required on macOS"
+command -v strings >/dev/null || die "strings is required"
 command -v grep >/dev/null || die "grep is required"
 
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS packaging must run on macOS"
@@ -70,10 +71,15 @@ minimum_macos="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$BU
 [[ "$bundle_id" == "ru.jafar.legal-ai" ]] || die "unexpected bundle identifier"
 [[ "$minimum_macos" == "14.0" ]] || die "unexpected minimum macOS version: $minimum_macos"
 
-if find "$BUILT_APP" -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' | grep -q .; then
-  die "forbidden credential or repository artifact found in app bundle"
-fi
-if strings "$BUILT_APP/Contents/MacOS/Jafar" | grep -a -E -q '/Users/|/var/folders/|sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-'; then
+preembed_forbidden="$(find "$BUILT_APP" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print -quit)"
+[[ -z "$preembed_forbidden" ]] || die "forbidden credential or repository artifact found in app bundle"
+
+# Do not pipe `strings` into a short-circuiting matcher while pipefail is enabled:
+# an early consumer exit can SIGPIPE `strings` and turn a positive match into a
+# false-negative pipeline status. Materialize first, then scan deterministically.
+BINARY_STRINGS="$BUILD_ROOT/jafar-main.strings"
+strings "$BUILT_APP/Contents/MacOS/Jafar" > "$BINARY_STRINGS" || die "app binary strings scan failed"
+if grep -a -E '/Users/|/var/folders/|sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$BINARY_STRINGS" >/dev/null; then
   die "sensitive development path or credential marker found in app binary"
 fi
 

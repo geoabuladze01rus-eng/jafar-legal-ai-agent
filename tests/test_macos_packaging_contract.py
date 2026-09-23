@@ -18,6 +18,10 @@ def test_macos_packaging_script_is_fail_closed_and_unsigned_by_default() -> None
     assert '"$HELPERS_DIR/JafarBackend"' in script
     assert "grep -a -F -R -l" in script
     assert "grep -a -E -R -l" in script
+    assert "BINARY_STRINGS" in script
+    assert 'strings "$BUILT_APP/Contents/MacOS/Jafar" > "$BINARY_STRINGS"' in script
+    assert 'strings "$BUILT_APP/Contents/MacOS/Jafar" |' not in script
+    assert "-print -quit" in script
     assert "rg -" not in script
 
 

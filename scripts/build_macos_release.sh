@@ -29,6 +29,7 @@ command -v xcodebuild >/dev/null || die "xcodebuild is required"
 command -v hdiutil >/dev/null || die "hdiutil is required on macOS"
 command -v shasum >/dev/null || die "shasum is required"
 command -v strip >/dev/null || die "strip is required on macOS"
+command -v grep >/dev/null || die "grep is required"
 
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS packaging must run on macOS"
 [[ "$ARCH" == "arm64" ]] || die "only Apple Silicon arm64 is supported by this beta foundation"
@@ -58,7 +59,7 @@ xcodebuild \
 
 BUILT_APP="$BUILD_ROOT/sym/Release/$APP_NAME"
 [[ -d "$BUILT_APP" ]] || die "Release app was not produced"
-# Strip source-level debug metadata from the distributable binary.  Debug symbols,
+# Strip source-level debug metadata from the distributable binary. Debug symbols,
 # when needed, must remain in the build archive rather than the customer artifact.
 strip -S "$BUILT_APP/Contents/MacOS/Jafar"
 
@@ -72,7 +73,7 @@ minimum_macos="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$BU
 if find "$BUILT_APP" -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' | grep -q .; then
   die "forbidden credential or repository artifact found in app bundle"
 fi
-if strings "$BUILT_APP/Contents/MacOS/Jafar" | rg -q '/Users/|/var/folders/|sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-'; then
+if strings "$BUILT_APP/Contents/MacOS/Jafar" | grep -a -E -q '/Users/|/var/folders/|sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-'; then
   die "sensitive development path or credential marker found in app binary"
 fi
 
@@ -88,11 +89,11 @@ while IFS= read -r forbidden; do
   die "forbidden credential or repository artifact found after backend embedding"
 done < <(find "$BUILT_APP" \( -name .env -o -name .git -o -name '*.pem' -o -name '*.p12' \) -print)
 for forbidden_path in "$ROOT_DIR" "$HOME"; do
-  if rg -a -F -l "$forbidden_path" "$BUILT_APP" >/dev/null; then
+  if grep -a -F -R -l "$forbidden_path" "$BUILT_APP" >/dev/null 2>&1; then
     die "local development path found in app bundle"
   fi
 done
-if rg -a -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$BUILT_APP" >/dev/null; then
+if grep -a -E -R -l 'sk-(proj-)?[A-Za-z0-9_-]{20,}|GOCSPX-' "$BUILT_APP" >/dev/null 2>&1; then
   die "credential marker found in app bundle"
 fi
 

@@ -18,7 +18,7 @@ begin
     new.fact_check_status := 'pending';
     new.legal_risk := 'medium';
     new.privacy_risk := 'medium';
-    new.current_case_risk := false;
+    new.current_case_risk := true;
     new.editorial_blockers := jsonb_build_array('autopilot_human_review_required');
   end if;
 

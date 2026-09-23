@@ -16,17 +16,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.12 for frozen backend build
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install packaging toolchain
+        run: brew install python@3.12 xcodegen
       - name: Build unsigned arm64 beta package
-        run: ./scripts/build_macos_release.sh
+        run: |
+          BUILD_PYTHON="$(brew --prefix python@3.12)/bin/python3.12"
+          test -x "$BUILD_PYTHON"
+          JAFAR_BUILD_PYTHON="$BUILD_PYTHON" ./scripts/build_macos_release.sh
       - name: Verify packaging output is ignored
         run: git status --short --ignored dist/macos

@@ -16,7 +16,10 @@ def test_analyzer_extracts_case_number_and_date() -> None:
     assert any(issue.title == "Обжалование" for issue in result.issues)
 
 
-def test_matter_lifecycle_and_analysis_endpoint() -> None:
+def test_matter_lifecycle_and_analysis_endpoint(monkeypatch) -> None:
+    # The exported app deliberately uses ModelRouter in production. This endpoint
+    # contract test must not depend on whether a developer happens to run Ollama.
+    monkeypatch.setattr("jafar.main.routed_analyzer", LegalAnalyzer())
     client = TestClient(app)
     created = client.post(
         "/v1/matters",

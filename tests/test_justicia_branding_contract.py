@@ -41,7 +41,8 @@ def test_customer_facing_macos_package_is_named_justicia() -> None:
     distribution = (ROOT / "scripts/package_macos_distribution.sh").read_text(encoding="utf-8")
     notarization = (ROOT / "scripts/notarize_macos_release.sh").read_text(encoding="utf-8")
 
-    assert 'APP_NAME="Юстиция.app"' in build
+    assert 'BUILT_APP_NAME="Jafar.app"\nAPP_NAME="Юстиция.app"' in build
+    assert r'\\nAPP_NAME="Юстиция.app"' not in build
     assert 'DMG_NAME="Юстиция-${PACKAGE_VERSION}-macos-${ARCH}.dmg"' in build
     assert '-volname "Юстиция ${PACKAGE_VERSION}"' in build
     assert 'APP_PATH="$DIST_DIR/Юстиция.app"' in distribution

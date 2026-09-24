@@ -31,6 +31,7 @@ struct ContentView: View {
         #if os(macOS)
         JusticiaRootView(
             voice: voice,
+            apiClient: backend?.justiciaAPIClient,
             backendStatusText: backend?.title,
             backendFailed: backend?.isFailed ?? false,
             retryBackend: {

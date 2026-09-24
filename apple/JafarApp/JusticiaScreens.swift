@@ -466,7 +466,8 @@ struct JusticiaDocumentsView: View {
                     Spacer()
                 }
                 .padding(16)
-                .frame(width: 300)\n                .frame(minHeight: 520, alignment: .top)
+                .frame(width: 300)
+                .frame(minHeight: 520, alignment: .top)
                 .background(JusticiaTheme.surfaceMuted.opacity(0.55))
             }
         }

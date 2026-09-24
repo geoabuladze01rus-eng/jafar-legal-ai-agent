@@ -135,10 +135,10 @@ enum CommandClientError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: "Сервер Джафара вернул некорректный ответ."
-        case .invalidPayload: "Не удалось прочитать ответ Джафара."
-        case .unauthorized: "Требуется авторизация Джафара. Проверьте защищённый токен доступа."
-        case .httpStatus(let status): "Сервер Джафара ответил с ошибкой \(status)."
+        case .invalidResponse: "«Юстиция» получила некорректный ответ локального сервиса."
+        case .invalidPayload: "Не удалось прочитать ответ «Юстиции»."
+        case .unauthorized: "Требуется защищённая авторизация «Юстиции». Проверьте токен доступа."
+        case .httpStatus(let status): "Локальный сервис «Юстиции» ответил с ошибкой \(status)."
         }
     }
 }

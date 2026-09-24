@@ -242,7 +242,7 @@ struct JusticiaRootView: View {
         case .publishing:
             JusticiaPublishingWorkspaceView()
         case .transcription:
-            JusticiaTranscriptionView(voice: voice)
+            JusticiaLiveTranscriptionView(voice: voice, workspace: workspace)
         case .settings:
             JusticiaSettingsView()
         }

@@ -1090,15 +1090,13 @@ struct JusticiaTranscriptionView: View {
 }
 
 struct JusticiaSettingsView: View {
-    @State private var accent = 0
-    @State private var interfaceSize = 1
-    @State private var notifications = true
-    @State private var compactSidebar = false
-    @State private var showHints = true
+    @AppStorage("justicia.notifications") private var notifications = true
+    @AppStorage("justicia.compactSidebar") private var compactSidebar = false
+    @AppStorage("justicia.reduceMotion") private var reduceMotion = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            pageHeader(title: "Настройки", subtitle: "Персонализация, локальный ИИ, уведомления и параметры рабочего пространства.")
+            pageHeader(title: "Настройки", subtitle: "Комфорт длительной работы, локальный ИИ и параметры защищённого рабочего пространства.")
 
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 16) {
@@ -1123,25 +1121,29 @@ struct JusticiaSettingsView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Интерфейс")
                         .font(.headline)
-                    Text("Тема")
-                        .font(.caption.weight(.semibold))
-                    HStack {
-                        themeOption("Светлая", selected: accent == 0) { accent = 0 }
-                        themeOption("Системная", selected: accent == 1) { accent = 1 }
+
+                    HStack(spacing: 12) {
+                        JusticiaIconTile(systemName: "sun.max.fill", color: JusticiaTheme.gold, size: 34)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Светлая тема")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Основная тема «Юстиции» для длительной работы с документами.")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        }
+                        Spacer()
+                        JusticiaPill(text: "Включена", color: JusticiaTheme.green)
                     }
 
-                    Text("Размер интерфейса")
-                        .font(.caption.weight(.semibold))
-                    Picker("", selection: $interfaceSize) {
-                        Text("Компактный").tag(0)
-                        Text("Стандартный").tag(1)
-                        Text("Крупный").tag(2)
-                    }
-                    .pickerStyle(.segmented)
+                    Divider()
 
-                    Toggle("Показывать подсказки ИИ", isOn: $showHints)
                     Toggle("Компактная боковая панель", isOn: $compactSidebar)
-                    Toggle("Системные уведомления", isOn: $notifications)
+                    Toggle("Показывать уведомления", isOn: $notifications)
+                    Toggle("Уменьшить анимацию", isOn: $reduceMotion)
+
+                    Text("Эти настройки сохраняются на этом устройстве.")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
                 }
                 .justiciaCard()
                 .frame(maxWidth: .infinity)
@@ -1165,20 +1167,6 @@ struct JusticiaSettingsView: View {
             }
             .justiciaCard()
         }
-    }
-
-    private func themeOption(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(selected ? JusticiaTheme.blueSoft : JusticiaTheme.surfaceMuted)
-                    .frame(height: 54)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? JusticiaTheme.blue : JusticiaTheme.border, lineWidth: selected ? 2 : 1))
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(JusticiaTheme.ink)
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
     }
 
     private func settingsRow(_ title: String, _ status: String, _ icon: String, _ color: Color) -> some View {

@@ -28,76 +28,19 @@ struct ContentView: View {
     #endif
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Text("Джафар")
-                    .font(.largeTitle.bold())
-
-                #if os(macOS)
-                if let backend {
-                    Text(backend.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(backend.isFailed ? .red : .secondary)
-                    Text(backend.storageTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(backend.isFailed ? .red : .secondary)
-                    if backend.isFailed {
-                        Button("Повторить") { Task { await backend.start() } }
-                            .buttonStyle(.bordered)
-                    }
-                }
-                LocalAIStatusView()
-                #endif
-
-                if !voice.transcript.isEmpty {
-                    Text(voice.transcript)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if !voice.response.isEmpty {
-                    Text(voice.response)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if voice.approvalRequired {
-                    HStack {
-                        Button("Отмена") {
-                            voice.cancelPendingCommand()
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Подтвердить") {
-                            Task { await voice.confirmPendingCommand() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                } else {
-                    Button(voice.isListening ? "Остановить" : "Голосовая команда") {
-                        Task {
-                            if voice.isListening {
-                                await voice.stopAndSend()
-                            } else {
-                                await voice.start()
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(voice.isSending)
-                }
-
-                if voice.isSending {
-                    ProgressView("Джафар выполняет команду…")
-                }
-
-                if let error = voice.errorMessage {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                }
+        #if os(macOS)
+        JusticiaRootView(
+            voice: voice,
+            backendStatusText: backend?.title,
+            backendFailed: backend?.isFailed ?? false,
+            retryBackend: {
+                guard let backend else { return }
+                Task { await backend.start() }
             }
-            .padding()
-            .navigationTitle("Джафар")
-        }
+        )
+        #else
+        JusticiaRootView(voice: voice)
+        #endif
     }
 }
 

@@ -6,8 +6,8 @@ APPLE_DIR="$ROOT_DIR/apple"
 DIST_DIR="${JAFAR_DIST_DIR:-$ROOT_DIR/dist/macos}"
 PACKAGE_VERSION="${JAFAR_PACKAGE_VERSION:-2.1.0-beta.1}"
 ARCH="${JAFAR_MACOS_ARCH:-arm64}"
-APP_NAME="JAFAR.app"
-DMG_NAME="JAFAR-${PACKAGE_VERSION}-macos-${ARCH}.dmg"
+BUILT_APP_NAME="Jafar.app"\nAPP_NAME="Юстиция.app"
+DMG_NAME="Юстиция-${PACKAGE_VERSION}-macos-${ARCH}.dmg"
 BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/jafar-macos-build.XXXXXX")"
 PROJECT_PATH="$APPLE_DIR/JafarApp.xcodeproj"
 
@@ -58,7 +58,7 @@ xcodebuild \
   OBJROOT="$BUILD_ROOT/obj" \
   build >/dev/null
 
-BUILT_APP="$BUILD_ROOT/sym/Release/$APP_NAME"
+BUILT_APP="$BUILD_ROOT/sym/Release/$BUILT_APP_NAME"
 [[ -d "$BUILT_APP" ]] || die "Release app was not produced"
 # Strip source-level debug metadata from the distributable binary. Debug symbols,
 # when needed, must remain in the build archive rather than the customer artifact.
@@ -115,7 +115,7 @@ ln -s /Applications "$STAGING_DIR/Applications"
 
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 hdiutil create \
-  -volname "JAFAR ${PACKAGE_VERSION}" \
+  -volname "Юстиция ${PACKAGE_VERSION}" \
   -srcfolder "$STAGING_DIR" \
   -format UDZO \
   -ov "$DMG_PATH" >/dev/null

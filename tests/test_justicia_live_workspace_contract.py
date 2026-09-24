@@ -32,3 +32,16 @@ def test_document_import_uses_security_scoped_file_access() -> None:
     assert "startAccessingSecurityScopedResource()" in client
     assert "stopAccessingSecurityScopedResource()" in client
     assert '"multipart/form-data; boundary=\\(boundary)"' in client
+
+
+def test_global_search_is_local_and_bound_to_workspace_data() -> None:
+    search = (ROOT / "apple/JafarApp/JusticiaGlobalSearchView.swift").read_text(encoding="utf-8")
+    root = (ROOT / "apple/JafarApp/JusticiaRootView.swift").read_text(encoding="utf-8")
+
+    assert "workspace.matters.filter" in search
+    assert "workspace.documents.filter" in search
+    assert "JusticiaSection.allCases.filter" in search
+    assert "https://" not in search
+    assert "не отправляет запрос в облако" in search
+    assert "JusticiaGlobalSearchView(" in root
+    assert "showingSearchResults = true" in root

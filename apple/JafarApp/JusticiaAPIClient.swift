@@ -181,11 +181,25 @@ struct JusticiaAPIClient {
         }
 
         let data = try Data(contentsOf: fileURL)
+        return try await importDocument(
+            matterID: matterID,
+            filename: fileURL.lastPathComponent,
+            mediaType: "application/octet-stream",
+            data: data
+        )
+    }
+
+    func importDocument(
+        matterID: String,
+        filename: String,
+        mediaType: String,
+        data: Data
+    ) async throws -> JusticiaDocumentDTO {
         let boundary = "JusticiaBoundary\(UUID().uuidString)"
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mediaType)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
 
@@ -341,6 +355,41 @@ final class JusticiaWorkspaceStore: ObservableObject {
         defer { isImporting = false }
         do {
             _ = try await client.importDocument(matterID: matterID, fileURL: url)
+            await refreshDocuments()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func saveTranscript(_ text: String) async -> Bool {
+        guard let client, let matterID = selectedMatterID else {
+            errorMessage = "Сначала выберите дело для сохранения транскрипта."
+            return false
+        }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            errorMessage = "Нет текста для сохранения."
+            return false
+        }
+
+        isImporting = true
+        errorMessage = nil
+        defer { isImporting = false }
+
+        let formatter = ISO8601DateFormatter()
+        let safeTimestamp = formatter.string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let filename = "Транскрипт-\(safeTimestamp).txt"
+
+        do {
+            _ = try await client.importDocument(
+                matterID: matterID,
+                filename: filename,
+                mediaType: "text/plain; charset=utf-8",
+                data: Data(normalized.utf8)
+            )
             await refreshDocuments()
             return true
         } catch {

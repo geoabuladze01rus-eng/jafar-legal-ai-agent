@@ -38,6 +38,15 @@ final class BackendRuntime: ObservableObject {
         )
     }
 
+    var justiciaAPIClient: JusticiaAPIClient? {
+        guard case .ready = state,
+              let baseURL = supervisor.baseURL,
+              let token = supervisor.ipcToken else {
+            return nil
+        }
+        return JusticiaAPIClient(baseURL: baseURL, token: token)
+    }
+
     func start() async {
         guard state == .stopped || isFailed else { return }
         state = .starting
@@ -91,6 +100,7 @@ final class BackendRuntime: ObservableObject {
 }
 
 final class BackendSupervisor {
+    private(set) var baseURL: URL?
     private(set) var commandEndpoint: URL?
     private(set) var ipcToken: String?
     private var process: Process?
@@ -119,6 +129,7 @@ final class BackendSupervisor {
         task.standardError = FileHandle.nullDevice
         task.terminationHandler = { [weak self] _ in
             let unexpected = self?.stopping == false
+            self?.baseURL = nil
             self?.commandEndpoint = nil
             self?.ipcToken = nil
             if unexpected {
@@ -128,6 +139,7 @@ final class BackendSupervisor {
         try task.run()
         process = task
         ipcToken = token
+        baseURL = URL(string: "http://127.0.0.1:\(port)")
         commandEndpoint = URL(string: "http://127.0.0.1:\(port)/v1/command")
 
         let deadline = Date().addingTimeInterval(startupTimeout)
@@ -147,6 +159,7 @@ final class BackendSupervisor {
             process.terminate()
         }
         self.process = nil
+        baseURL = nil
         commandEndpoint = nil
         ipcToken = nil
     }

@@ -234,13 +234,13 @@ struct JusticiaRootView: View {
         case .documents:
             JusticiaLiveDocumentsView(workspace: workspace)
         case .analytics:
-            JusticiaAnalyticsView()
+            JusticiaLiveAnalyticsView(workspace: workspace)
         case .deadlines:
-            JusticiaDeadlinesView()
+            JusticiaLiveDeadlinesView(workspace: workspace)
         case .templates:
             JusticiaTemplatesView()
         case .publishing:
-            JusticiaPublishingView()
+            JusticiaPublishingWorkspaceView()
         case .transcription:
             JusticiaTranscriptionView(voice: voice)
         case .settings:

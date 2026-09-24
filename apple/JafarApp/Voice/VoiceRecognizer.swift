@@ -50,6 +50,38 @@ final class VoiceRecognizer: ObservableObject {
         }
     }
 
+    func transcribeFileOnDevice(url: URL) async throws -> String {
+        let authorized = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status == .authorized)
+            }
+        }
+        guard authorized else { throw VoiceError.permissionDenied }
+        guard let recognizer, recognizer.isAvailable else { throw VoiceError.unavailable }
+        guard recognizer.supportsOnDeviceRecognition else { throw VoiceError.onDeviceRecognitionUnavailable }
+
+        let recognitionRequest = SFSpeechURLRecognitionRequest(url: url)
+        recognitionRequest.shouldReportPartialResults = false
+        recognitionRequest.requiresOnDeviceRecognition = true
+
+        return try await withCheckedThrowingContinuation { continuation in
+            var finished = false
+            let recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { result, error in
+                guard !finished else { return }
+                if let error {
+                    finished = true
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if let result, result.isFinal {
+                    finished = true
+                    continuation.resume(returning: result.bestTranscription.formattedString)
+                }
+            }
+            self.task = recognitionTask
+        }
+    }
+
     func stop() {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
@@ -61,4 +93,19 @@ final class VoiceRecognizer: ObservableObject {
     }
 }
 
-enum VoiceError: Error { case unavailable }
+enum VoiceError: LocalizedError {
+    case unavailable
+    case permissionDenied
+    case onDeviceRecognitionUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            "Распознавание речи сейчас недоступно."
+        case .permissionDenied:
+            "Нужен доступ к распознаванию речи."
+        case .onDeviceRecognitionUnavailable:
+            "На этом устройстве недоступна локальная транскрибация выбранного аудиофайла."
+        }
+    }
+}

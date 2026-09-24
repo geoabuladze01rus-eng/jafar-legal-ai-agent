@@ -46,7 +46,7 @@ final class BackendRuntime: ObservableObject {
             state = .ready
             sessionID = UUID()
         } catch {
-            state = .failed("Не удалось запустить локальный движок JAFAR.")
+            state = .failed("Не удалось запустить локальный движок «Юстиции».")
         }
     }
 
@@ -63,7 +63,7 @@ final class BackendRuntime: ObservableObject {
 
     private func sidecarDidTerminate() {
         guard state != .stopping && state != .stopped else { return }
-        state = .failed("Локальный движок JAFAR завершился. Повторите запуск.")
+        state = .failed("Локальный движок «Юстиции» завершился. Повторите запуск.")
     }
 
     var isFailed: Bool {
@@ -73,19 +73,19 @@ final class BackendRuntime: ObservableObject {
 
     var title: String {
         switch state {
-        case .stopped, .stopping: "LOCAL ENGINE STOPPED"
-        case .starting: "STARTING JAFAR"
-        case .ready: "LOCAL ENGINE READY"
-        case .failed: "LOCAL ENGINE FAILED"
+        case .stopped, .stopping: "Локальный движок остановлен"
+        case .starting: "Запускаем «Юстицию»…"
+        case .ready: "Локальный движок готов"
+        case .failed(let message): message
         }
     }
 
     var storageTitle: String {
         switch state {
-        case .ready: "LOCAL STORAGE READY"
-        case .starting: "INITIALIZING LOCAL STORAGE"
-        case .failed: "LOCAL STORAGE UNAVAILABLE"
-        case .stopped, .stopping: "LOCAL STORAGE STOPPED"
+        case .ready: "Локальное хранилище готово"
+        case .starting: "Инициализация локального хранилища"
+        case .failed: "Локальное хранилище недоступно"
+        case .stopped, .stopping: "Локальное хранилище остановлено"
         }
     }
 }
@@ -179,7 +179,6 @@ final class BackendSupervisor {
             "LANG": "ru_RU.UTF-8",
             "JAFAR_RUNTIME_MODE": "desktop",
             "JAFAR_DESKTOP_IPC_TOKEN": token,
-            // Child-only environment transport: no shell or command-line exposure.
             "JAFAR_DESKTOP_STORAGE_KEY": storageKey,
             "JAFAR_DESKTOP_PARENT_PID": String(getpid()),
             "JAFAR_PRODUCTION_SEND": "false",
@@ -189,9 +188,6 @@ final class BackendSupervisor {
     }
 
     private func loopbackPort() throws -> Int {
-        // The backend accepts only 127.0.0.1.  The short bind-close window is handled
-        // by controlled startup retries at the user interaction level, never by a
-        // fixed globally shared development port.
         let socketFD = socket(AF_INET, SOCK_STREAM, 0)
         guard socketFD >= 0 else { throw BackendSupervisorError.portUnavailable }
         defer { close(socketFD) }

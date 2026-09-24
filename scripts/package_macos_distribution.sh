@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${JAFAR_DIST_DIR:-$ROOT_DIR/dist/macos}"
-APP_PATH="$DIST_DIR/JAFAR.app"
+APP_PATH="$DIST_DIR/Юстиция.app"
 IDENTITY="${JAFAR_DEVELOPER_ID_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 

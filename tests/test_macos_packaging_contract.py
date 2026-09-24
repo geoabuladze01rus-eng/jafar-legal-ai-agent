@@ -70,9 +70,9 @@ def test_mac_local_ai_onboarding_is_loopback_only_and_has_safe_states() -> None:
 
     assert "127.0.0.1:11434" in source
     assert "qwen3:4b" in source
-    assert "LOCAL AI READY" in source
-    assert "OLLAMA NOT RUNNING" in source
-    assert "QWEN3:4B MODEL MISSING" in source
+    assert "Локальный ИИ готов" in source
+    assert "Ollama не запущен" in source
+    assert "Модель qwen3:4b не найдена" in source
     assert "https://" not in source
 
 

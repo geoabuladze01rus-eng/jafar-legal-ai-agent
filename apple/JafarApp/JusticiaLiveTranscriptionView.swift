@@ -227,7 +227,7 @@ struct JusticiaLiveTranscriptionView: View {
             VStack(alignment: .leading, spacing: 9) {
                 Text("Конфиденциальность")
                     .font(.headline)
-                Label("Облачная отправка не включается автоматически.", systemImage: "icloud.slash")
+                Label("Данные не отправляются в облако автоматически.", systemImage: "icloud.slash")
                     .font(.caption)
                 Label("Файловая транскрибация требует on-device режима.", systemImage: "desktopcomputer.and.arrow.down")
                     .font(.caption)

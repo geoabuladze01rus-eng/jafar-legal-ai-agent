@@ -284,7 +284,7 @@ struct JusticiaRootView: View {
         case .deadlines:
             JusticiaLiveDeadlinesView(workspace: workspace)
         case .templates:
-            JusticiaTemplatesView()
+            JusticiaTemplatesWorkspaceView()
         case .publishing:
             JusticiaPublishingWorkspaceView()
         case .transcription:

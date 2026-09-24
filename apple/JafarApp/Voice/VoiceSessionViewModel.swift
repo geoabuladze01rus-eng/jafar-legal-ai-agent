@@ -51,6 +51,27 @@ final class VoiceSessionViewModel: ObservableObject {
         await send(command: command, approved: false)
     }
 
+    func stopTranscriptionOnly() {
+        recognizer.stop()
+        isListening = false
+        transcript = recognizer.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        response = ""
+        approvalRequired = false
+        pendingCommand = nil
+    }
+
+    func clearTranscript() {
+        if isListening {
+            recognizer.stop()
+            isListening = false
+        }
+        transcript = ""
+        response = ""
+        approvalRequired = false
+        pendingCommand = nil
+        errorMessage = nil
+    }
+
     func sendText(_ command: String) async {
         let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }

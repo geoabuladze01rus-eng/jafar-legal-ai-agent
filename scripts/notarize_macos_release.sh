@@ -5,7 +5,7 @@ APP_PATH="${1:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
-  echo "error: pass an existing JAFAR.app path" >&2
+  echo "error: pass an existing Юстиция.app path" >&2
   exit 2
 fi
 if ! command -v codesign >/dev/null || ! command -v xcrun >/dev/null; then

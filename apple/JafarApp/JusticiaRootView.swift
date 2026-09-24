@@ -10,6 +10,7 @@ struct JusticiaRootView: View {
     @StateObject private var workspace: JusticiaWorkspaceStore
     @State private var selectedSection: JusticiaSection = .home
     @State private var searchText = ""
+    @State private var showingSearchResults = false
     @State private var showingNotifications = false
 
     init(
@@ -65,6 +66,25 @@ struct JusticiaRootView: View {
         .sheet(isPresented: $showingNotifications) {
             JusticiaNotificationsView(workspace: workspace)
                 .frame(minWidth: 420, minHeight: 360)
+        }
+        .sheet(isPresented: $showingSearchResults) {
+            JusticiaGlobalSearchView(
+                query: $searchText,
+                workspace: workspace,
+                onMatter: { matter in
+                    Task {
+                        await workspace.selectMatter(matter)
+                        selectedSection = .matters
+                    }
+                },
+                onDocument: { _ in
+                    selectedSection = .documents
+                },
+                onSection: { section in
+                    selectedSection = section
+                }
+            )
+            .frame(minWidth: 620, minHeight: 520)
         }
         .task {
             workspace.configure(client: apiClient)
@@ -168,9 +188,22 @@ struct JusticiaRootView: View {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(JusticiaTheme.secondaryInk)
-                TextField("Поиск по делам, документам, судебной практике…", text: $searchText)
+                TextField("Поиск по делам, документам и разделам…", text: $searchText)
                     .textFieldStyle(.plain)
+                    .onSubmit {
+                        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            showingSearchResults = true
+                        }
+                    }
                 if !searchText.isEmpty {
+                    Button {
+                        showingSearchResults = true
+                    } label: {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .foregroundStyle(JusticiaTheme.blue)
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         searchText = ""
                     } label: {

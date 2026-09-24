@@ -61,7 +61,7 @@ struct JusticiaMatterDTO: Codable, Identifiable, Hashable {
 
     var nextDeadlineText: String {
         guard let deadline = deadlines.first else { return "Сроки не добавлены" }
-        if let dueDate, !dueDate.isEmpty { return "\(deadline.title) · \(dueDate)" }
+        if let dueDate = deadline.dueDate, !dueDate.isEmpty { return "\(deadline.title) · \(dueDate)" }
         return deadline.title
     }
 }

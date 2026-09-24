@@ -2,13 +2,30 @@ import SwiftUI
 
 struct JusticiaRootView: View {
     @ObservedObject var voice: VoiceSessionViewModel
+    private let apiClient: JusticiaAPIClient?
     var backendStatusText: String?
-    var backendFailed = false
+    var backendFailed: Bool
     var retryBackend: (() -> Void)?
 
+    @StateObject private var workspace: JusticiaWorkspaceStore
     @State private var selectedSection: JusticiaSection = .home
     @State private var searchText = ""
     @State private var showingNotifications = false
+
+    init(
+        voice: VoiceSessionViewModel,
+        apiClient: JusticiaAPIClient? = nil,
+        backendStatusText: String? = nil,
+        backendFailed: Bool = false,
+        retryBackend: (() -> Void)? = nil
+    ) {
+        self.voice = voice
+        self.apiClient = apiClient
+        self.backendStatusText = backendStatusText
+        self.backendFailed = backendFailed
+        self.retryBackend = retryBackend
+        _workspace = StateObject(wrappedValue: JusticiaWorkspaceStore(client: apiClient))
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -46,8 +63,12 @@ struct JusticiaRootView: View {
         .preferredColorScheme(.light)
         .animation(.easeInOut(duration: 0.20), value: selectedSection)
         .sheet(isPresented: $showingNotifications) {
-            JusticiaNotificationsView()
+            JusticiaNotificationsView(workspace: workspace)
                 .frame(minWidth: 420, minHeight: 360)
+        }
+        .task {
+            workspace.configure(client: apiClient)
+            await workspace.refresh()
         }
     }
 
@@ -207,11 +228,11 @@ struct JusticiaRootView: View {
     private var content: some View {
         switch selectedSection {
         case .home:
-            JusticiaHomeView(navigate: { selectedSection = $0 })
+            JusticiaLiveHomeView(workspace: workspace, navigate: { selectedSection = $0 })
         case .matters:
-            JusticiaMattersView()
+            JusticiaLiveMattersView(workspace: workspace)
         case .documents:
-            JusticiaDocumentsView()
+            JusticiaLiveDocumentsView(workspace: workspace)
         case .analytics:
             JusticiaAnalyticsView()
         case .deadlines:
@@ -256,6 +277,7 @@ private struct JusticiaBackendBanner: View {
 
 private struct JusticiaNotificationsView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var workspace: JusticiaWorkspaceStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -271,23 +293,33 @@ private struct JusticiaNotificationsView: View {
                 .buttonStyle(.plain)
             }
 
-            ForEach([
-                ("calendar.badge.clock", "Судебное заседание через 5 дней", "Дело А40-123456/2024"),
-                ("doc.text.magnifyingglass", "ИИ-анализ документа завершён", "Исковое заявление.pdf"),
-                ("waveform", "Транскрибация готова", "Аудиозапись сохранена в деле")
-            ], id: \.1) { item in
-                HStack(alignment: .top, spacing: 12) {
-                    JusticiaIconTile(systemName: item.0, color: JusticiaTheme.blue)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.1)
-                            .font(.subheadline.weight(.semibold))
-                        Text(item.2)
-                            .font(.caption)
-                            .foregroundStyle(JusticiaTheme.secondaryInk)
-                    }
-                    Spacer()
+            if workspace.matters.isEmpty {
+                VStack(spacing: 8) {
+                    JusticiaIconTile(systemName: "bell.slash", color: JusticiaTheme.secondaryInk)
+                    Text("Новых уведомлений нет")
+                        .font(.subheadline.weight(.semibold))
+                    Text("События по делам и документам будут появляться здесь.")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                        .multilineTextAlignment(.center)
                 }
-                .justiciaCard(padding: 12)
+                .frame(maxWidth: .infinity, minHeight: 160)
+                .justiciaCard()
+            } else {
+                ForEach(workspace.matters.prefix(5)) { matter in
+                    HStack(alignment: .top, spacing: 12) {
+                        JusticiaIconTile(systemName: matter.deadlines.isEmpty ? "briefcase" : "calendar.badge.clock", color: matter.deadlines.isEmpty ? JusticiaTheme.blue : JusticiaTheme.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(matter.deadlines.first?.title ?? matter.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(matter.displayNumber + " · " + matter.displayStatus)
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        }
+                        Spacer()
+                    }
+                    .justiciaCard(padding: 12)
+                }
             }
 
             Spacer()

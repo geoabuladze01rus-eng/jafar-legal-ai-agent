@@ -12,6 +12,9 @@ struct JusticiaRootView: View {
     @State private var searchText = ""
     @State private var showingSearchResults = false
     @State private var showingNotifications = false
+    @AppStorage("justicia.compactSidebar") private var compactSidebar = false
+    @AppStorage("justicia.notifications") private var notificationsEnabled = true
+    @AppStorage("justicia.reduceMotion") private var reduceMotion = false
 
     init(
         voice: VoiceSessionViewModel,
@@ -62,7 +65,7 @@ struct JusticiaRootView: View {
         }
         .background(JusticiaTheme.canvas)
         .preferredColorScheme(.light)
-        .animation(.easeInOut(duration: 0.20), value: selectedSection)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: selectedSection)
         .sheet(isPresented: $showingNotifications) {
             JusticiaNotificationsView(workspace: workspace)
                 .frame(minWidth: 420, minHeight: 360)
@@ -104,13 +107,15 @@ struct JusticiaRootView: View {
                 }
                 .frame(width: 42, height: 42)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Юстиция")
-                        .font(.system(size: 24, weight: .bold, design: .serif))
-                        .foregroundStyle(JusticiaTheme.ink)
-                    Text("ИИ-помощник юриста")
-                        .font(.caption)
-                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                if !compactSidebar {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Юстиция")
+                            .font(.system(size: 24, weight: .bold, design: .serif))
+                            .foregroundStyle(JusticiaTheme.ink)
+                        Text("ИИ-помощник юриста")
+                            .font(.caption)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -125,10 +130,12 @@ struct JusticiaRootView: View {
                             Image(systemName: section.icon)
                                 .font(.system(size: 15, weight: .medium))
                                 .frame(width: 20)
-                            Text(section.rawValue)
-                                .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
-                                .lineLimit(1)
-                            Spacer()
+                            if !compactSidebar {
+                                Text(section.rawValue)
+                                    .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
+                                    .lineLimit(1)
+                                Spacer()
+                            }
                         }
                         .foregroundStyle(selectedSection == section ? JusticiaTheme.blue : JusticiaTheme.ink)
                         .padding(.horizontal, 13)
@@ -156,22 +163,26 @@ struct JusticiaRootView: View {
                                 .foregroundStyle(.white)
                                 .font(.caption.bold())
                         )
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Профиль юриста")
-                            .font(.caption.weight(.semibold))
-                        Text("Локальная рабочая среда")
-                            .font(.caption2)
-                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    if !compactSidebar {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Профиль юриста")
+                                .font(.caption.weight(.semibold))
+                            Text("Локальная рабочая среда")
+                                .font(.caption2)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        }
                     }
                 }
 
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(JusticiaTheme.green)
-                        .frame(width: 7, height: 7)
-                    Text("Данные хранятся локально")
-                        .font(.caption2)
-                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                if !compactSidebar {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(JusticiaTheme.green)
+                            .frame(width: 7, height: 7)
+                        Text("Данные хранятся локально")
+                            .font(.caption2)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
                 }
             }
             .padding(14)
@@ -179,7 +190,7 @@ struct JusticiaRootView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(12)
         }
-        .frame(width: JusticiaTheme.sidebarWidth)
+        .frame(width: compactSidebar ? 78 : JusticiaTheme.sidebarWidth)
         .background(JusticiaTheme.sidebar)
     }
 
@@ -221,16 +232,18 @@ struct JusticiaRootView: View {
 
             Spacer()
 
-            Button {
-                showingNotifications = true
-            } label: {
-                Image(systemName: "bell")
-                    .font(.system(size: 15, weight: .medium))
-                    .frame(width: 34, height: 34)
-                    .background(JusticiaTheme.surfaceMuted)
-                    .clipShape(Circle())
+            if notificationsEnabled {
+                Button {
+                    showingNotifications = true
+                } label: {
+                    Image(systemName: "bell")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 34, height: 34)
+                        .background(JusticiaTheme.surfaceMuted)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Button {
                 selectedSection = .settings

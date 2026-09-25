@@ -33,3 +33,21 @@ def test_comfort_preferences_are_persistent_and_consumed_by_shell() -> None:
     assert "if notificationsEnabled" in root
     assert "reduceMotion ? nil" in root
     assert "Эти настройки сохраняются на этом устройстве." in screens
+
+
+def test_obsolete_demo_workspace_is_removed() -> None:
+    models = (ROOT / "apple/JafarApp/JusticiaModels.swift").read_text(encoding="utf-8")
+    screens = (ROOT / "apple/JafarApp/JusticiaScreens.swift").read_text(encoding="utf-8")
+
+    assert "JusticiaDemoData" not in models
+    assert "А40-123456/2024" not in models
+    for obsolete in (
+        "JusticiaHomeView",
+        "JusticiaMattersView",
+        "JusticiaDocumentsView",
+        "JusticiaAnalyticsView",
+        "JusticiaDeadlinesView",
+        "JusticiaPublishingView",
+        "JusticiaTranscriptionView",
+    ):
+        assert obsolete not in screens

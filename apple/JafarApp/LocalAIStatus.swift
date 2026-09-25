@@ -20,12 +20,12 @@ private enum LocalAIState: Equatable {
 
     var title: String {
         switch self {
-        case .checking: "ПРОВЕРЯЕМ LOCAL AI"
-        case .ready: "LOCAL AI READY"
-        case .notInstalled: "OLLAMA NOT INSTALLED"
-        case .notRunning: "OLLAMA NOT RUNNING"
-        case .modelMissing: "QWEN3:4B MODEL MISSING"
-        case .connectionError: "LOCAL AI CONNECTION ERROR"
+        case .checking: "Проверяем локальный ИИ"
+        case .ready: "Локальный ИИ готов"
+        case .notInstalled: "Ollama не установлен"
+        case .notRunning: "Ollama не запущен"
+        case .modelMissing: "Модель qwen3:4b не найдена"
+        case .connectionError: "Ошибка подключения локального ИИ"
         }
     }
 
@@ -51,7 +51,7 @@ struct LocalAIStatusView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if state != .ready {
-                Text("Установите Ollama, запустите его и установите модель qwen3:4b. JAFAR не отправляет конфиденциальные данные в облако автоматически.")
+                Text("Установите Ollama, запустите его и установите модель qwen3:4b. «Юстиция» не отправляет конфиденциальные данные в облако автоматически.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

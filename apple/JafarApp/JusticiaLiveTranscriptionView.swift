@@ -95,7 +95,7 @@ struct JusticiaLiveTranscriptionView: View {
                 }
             } else {
                 Label(
-                    "Для аудиофайлов используется только on-device распознавание. Если оно недоступно на этом Mac, «Юстиция» остановится и сообщит об этом.",
+                    "Для аудиофайлов и микрофона используется только on-device распознавание. Если оно недоступно на этом Mac, «Юстиция» остановится и не переключится на серверное распознавание.",
                     systemImage: "lock.shield"
                 )
                 .font(.caption)
@@ -229,7 +229,7 @@ struct JusticiaLiveTranscriptionView: View {
                     .font(.headline)
                 Label("Данные не отправляются в облако автоматически.", systemImage: "icloud.slash")
                     .font(.caption)
-                Label("Файловая транскрибация требует on-device режима.", systemImage: "desktopcomputer.and.arrow.down")
+                Label("Файл и микрофон требуют on-device распознавания.", systemImage: "desktopcomputer.and.arrow.down")
                     .font(.caption)
             }
             .foregroundStyle(JusticiaTheme.secondaryInk)

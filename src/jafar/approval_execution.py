@@ -36,7 +36,11 @@ class ApprovalExecutionService:
         if request.status != "pending":
             return ExecutionResult(request.approval_id, "invalid_state", "Запрос уже обработан.")
         if not approved:
-            return ExecutionResult(request.approval_id, "approval_required", "Требуется подтверждение адвоката.")
+            return ExecutionResult(
+                request.approval_id,
+                "approval_required",
+                "Требуется подтверждение юриста-оператора.",
+            )
         handler = self._handlers.get(request.action)
         if handler is None:
             return ExecutionResult(request.approval_id, "not_found", "Действие не зарегистрировано.")

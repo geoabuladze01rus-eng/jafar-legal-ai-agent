@@ -16,13 +16,17 @@ targets:
     info:
       path: JafarApp/Info.plist
       properties:
-        CFBundleShortVersionString: "2.0.0"
+        CFBundleDisplayName: "Юстиция"
+        CFBundleName: "Юстиция"
+        CFBundleShortVersionString: "2.1.0"
         CFBundleVersion: "1"
-        NSMicrophoneUsageDescription: "Джафар использует микрофон для голосовых команд."
-        NSSpeechRecognitionUsageDescription: "Джафар использует распознавание речи для выполнения голосовых команд."
+        LSMinimumSystemVersion: "14.0"
+        NSMicrophoneUsageDescription: "«Юстиция» использует микрофон для голосовых команд и транскрибации."
+        NSSpeechRecognitionUsageDescription: "«Юстиция» использует распознавание речи для голосовых команд и транскрибации."
         JAFARCommandEndpoint: "$(JAFAR_COMMAND_ENDPOINT)"
         JAFARUserId: "$(JAFAR_USER_ID)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.jafar.legal-ai
         PRODUCT_NAME: Jafar
+        ENABLE_HARDENED_RUNTIME: "YES"

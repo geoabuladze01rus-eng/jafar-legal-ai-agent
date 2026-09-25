@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from jafar.api_auth import (
+    OAUTH_CALLBACK_PATHS,
     api_auth_middleware,
     api_auth_required,
     configured_api_token,
@@ -72,3 +73,23 @@ def test_production_without_token_blocks_v1_routes_but_not_health(monkeypatch):
     client = TestClient(app)
     assert client.get("/health").status_code == 200
     assert client.get("/v1/protected").status_code == 401
+
+
+def test_desktop_auth_precedes_even_future_oauth_callback_exemptions(monkeypatch):
+    monkeypatch.setenv("JAFAR_RUNTIME_MODE", "desktop")
+    monkeypatch.setenv("JAFAR_DESKTOP_IPC_TOKEN", "desktop-token")
+    callback = "/v1/oauth/future-callback"
+    OAUTH_CALLBACK_PATHS.add(callback)
+    try:
+        app = FastAPI()
+        app.middleware("http")(api_auth_middleware)
+
+        @app.get(callback)
+        def future_callback():
+            return {"status": "must-stay-protected"}
+
+        client = TestClient(app)
+        assert client.get(callback).status_code == 401
+        assert client.get(callback, headers={"Authorization": "Bearer desktop-token"}).status_code == 200
+    finally:
+        OAUTH_CALLBACK_PATHS.discard(callback)

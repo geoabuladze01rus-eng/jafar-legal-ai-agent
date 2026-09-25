@@ -12,6 +12,8 @@ from .command_runtime import JafarCommandRuntime
 from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
+from .desktop_corpus_runtime import build_desktop_corpus_from_env
+from .desktop_corpus_service import DesktopCorpusService
 from .domains import DocumentTask, MatterType
 from .google_oauth_api import resolve_google_oauth_subject, router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
@@ -82,6 +84,10 @@ model_router = ModelRouter(model_providers, privacy_policy=privacy_policy)
 routed_analyzer = RoutedLegalAnalyzer(model_router, heuristic_analyzer)
 
 matter_store = build_matter_repository_from_env()
+desktop_corpus_store = build_desktop_corpus_from_env()
+desktop_corpus_service = (
+    DesktopCorpusService(desktop_corpus_store) if desktop_corpus_store is not None else None
+)
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, routed_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)
@@ -124,6 +130,17 @@ class CommandResponse(BaseModel):
     approval_required: bool = False
     request_id: str
     data: dict | None = None
+
+
+class DesktopCorpusDocumentResponse(BaseModel):
+    document_id: str
+    matter_id: str
+    filename: str
+    media_type: str
+    fingerprint: str
+    byte_count: int
+    state: str
+    citations: list[str]
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -367,6 +384,53 @@ async def analyze_document(
         analysis=result.analysis,
         matter_id=result.match.matter_id if result.match else matter_id,
     )
+
+
+@app.post(
+    "/v1/matters/{matter_id}/documents/import",
+    response_model=DesktopCorpusDocumentResponse,
+    status_code=201,
+)
+async def import_desktop_document(matter_id: str, file: UploadFile = File(...)) -> DesktopCorpusDocumentResponse:
+    """Persist a user-selected local document only in desktop runtime storage."""
+    if desktop_corpus_service is None:
+        raise HTTPException(status_code=404, detail="Desktop corpus storage is unavailable")
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    try:
+        content = await file.read(document_extractor.MAX_BYTES + 1)
+        extracted = document_extractor.extract(
+            filename=file.filename or "document", content=content, media_type=file.content_type
+        )
+        document = desktop_corpus_service.import_document(
+            matter_id=matter_id, filename=file.filename or "document",
+            media_type=extracted.media_type, original_bytes=content, extracted_text=extracted.text,
+        )
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=400, detail="Document could not be extracted safely") from exc
+    citations = [chunk.citation for chunk in desktop_corpus_store.chunks(matter_id) if chunk.document_id == document.document_id]
+    return DesktopCorpusDocumentResponse(
+        document_id=document.document_id, matter_id=document.matter_id, filename=document.filename,
+        media_type=document.media_type, fingerprint=document.fingerprint, byte_count=document.byte_count,
+        state=document.state, citations=citations,
+    )
+
+
+@app.get("/v1/matters/{matter_id}/documents", response_model=list[DesktopCorpusDocumentResponse])
+def list_desktop_documents(matter_id: str) -> list[DesktopCorpusDocumentResponse]:
+    if desktop_corpus_store is None:
+        raise HTTPException(status_code=404, detail="Desktop corpus storage is unavailable")
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    response: list[DesktopCorpusDocumentResponse] = []
+    for document in desktop_corpus_store.documents(matter_id):
+        citations = [chunk.citation for chunk in desktop_corpus_store.chunks(matter_id) if chunk.document_id == document.document_id]
+        response.append(DesktopCorpusDocumentResponse(
+            document_id=document.document_id, matter_id=document.matter_id, filename=document.filename,
+            media_type=document.media_type, fingerprint=document.fingerprint, byte_count=document.byte_count,
+            state=document.state, citations=citations,
+        ))
+    return response
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

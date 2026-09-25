@@ -27,25 +27,44 @@ final class VoiceRecognizer: ObservableObject {
     func start() throws {
         guard !isListening else { return }
         guard let recognizer, recognizer.isAvailable else { throw VoiceError.unavailable }
+        guard recognizer.supportsOnDeviceRecognition else {
+            throw VoiceError.onDeviceRecognitionUnavailable
+        }
+
         transcript = ""
         errorMessage = nil
         task?.cancel()
+
         request = SFSpeechAudioBufferRecognitionRequest()
-        guard let request else { return }
+        guard let request else { throw VoiceError.unavailable }
         request.shouldReportPartialResults = true
+        request.requiresOnDeviceRecognition = true
+
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
+
         audioEngine.prepare()
-        try audioEngine.start()
+        do {
+            try audioEngine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            self.request = nil
+            throw error
+        }
+
         isListening = true
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
-                if let result { self?.transcript = result.bestTranscription.formattedString }
-                if error != nil { self?.stop() }
+                if let result {
+                    self?.transcript = result.bestTranscription.formattedString
+                }
+                if error != nil {
+                    self?.stop()
+                }
             }
         }
     }
@@ -58,7 +77,9 @@ final class VoiceRecognizer: ObservableObject {
         }
         guard authorized else { throw VoiceError.permissionDenied }
         guard let recognizer, recognizer.isAvailable else { throw VoiceError.unavailable }
-        guard recognizer.supportsOnDeviceRecognition else { throw VoiceError.onDeviceRecognitionUnavailable }
+        guard recognizer.supportsOnDeviceRecognition else {
+            throw VoiceError.onDeviceRecognitionUnavailable
+        }
 
         let recognitionRequest = SFSpeechURLRecognitionRequest(url: url)
         recognitionRequest.shouldReportPartialResults = false
@@ -105,7 +126,7 @@ enum VoiceError: LocalizedError {
         case .permissionDenied:
             "Нужен доступ к распознаванию речи."
         case .onDeviceRecognitionUnavailable:
-            "На этом устройстве недоступна локальная транскрибация выбранного аудиофайла."
+            "На этом устройстве недоступно локальное on-device распознавание речи. Данные не будут отправлены на серверное распознавание."
         }
     }
 }

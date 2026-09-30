@@ -143,6 +143,10 @@ class DesktopCorpusDocumentResponse(BaseModel):
     citations: list[str]
 
 
+class AnalyzeStoredDocumentRequest(BaseModel):
+    task: DocumentTask = DocumentTask.LEGAL_ANALYSIS
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
@@ -431,6 +435,46 @@ def list_desktop_documents(matter_id: str) -> list[DesktopCorpusDocumentResponse
             state=document.state, citations=citations,
         ))
     return response
+
+
+@app.post(
+    "/v1/matters/{matter_id}/documents/{document_id}/analyze",
+    response_model=AnalysisResponse,
+)
+def analyze_stored_desktop_document(
+    matter_id: str,
+    document_id: str,
+    request: AnalyzeStoredDocumentRequest,
+) -> AnalysisResponse:
+    """Analyze an already-imported Matter document without leaving local desktop storage."""
+    if desktop_corpus_store is None:
+        raise HTTPException(status_code=404, detail="Desktop corpus storage is unavailable")
+    matter = matter_store.get(matter_id)
+    if matter is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    document = desktop_corpus_store.get_document(matter_id, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        original = desktop_corpus_store.read_original(matter_id, document_id)
+        extracted = document_extractor.extract(
+            filename=document.filename,
+            content=original,
+            media_type=document.media_type,
+        )
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=400, detail="Document could not be extracted safely") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail="Document could not be opened safely") from exc
+
+    result = document_workflow.process(
+        document.filename,
+        extracted,
+        request.task,
+        matter.matter_type,
+        matter_id=matter_id,
+    )
+    return AnalysisResponse(analysis=result.analysis, matter_id=matter_id)
 
 
 @app.post("/v1/matters", response_model=Matter, status_code=201)

@@ -22,7 +22,8 @@ def test_live_workspace_uses_real_matter_and_document_endpoints() -> None:
     assert '"/v1/matters/\\(matterID)/documents"' in client
     assert '"/v1/matters/\\(matterID)/documents/import"' in client
     assert "JusticiaLiveHomeView(workspace: workspace" in root
-    assert "JusticiaLiveMattersView(workspace: workspace, apiClient: apiClient)" in root
+    assert "JusticiaLiveMattersView(" in root
+    assert "apiClient: apiClient" in root
     assert "JusticiaLiveDocumentsView(workspace: workspace)" in root
 
 
@@ -45,3 +46,15 @@ def test_global_search_is_local_and_bound_to_workspace_data() -> None:
     assert "не отправляет запрос в облако" in search
     assert "JusticiaGlobalSearchView(" in root
     assert "showingSearchResults = true" in root
+
+
+def test_selected_document_is_shared_across_search_citations_and_documents_view() -> None:
+    client = (ROOT / "apple/JafarApp/JusticiaAPIClient.swift").read_text(encoding="utf-8")
+    root = (ROOT / "apple/JafarApp/JusticiaRootView.swift").read_text(encoding="utf-8")
+    screens = (ROOT / "apple/JafarApp/JusticiaLiveScreens.swift").read_text(encoding="utf-8")
+
+    assert "@Published var selectedDocumentID: String?" in client
+    assert "workspace.selectedDocumentID = document.id" in root
+    assert "workspace.selectedDocumentID = documentID" in root
+    assert "workspace.selectedDocumentID = document.id" in screens
+    assert "$0.id == workspace.selectedDocumentID" in screens

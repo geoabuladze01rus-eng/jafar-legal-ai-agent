@@ -285,7 +285,7 @@ struct JusticiaRootView: View {
         case .home:
             JusticiaLiveHomeView(workspace: workspace, navigate: { selectedSection = $0 })
         case .matters:
-            JusticiaLiveMattersView(workspace: workspace)
+            JusticiaLiveMattersView(workspace: workspace, apiClient: apiClient)
         case .documents:
             JusticiaLiveDocumentsView(workspace: workspace)
         case .analytics:

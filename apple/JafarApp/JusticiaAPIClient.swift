@@ -171,6 +171,37 @@ struct JusticiaAnalyzeStoredDocumentRequest: Codable {
     let task: String
 }
 
+
+struct JusticiaMatterResearchRequest: Codable {
+    let question: String
+    let limit: Int
+    let minSimilarity: Double
+
+    enum CodingKeys: String, CodingKey {
+        case question
+        case limit
+        case minSimilarity = "min_similarity"
+    }
+}
+
+struct JusticiaMatterResearchResponseDTO: Codable {
+    let matterId: String
+    let question: String
+    let answer: String
+    let citations: [String]
+    let contradictions: [[String: JSONValue]]
+    let retrievedChunks: Int
+
+    enum CodingKeys: String, CodingKey {
+        case matterId = "matter_id"
+        case question
+        case answer
+        case citations
+        case contradictions
+        case retrievedChunks = "retrieved_chunks"
+    }
+}
+
 enum JusticiaAPIError: LocalizedError {
     case unavailable
     case unauthorized
@@ -236,6 +267,24 @@ struct JusticiaAPIClient {
         let payload = JusticiaAnalyzeStoredDocumentRequest(task: task)
         return try await request(
             path: "/v1/matters/\(matterID)/documents/\(documentID)/analyze",
+            method: "POST",
+            body: JSONEncoder().encode(payload)
+        )
+    }
+
+    func researchMatter(
+        matterID: String,
+        question: String,
+        limit: Int = 8,
+        minSimilarity: Double = 0.0
+    ) async throws -> JusticiaMatterResearchResponseDTO {
+        let payload = JusticiaMatterResearchRequest(
+            question: question,
+            limit: limit,
+            minSimilarity: minSimilarity
+        )
+        return try await request(
+            path: "/v1/matters/\(matterID)/research",
             method: "POST",
             body: JSONEncoder().encode(payload)
         )

@@ -22,7 +22,7 @@ def test_live_workspace_uses_real_matter_and_document_endpoints() -> None:
     assert '"/v1/matters/\\(matterID)/documents"' in client
     assert '"/v1/matters/\\(matterID)/documents/import"' in client
     assert "JusticiaLiveHomeView(workspace: workspace" in root
-    assert "JusticiaLiveMattersView(workspace: workspace)" in root
+    assert "JusticiaLiveMattersView(workspace: workspace, apiClient: apiClient)" in root
     assert "JusticiaLiveDocumentsView(workspace: workspace)" in root
 
 

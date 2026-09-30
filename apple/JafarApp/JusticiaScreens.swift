@@ -4,6 +4,7 @@ struct JusticiaSettingsView: View {
     @AppStorage("justicia.notifications") private var notifications = true
     @AppStorage("justicia.compactSidebar") private var compactSidebar = false
     @AppStorage("justicia.reduceMotion") private var reduceMotion = false
+    @AppStorage("justicia.onboardingCompleted") private var onboardingCompleted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -90,6 +91,26 @@ struct JusticiaSettingsView: View {
             }
             .justiciaCard()
             #endif
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Первый запуск")
+                    .font(.headline)
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Ознакомление с «Юстицией»")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Повторно показать краткое введение по локальным данным, ИИ и транскрибации.")
+                            .font(.caption)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                    Spacer()
+                    Button("Показать снова") {
+                        onboardingCompleted = false
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .justiciaCard()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Безопасность")

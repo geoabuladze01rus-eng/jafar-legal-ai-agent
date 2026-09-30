@@ -40,12 +40,11 @@ class DesktopMatterRAGProvider:
     ) -> MatterRAGContext:
         del query_embedding
         context = self.store.retrieve(matter_id, query, limit=limit)
-        if min_similarity <= 0:
-            return context
+        threshold = max(min_similarity, 1e-9)
         return MatterRAGContext(
             matter_id=context.matter_id,
             query=context.query,
-            results=tuple(item for item in context.results if item.score >= min_similarity),
+            results=tuple(item for item in context.results if item.score >= threshold),
         )
 
 

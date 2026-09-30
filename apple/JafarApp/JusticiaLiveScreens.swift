@@ -353,6 +353,8 @@ struct JusticiaLiveMattersView: View {
                     }
                 }
                 .justiciaCard()
+
+                JusticiaMatterAssistantView(workspace: workspace)
             }
             .justiciaCard()
         } else {

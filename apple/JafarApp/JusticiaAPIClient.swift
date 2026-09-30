@@ -171,6 +171,34 @@ struct JusticiaAnalyzeStoredDocumentRequest: Codable {
     let task: String
 }
 
+struct JusticiaMatterResearchRequest: Codable {
+    let question: String
+    let limit: Int
+    let minSimilarity: Double
+
+    enum CodingKeys: String, CodingKey {
+        case question
+        case limit
+        case minSimilarity = "min_similarity"
+    }
+}
+
+struct JusticiaMatterResearchResponseDTO: Codable {
+    let matterId: String
+    let question: String
+    let answer: String
+    let citations: [String]
+    let retrievedChunks: Int
+
+    enum CodingKeys: String, CodingKey {
+        case matterId = "matter_id"
+        case question
+        case answer
+        case citations
+        case retrievedChunks = "retrieved_chunks"
+    }
+}
+
 enum JusticiaAPIError: LocalizedError {
     case unavailable
     case unauthorized
@@ -236,6 +264,23 @@ struct JusticiaAPIClient {
         let payload = JusticiaAnalyzeStoredDocumentRequest(task: task)
         return try await request(
             path: "/v1/matters/\(matterID)/documents/\(documentID)/analyze",
+            method: "POST",
+            body: JSONEncoder().encode(payload)
+        )
+    }
+
+    func researchMatter(
+        matterID: String,
+        question: String,
+        limit: Int = 8
+    ) async throws -> JusticiaMatterResearchResponseDTO {
+        let payload = JusticiaMatterResearchRequest(
+            question: question,
+            limit: limit,
+            minSimilarity: 0
+        )
+        return try await request(
+            path: "/v1/matters/\(matterID)/research",
             method: "POST",
             body: JSONEncoder().encode(payload)
         )
@@ -334,6 +379,11 @@ final class JusticiaWorkspaceStore: ObservableObject {
     @Published private(set) var analyzingDocumentID: String?
     @Published private(set) var analysisDocumentID: String?
     @Published private(set) var documentAnalysis: JusticiaLegalAnalysisDTO?
+    @Published private(set) var isResearching = false
+    @Published private(set) var researchQuestion = ""
+    @Published private(set) var researchAnswer = ""
+    @Published private(set) var researchCitations: [String] = []
+    @Published private(set) var researchRetrievedChunks = 0
     @Published var errorMessage: String?
 
     private var client: JusticiaAPIClient?
@@ -376,6 +426,10 @@ final class JusticiaWorkspaceStore: ObservableObject {
         selectedMatterID = matter.id
         analysisDocumentID = nil
         documentAnalysis = nil
+        researchQuestion = ""
+        researchAnswer = ""
+        researchCitations = []
+        researchRetrievedChunks = 0
         await refreshDocuments()
     }
 
@@ -456,6 +510,36 @@ final class JusticiaWorkspaceStore: ObservableObject {
         } catch {
             analysisDocumentID = nil
             documentAnalysis = nil
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func researchSelectedMatter(question: String) async {
+        guard let client, let matterID = selectedMatterID else {
+            errorMessage = "Сначала выберите дело."
+            return
+        }
+        let normalized = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+
+        isResearching = true
+        errorMessage = nil
+        defer { isResearching = false }
+
+        do {
+            let response = try await client.researchMatter(
+                matterID: matterID,
+                question: normalized
+            )
+            researchQuestion = response.question
+            researchAnswer = response.answer
+            researchCitations = response.citations
+            researchRetrievedChunks = response.retrievedChunks
+        } catch {
+            researchQuestion = normalized
+            researchAnswer = ""
+            researchCitations = []
+            researchRetrievedChunks = 0
             errorMessage = error.localizedDescription
         }
     }

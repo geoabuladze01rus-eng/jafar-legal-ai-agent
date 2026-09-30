@@ -56,3 +56,15 @@ def test_citation_can_open_exact_local_document() -> None:
     assert "onOpenDocument: openDocument" in matters
     assert "workspace.selectedDocumentID = documentID" in root
     assert "selectedSection = .documents" in root
+
+
+def test_matter_research_report_is_manual_and_source_grounded() -> None:
+    assistant = (ROOT / "apple/JafarApp/JusticiaMatterAssistantView.swift").read_text(encoding="utf-8")
+
+    assert "Скопировать справку" in assistant
+    assert "copyResearchReport" in assistant
+    assert "researchReport" in assistant
+    assert "Источники:" in assistant
+    assert "Проверка обязательна" in assistant
+    assert "NSPasteboard.general.setString" in assistant or "UIPasteboard.general.string" in assistant
+    assert "URLSession" not in assistant

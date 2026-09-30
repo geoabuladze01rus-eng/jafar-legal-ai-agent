@@ -5,6 +5,7 @@ struct JusticiaMatterAssistantView: View {
 
     let matter: JusticiaMatterDTO
     let apiClient: JusticiaAPIClient
+    let documents: [JusticiaDocumentDTO]
 
     @State private var question = ""
     @State private var result: JusticiaMatterResearchResponseDTO?
@@ -233,15 +234,31 @@ struct JusticiaMatterAssistantView: View {
             }
 
             ForEach(citations, id: \.self) { citation in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "quote.opening")
-                        .foregroundStyle(JusticiaTheme.blue)
-                    Text(citation)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
+                HStack(alignment: .top, spacing: 10) {
+                    JusticiaIconTile(systemName: "doc.text", color: JusticiaTheme.blue, size: 30)
+
+                    if let parsed = parseCitation(citation) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(documentName(for: parsed.documentID))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(JusticiaTheme.ink)
+                            Text("Страница \(parsed.page) · фрагмент \(parsed.chunk)")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                            Text(citation)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                                .textSelection(.enabled)
+                        }
+                    } else {
+                        Text(citation)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    }
+
                     Spacer()
                 }
-                .padding(9)
+                .padding(10)
                 .background(JusticiaTheme.surfaceMuted.opacity(0.75))
                 .clipShape(RoundedRectangle(cornerRadius: 9))
             }
@@ -351,6 +368,22 @@ struct JusticiaMatterAssistantView: View {
                 }
             }
         }
+    }
+
+    private func parseCitation(_ citation: String) -> (documentID: String, page: String, chunk: String)? {
+        let parts = citation.split(separator: ":").map(String.init)
+        guard parts.count == 6,
+              parts[0] == "document",
+              parts[2] == "page",
+              parts[4] == "chunk" else {
+            return nil
+        }
+        return (documentID: parts[1], page: parts[3], chunk: parts[5])
+    }
+
+    private func documentName(for documentID: String) -> String {
+        documents.first(where: { $0.documentId == documentID })?.filename
+            ?? "Документ " + documentID
     }
 
     private func stringValue(_ value: JSONValue?) -> String {

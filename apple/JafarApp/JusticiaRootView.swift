@@ -15,6 +15,7 @@ struct JusticiaRootView: View {
     @AppStorage("justicia.compactSidebar") private var compactSidebar = false
     @AppStorage("justicia.notifications") private var notificationsEnabled = true
     @AppStorage("justicia.reduceMotion") private var reduceMotion = false
+    @AppStorage("justicia.onboardingCompleted") private var onboardingCompleted = false
 
     init(
         voice: VoiceSessionViewModel,
@@ -32,7 +33,8 @@ struct JusticiaRootView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        ZStack {
+            HStack(spacing: 0) {
             sidebar
             Divider().overlay(JusticiaTheme.border)
 
@@ -63,7 +65,14 @@ struct JusticiaRootView: View {
                 }
             }
         }
-        .background(JusticiaTheme.canvas)
+            .background(JusticiaTheme.canvas)
+
+            if !onboardingCompleted {
+                JusticiaOnboardingView()
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
+        }
         .preferredColorScheme(.light)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: selectedSection)
         .sheet(isPresented: $showingNotifications) {

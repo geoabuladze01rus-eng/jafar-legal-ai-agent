@@ -36,7 +36,7 @@ def test_documents_ui_exposes_structured_local_analysis() -> None:
     assert 'analysisSection("Ключевые факты")' in screens
     assert 'analysisSection("Что требует проверки")' in screens
     assert 'analysisSection("Сроки и даты")' in screens
-    assert "локальный ИИ анализирует документ" in screens.lower()
+    assert "локальный ии анализирует документ" in screens.lower()
     assert "проверьте факты, нормы и источники" in screens.lower()
 
 

@@ -512,6 +512,7 @@ struct JusticiaLiveDocumentsView: View {
     @State private var search = ""
     @State private var showingImporter = false
     @State private var analysisTask = "legal_analysis"
+    @State private var copiedAnalysisDocumentID: String?
 
     private var allowedTypes: [UTType] {
         [
@@ -726,6 +727,17 @@ struct JusticiaLiveDocumentsView: View {
                                     .foregroundStyle(JusticiaTheme.secondaryInk)
                             }
                             Spacer()
+
+                            Button {
+                                copyDocumentAnalysis(analysis, document: document)
+                            } label: {
+                                Label(
+                                    copiedAnalysisDocumentID == document.id ? "Скопировано" : "Скопировать справку",
+                                    systemImage: copiedAnalysisDocumentID == document.id ? "checkmark" : "doc.on.doc"
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
 
                         analysisSection("Общий вывод") {
@@ -850,6 +862,71 @@ struct JusticiaLiveDocumentsView: View {
             .frame(maxWidth: .infinity, minHeight: 500)
             .justiciaCard()
         }
+    }
+
+    private func copyDocumentAnalysis(
+        _ analysis: JusticiaLegalAnalysisDTO,
+        document: JusticiaDocumentDTO
+    ) {
+        JusticiaClipboard.copy(documentAnalysisReport(analysis, document: document))
+        copiedAnalysisDocumentID = document.id
+    }
+
+    private func documentAnalysisReport(
+        _ analysis: JusticiaLegalAnalysisDTO,
+        document: JusticiaDocumentDTO
+    ) -> String {
+        var lines = [
+            "Юстиция — рабочая справка по анализу документа",
+            "Документ: \(document.filename)",
+            "Задача: \(taskTitle(analysis.task))",
+            "Уверенность модели: \(confidenceText(analysis.confidence))",
+            "",
+            "Общий вывод:",
+            analysis.summary
+        ]
+
+        if !analysis.issues.isEmpty {
+            lines += ["", "Риски и слабые места:"]
+            for issue in analysis.issues {
+                lines.append("— [\(riskTitle(issue.risk))] \(issue.title): \(issue.description)")
+                if let source = issue.sourceText, !source.isEmpty {
+                    lines.append("  Источник/фрагмент: \(source)")
+                }
+            }
+        }
+
+        if !analysis.keyFacts.isEmpty {
+            lines += ["", "Ключевые факты:"]
+            lines += analysis.keyFacts.map { "— " + $0 }
+        }
+
+        if !analysis.missingInformation.isEmpty {
+            lines += ["", "Что требует проверки:"]
+            lines += analysis.missingInformation.map { "— " + $0 }
+        }
+
+        if !analysis.deadlines.isEmpty {
+            lines += ["", "Сроки и даты:"]
+            for deadline in analysis.deadlines {
+                lines.append("— \(deadline.title): \(deadline.dueDate ?? "дата требует проверки")")
+                if let source = deadline.sourceText, !source.isEmpty {
+                    lines.append("  Источник/фрагмент: \(source)")
+                }
+            }
+        }
+
+        if !document.citations.isEmpty {
+            lines += ["", "Технические ссылки на локальные фрагменты:"]
+            lines += document.citations.map { "— " + $0 }
+        }
+
+        lines += [
+            "",
+            "Проверка обязательна: это рабочая аналитика ИИ. Перед использованием в консультации или процессуальном документе проверьте факты, нормы, даты и первичные источники."
+        ]
+
+        return lines.joined(separator: "\n")
     }
 
     private func metadataRow(_ title: String, _ value: String) -> some View {

@@ -117,6 +117,60 @@ struct JusticiaCreateMatterRequest: Codable {
     }
 }
 
+struct JusticiaLegalIssueDTO: Codable, Identifiable, Hashable {
+    var id: String { "\(title)|\(description)" }
+
+    let title: String
+    let description: String
+    let risk: String
+    let sourceText: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case description
+        case risk
+        case sourceText = "source_text"
+    }
+}
+
+struct JusticiaLegalAnalysisDTO: Codable, Hashable {
+    let task: String
+    let matterType: String
+    let summary: String
+    let issues: [JusticiaLegalIssueDTO]
+    let deadlines: [JusticiaDeadlineDTO]
+    let keyFacts: [String]
+    let missingInformation: [String]
+    let confidence: Double
+    let generatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case task
+        case matterType = "matter_type"
+        case summary
+        case issues
+        case deadlines
+        case keyFacts = "key_facts"
+        case missingInformation = "missing_information"
+        case confidence
+        case generatedAt = "generated_at"
+    }
+}
+
+struct JusticiaAnalysisResponseDTO: Codable, Hashable {
+    let analysis: JusticiaLegalAnalysisDTO
+    let matterId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case analysis
+        case matterId = "matter_id"
+    }
+}
+
+struct JusticiaAnalyzeStoredDocumentRequest: Codable {
+    let task: String
+}
+
 enum JusticiaAPIError: LocalizedError {
     case unavailable
     case unauthorized
@@ -172,6 +226,19 @@ struct JusticiaAPIClient {
 
     func listDocuments(matterID: String) async throws -> [JusticiaDocumentDTO] {
         try await request(path: "/v1/matters/\(matterID)/documents", method: "GET", body: Optional<Data>.none)
+    }
+
+    func analyzeDocument(
+        matterID: String,
+        documentID: String,
+        task: String = "legal_analysis"
+    ) async throws -> JusticiaAnalysisResponseDTO {
+        let payload = JusticiaAnalyzeStoredDocumentRequest(task: task)
+        return try await request(
+            path: "/v1/matters/\(matterID)/documents/\(documentID)/analyze",
+            method: "POST",
+            body: JSONEncoder().encode(payload)
+        )
     }
 
     func importDocument(matterID: String, fileURL: URL) async throws -> JusticiaDocumentDTO {
@@ -264,6 +331,9 @@ final class JusticiaWorkspaceStore: ObservableObject {
     @Published var selectedMatterID: String?
     @Published private(set) var isLoading = false
     @Published private(set) var isImporting = false
+    @Published private(set) var analyzingDocumentID: String?
+    @Published private(set) var analysisDocumentID: String?
+    @Published private(set) var documentAnalysis: JusticiaLegalAnalysisDTO?
     @Published var errorMessage: String?
 
     private var client: JusticiaAPIClient?
@@ -304,6 +374,8 @@ final class JusticiaWorkspaceStore: ObservableObject {
 
     func selectMatter(_ matter: JusticiaMatterDTO) async {
         selectedMatterID = matter.id
+        analysisDocumentID = nil
+        documentAnalysis = nil
         await refreshDocuments()
     }
 
@@ -360,6 +432,31 @@ final class JusticiaWorkspaceStore: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return false
+        }
+    }
+
+    func analyzeDocument(_ document: JusticiaDocumentDTO, task: String = "legal_analysis") async {
+        guard let client, let matterID = selectedMatterID, document.matterId == matterID else {
+            errorMessage = "Документ не относится к выбранному делу."
+            return
+        }
+
+        analyzingDocumentID = document.id
+        errorMessage = nil
+        defer { analyzingDocumentID = nil }
+
+        do {
+            let response = try await client.analyzeDocument(
+                matterID: matterID,
+                documentID: document.id,
+                task: task
+            )
+            analysisDocumentID = document.id
+            documentAnalysis = response.analysis
+        } catch {
+            analysisDocumentID = nil
+            documentAnalysis = nil
+            errorMessage = error.localizedDescription
         }
     }
 

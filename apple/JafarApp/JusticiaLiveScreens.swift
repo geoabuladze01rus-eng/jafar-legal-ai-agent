@@ -268,7 +268,11 @@ struct JusticiaLiveMattersView: View {
         }
         .sheet(isPresented: $showingAssistant) {
             if let matter = workspace.selectedMatter, let apiClient {
-                JusticiaMatterAssistantView(matter: matter, apiClient: apiClient)
+                JusticiaMatterAssistantView(
+                    matter: matter,
+                    apiClient: apiClient,
+                    documents: workspace.documents
+                )
             } else {
                 Text("ИИ-помощник недоступен для выбранного дела.")
                     .padding(24)

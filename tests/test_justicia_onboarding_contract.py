@@ -32,14 +32,17 @@ def test_onboarding_explains_local_privacy_and_plaud_boundary() -> None:
 
 def test_beta_diagnostics_exclude_legal_content_and_are_manual_copy_only() -> None:
     diagnostics = (ROOT / "apple/JafarApp/JusticiaBetaDiagnosticsView.swift").read_text(encoding="utf-8")
+    snapshot = (ROOT / "apple/JafarApp/JusticiaBetaDiagnosticsSnapshot.swift").read_text(encoding="utf-8")
     settings = (ROOT / "apple/JafarApp/JusticiaScreens.swift").read_text(encoding="utf-8")
 
     assert "JusticiaBetaDiagnosticsView()" in settings
     assert "Скопировать отчёт" in diagnostics
-    assert "no matter/document/transcript contents included" in diagnostics
+    assert "no matter/document/transcript contents included" in snapshot
     assert "названия дел" in diagnostics
     assert "тексты документов" in diagnostics
     assert "транскрипты" in diagnostics
+    assert "JusticiaBetaDiagnosticsSnapshot.report" in diagnostics
     assert "URLSession" not in diagnostics
+    assert "URLSession" not in snapshot
     assert "http://" not in diagnostics
     assert "https://" not in diagnostics

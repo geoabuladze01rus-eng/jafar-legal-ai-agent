@@ -23,10 +23,10 @@ struct JusticiaBetaDiagnosticsView: View {
                 JusticiaPill(text: "Без юридических данных", color: JusticiaTheme.green)
             }
 
-            diagnosticRow("Версия", appVersion)
-            diagnosticRow("Сборка", buildNumber)
-            diagnosticRow("Система", systemVersion)
-            diagnosticRow("Архитектура", architecture)
+            diagnosticRow("Версия", JusticiaBetaDiagnosticsSnapshot.appVersion)
+            diagnosticRow("Сборка", JusticiaBetaDiagnosticsSnapshot.buildNumber)
+            diagnosticRow("Система", JusticiaBetaDiagnosticsSnapshot.systemVersion)
+            diagnosticRow("Архитектура", JusticiaBetaDiagnosticsSnapshot.architecture)
             diagnosticRow("Продукт", "Юстиция")
 
             Divider()
@@ -51,45 +51,12 @@ struct JusticiaBetaDiagnosticsView: View {
         }
     }
 
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-    }
-
-    private var buildNumber: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
-    }
-
-    private var systemVersion: String {
-        ProcessInfo.processInfo.operatingSystemVersionString
-    }
-
-    private var architecture: String {
-        #if arch(arm64)
-        return "arm64"
-        #elseif arch(x86_64)
-        return "x86_64"
-        #else
-        return "unknown"
-        #endif
-    }
-
-    private var report: String {
-        [
-            "Юстиция — beta diagnostics",
-            "Version: \(appVersion)",
-            "Build: \(buildNumber)",
-            "OS: \(systemVersion)",
-            "Architecture: \(architecture)",
-            "Data note: no matter/document/transcript contents included"
-        ].joined(separator: "\n")
-    }
-
     private func copyDiagnostics() {
         #if os(macOS)
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(report, forType: .string)
+        NSPasteboard.general.setString(JusticiaBetaDiagnosticsSnapshot.report, forType: .string)
         #elseif os(iOS)
-        UIPasteboard.general.string = report
+        UIPasteboard.general.string = JusticiaBetaDiagnosticsSnapshot.report
         #endif
         copied = true
     }

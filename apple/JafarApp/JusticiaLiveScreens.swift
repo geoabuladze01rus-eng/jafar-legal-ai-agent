@@ -174,8 +174,11 @@ struct JusticiaLiveHomeView: View {
 
 struct JusticiaLiveMattersView: View {
     @ObservedObject var workspace: JusticiaWorkspaceStore
+    let apiClient: JusticiaAPIClient?
+
     @State private var filter = ""
     @State private var showingCreateMatter = false
+    @State private var showingAssistant = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -263,6 +266,14 @@ struct JusticiaLiveMattersView: View {
             JusticiaCreateMatterSheet(workspace: workspace)
                 .frame(minWidth: 520, minHeight: 560)
         }
+        .sheet(isPresented: $showingAssistant) {
+            if let matter = workspace.selectedMatter, let apiClient {
+                JusticiaMatterAssistantView(matter: matter, apiClient: apiClient)
+            } else {
+                Text("ИИ-помощник недоступен для выбранного дела.")
+                    .padding(24)
+            }
+        }
     }
 
     private var filteredMatters: [JusticiaMatterDTO] {
@@ -293,6 +304,19 @@ struct JusticiaLiveMattersView: View {
                             .foregroundStyle(JusticiaTheme.secondaryInk)
                     }
                     Spacer()
+
+                    Button {
+                        showingAssistant = true
+                    } label: {
+                        Label("ИИ по делу", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(apiClient == nil || workspace.documents.isEmpty)
+                    .help(
+                        workspace.documents.isEmpty
+                            ? "Сначала импортируйте документы в выбранное дело."
+                            : "Исследовать локальные материалы выбранного дела"
+                    )
                 }
 
                 HStack(alignment: .top, spacing: 14) {

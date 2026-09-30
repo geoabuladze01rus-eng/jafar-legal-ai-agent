@@ -28,3 +28,18 @@ def test_onboarding_explains_local_privacy_and_plaud_boundary() -> None:
     assert "предлагаемое партнёрство" in onboarding
     assert "после согласования с PLAUD" in onboarding
     assert "On-device распознавание" in onboarding
+
+
+def test_beta_diagnostics_exclude_legal_content_and_are_manual_copy_only() -> None:
+    diagnostics = (ROOT / "apple/JafarApp/JusticiaBetaDiagnosticsView.swift").read_text(encoding="utf-8")
+    settings = (ROOT / "apple/JafarApp/JusticiaScreens.swift").read_text(encoding="utf-8")
+
+    assert "JusticiaBetaDiagnosticsView()" in settings
+    assert "Скопировать отчёт" in diagnostics
+    assert "no matter/document/transcript contents included" in diagnostics
+    assert "названия дел" in diagnostics
+    assert "тексты документов" in diagnostics
+    assert "транскрипты" in diagnostics
+    assert "URLSession" not in diagnostics
+    assert "http://" not in diagnostics
+    assert "https://" not in diagnostics

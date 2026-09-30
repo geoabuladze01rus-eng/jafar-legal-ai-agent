@@ -110,3 +110,16 @@ def test_desktop_research_service_returns_scoped_citations(tmp_path):
     assert all(ref.startswith("document:") for ref in result.citations)
     assert citation in result.answer
     store.close()
+
+
+def test_desktop_retrieval_returns_no_zero_relevance_context(tmp_path):
+    store, _ = _store(tmp_path)
+    context = DesktopMatterRAGProvider(store).retrieve(
+        matter_id="matter-1",
+        query="космический спутник марсианская экспедиция",
+        query_embedding=(),
+        limit=8,
+    )
+
+    assert context.results == ()
+    store.close()

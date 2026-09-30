@@ -175,6 +175,7 @@ struct JusticiaLiveHomeView: View {
 struct JusticiaLiveMattersView: View {
     @ObservedObject var workspace: JusticiaWorkspaceStore
     let apiClient: JusticiaAPIClient?
+    let openDocument: (String) -> Void
 
     @State private var filter = ""
     @State private var showingCreateMatter = false
@@ -271,7 +272,8 @@ struct JusticiaLiveMattersView: View {
                 JusticiaMatterAssistantView(
                     matter: matter,
                     apiClient: apiClient,
-                    documents: workspace.documents
+                    documents: workspace.documents,
+                    onOpenDocument: openDocument
                 )
             } else {
                 Text("ИИ-помощник недоступен для выбранного дела.")
@@ -509,7 +511,6 @@ struct JusticiaLiveDocumentsView: View {
     @ObservedObject var workspace: JusticiaWorkspaceStore
     @State private var search = ""
     @State private var showingImporter = false
-    @State private var selectedDocumentID: String?
     @State private var analysisTask = "legal_analysis"
 
     private var allowedTypes: [UTType] {
@@ -587,7 +588,7 @@ struct JusticiaLiveDocumentsView: View {
                     } else {
                         ForEach(filteredDocuments) { document in
                             Button {
-                                selectedDocumentID = document.id
+                                workspace.selectedDocumentID = document.id
                             } label: {
                                 HStack(spacing: 11) {
                                     JusticiaIconTile(systemName: "doc.text", color: JusticiaTheme.blue, size: 34)
@@ -603,7 +604,7 @@ struct JusticiaLiveDocumentsView: View {
                                     JusticiaPill(text: document.displayState, color: JusticiaTheme.green)
                                 }
                                 .padding(10)
-                                .background(selectedDocumentID == document.id ? JusticiaTheme.blueSoft : Color.clear)
+                                .background(workspace.selectedDocumentID == document.id ? JusticiaTheme.blueSoft : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(.plain)
@@ -620,17 +621,11 @@ struct JusticiaLiveDocumentsView: View {
         .task {
             if workspace.matters.isEmpty { await workspace.refresh() }
             else { await workspace.refreshDocuments() }
-            if selectedDocumentID == nil {
-                selectedDocumentID = workspace.documents.first?.id
-            }
         }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: allowedTypes, allowsMultipleSelection: false) { result in
             if case .success(let urls) = result, let url = urls.first {
                 Task {
-                    let imported = await workspace.importDocument(from: url)
-                    if imported {
-                        selectedDocumentID = workspace.documents.first?.id
-                    }
+                    _ = await workspace.importDocument(from: url)
                 }
             }
         }
@@ -646,7 +641,7 @@ struct JusticiaLiveDocumentsView: View {
 
     @ViewBuilder
     private var documentDetail: some View {
-        if let document = workspace.documents.first(where: { $0.id == selectedDocumentID }) ?? workspace.documents.first {
+        if let document = workspace.documents.first(where: { $0.id == workspace.selectedDocumentID }) ?? workspace.documents.first {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     JusticiaIconTile(systemName: "doc.text", color: JusticiaTheme.blue)

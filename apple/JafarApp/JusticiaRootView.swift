@@ -89,7 +89,8 @@ struct JusticiaRootView: View {
                         selectedSection = .matters
                     }
                 },
-                onDocument: { _ in
+                onDocument: { document in
+                    workspace.selectedDocumentID = document.id
                     selectedSection = .documents
                 },
                 onSection: { section in
@@ -285,7 +286,14 @@ struct JusticiaRootView: View {
         case .home:
             JusticiaLiveHomeView(workspace: workspace, navigate: { selectedSection = $0 })
         case .matters:
-            JusticiaLiveMattersView(workspace: workspace, apiClient: apiClient)
+            JusticiaLiveMattersView(
+                workspace: workspace,
+                apiClient: apiClient,
+                openDocument: { documentID in
+                    workspace.selectedDocumentID = documentID
+                    selectedSection = .documents
+                }
+            )
         case .documents:
             JusticiaLiveDocumentsView(workspace: workspace)
         case .analytics:

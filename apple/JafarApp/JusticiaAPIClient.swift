@@ -378,6 +378,7 @@ final class JusticiaWorkspaceStore: ObservableObject {
     @Published private(set) var matters: [JusticiaMatterDTO] = []
     @Published private(set) var documents: [JusticiaDocumentDTO] = []
     @Published var selectedMatterID: String?
+    @Published var selectedDocumentID: String?
     @Published private(set) var isLoading = false
     @Published private(set) var isImporting = false
     @Published private(set) var analyzingDocumentID: String?
@@ -405,6 +406,7 @@ final class JusticiaWorkspaceStore: ObservableObject {
             matters = []
             documents = []
             selectedMatterID = nil
+            selectedDocumentID = nil
             return
         }
         isLoading = true
@@ -423,6 +425,7 @@ final class JusticiaWorkspaceStore: ObservableObject {
 
     func selectMatter(_ matter: JusticiaMatterDTO) async {
         selectedMatterID = matter.id
+        selectedDocumentID = nil
         analysisDocumentID = nil
         documentAnalysis = nil
         await refreshDocuments()
@@ -449,6 +452,7 @@ final class JusticiaWorkspaceStore: ObservableObject {
             )
             matters.insert(created, at: 0)
             selectedMatterID = created.id
+            selectedDocumentID = nil
             documents = []
             return true
         } catch {
@@ -460,10 +464,14 @@ final class JusticiaWorkspaceStore: ObservableObject {
     func refreshDocuments() async {
         guard let client, let matterID = selectedMatterID else {
             documents = []
+            selectedDocumentID = nil
             return
         }
         do {
             documents = try await client.listDocuments(matterID: matterID)
+            if selectedDocumentID == nil || !documents.contains(where: { $0.id == selectedDocumentID }) {
+                selectedDocumentID = documents.first?.id
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -475,8 +483,9 @@ final class JusticiaWorkspaceStore: ObservableObject {
         errorMessage = nil
         defer { isImporting = false }
         do {
-            _ = try await client.importDocument(matterID: matterID, fileURL: url)
+            let imported = try await client.importDocument(matterID: matterID, fileURL: url)
             await refreshDocuments()
+            selectedDocumentID = imported.id
             return true
         } catch {
             errorMessage = error.localizedDescription

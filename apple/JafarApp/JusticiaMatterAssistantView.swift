@@ -6,6 +6,7 @@ struct JusticiaMatterAssistantView: View {
     let matter: JusticiaMatterDTO
     let apiClient: JusticiaAPIClient
     let documents: [JusticiaDocumentDTO]
+    let onOpenDocument: (String) -> Void
 
     @State private var question = ""
     @State private var result: JusticiaMatterResearchResponseDTO?
@@ -257,6 +258,16 @@ struct JusticiaMatterAssistantView: View {
                     }
 
                     Spacer()
+
+                    if let parsed = parseCitation(citation),
+                       documents.contains(where: { $0.documentId == parsed.documentID }) {
+                        Button("Открыть") {
+                            onOpenDocument(parsed.documentID)
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
                 .padding(10)
                 .background(JusticiaTheme.surfaceMuted.opacity(0.75))

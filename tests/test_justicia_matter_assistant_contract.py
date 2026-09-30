@@ -9,7 +9,9 @@ def test_matter_assistant_uses_authenticated_matter_research_endpoint() -> None:
     matters = (ROOT / "apple/JafarApp/JusticiaLiveScreens.swift").read_text(encoding="utf-8")
 
     assert 'path: "/v1/matters/\\(matterID)/research"' in client
-    assert "JusticiaLiveMattersView(workspace: workspace, apiClient: apiClient)" in root
+    assert "JusticiaLiveMattersView(" in root
+    assert "apiClient: apiClient" in root
+    assert "openDocument:" in root
     assert "JusticiaMatterAssistantView(" in matters
     assert "apiClient: apiClient" in matters
     assert "documents: workspace.documents" in matters
@@ -42,3 +44,15 @@ def test_matter_assistant_renders_readable_document_citations() -> None:
     assert "Страница \\(parsed.page) · фрагмент \\(parsed.chunk)" in assistant
     assert "documents.first(where:" in assistant
     assert "citation.split(separator:" in assistant
+
+
+def test_citation_can_open_exact_local_document() -> None:
+    assistant = (ROOT / "apple/JafarApp/JusticiaMatterAssistantView.swift").read_text(encoding="utf-8")
+    matters = (ROOT / "apple/JafarApp/JusticiaLiveScreens.swift").read_text(encoding="utf-8")
+    root = (ROOT / "apple/JafarApp/JusticiaRootView.swift").read_text(encoding="utf-8")
+
+    assert 'Button("Открыть")' in assistant
+    assert "onOpenDocument(parsed.documentID)" in assistant
+    assert "onOpenDocument: openDocument" in matters
+    assert "workspace.selectedDocumentID = documentID" in root
+    assert "selectedSection = .documents" in root

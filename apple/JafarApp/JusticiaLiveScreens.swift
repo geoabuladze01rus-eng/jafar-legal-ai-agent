@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -481,6 +482,7 @@ struct JusticiaLiveDocumentsView: View {
     @State private var search = ""
     @State private var showingImporter = false
     @State private var selectedDocumentID: String?
+    @State private var analysisTask = "legal_analysis"
 
     private var allowedTypes: [UTType] {
         [
@@ -628,6 +630,29 @@ struct JusticiaLiveDocumentsView: View {
                             .foregroundStyle(JusticiaTheme.secondaryInk)
                     }
                     Spacer()
+
+                    Picker("", selection: $analysisTask) {
+                        Text("Общий анализ").tag("legal_analysis")
+                        Text("Риски").tag("risk_review")
+                        Text("Сроки").tag("extract_deadlines")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 270)
+
+                    Button {
+                        Task {
+                            await workspace.analyzeDocument(document, task: analysisTask)
+                        }
+                    } label: {
+                        if workspace.analyzingDocumentID == document.id {
+                            ProgressView()
+                        } else {
+                            Label("Анализировать", systemImage: "sparkles")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(workspace.analyzingDocumentID != nil)
+
                     JusticiaPill(text: document.displayState, color: JusticiaTheme.green)
                 }
 
@@ -662,6 +687,133 @@ struct JusticiaLiveDocumentsView: View {
                     }
                 }
 
+
+                if workspace.analysisDocumentID == document.id,
+                   let analysis = workspace.documentAnalysis {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            JusticiaIconTile(systemName: "sparkles", color: JusticiaTheme.violet, size: 34)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("ИИ-анализ документа")
+                                    .font(.headline)
+                                Text(taskTitle(analysis.task) + " · уверенность " + confidenceText(analysis.confidence))
+                                    .font(.caption)
+                                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                            }
+                            Spacer()
+                        }
+
+                        analysisSection("Общий вывод") {
+                            Text(analysis.summary)
+                                .font(.subheadline)
+                                .lineSpacing(4)
+                                .textSelection(.enabled)
+                        }
+
+                        if !analysis.issues.isEmpty {
+                            analysisSection("Риски и слабые места") {
+                                VStack(alignment: .leading, spacing: 9) {
+                                    ForEach(analysis.issues) { issue in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Circle()
+                                                .fill(riskColor(issue.risk))
+                                                .frame(width: 8, height: 8)
+                                                .padding(.top, 5)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                HStack {
+                                                    Text(issue.title)
+                                                        .font(.subheadline.weight(.semibold))
+                                                    JusticiaPill(text: riskTitle(issue.risk), color: riskColor(issue.risk))
+                                                }
+                                                Text(issue.description)
+                                                    .font(.caption)
+                                                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                                                if let source = issue.sourceText, !source.isEmpty {
+                                                    Text(source)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                                                        .textSelection(.enabled)
+                                                }
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !analysis.keyFacts.isEmpty {
+                            analysisSection("Ключевые факты") {
+                                analysisList(analysis.keyFacts, icon: "checkmark.circle", color: JusticiaTheme.green)
+                            }
+                        }
+
+                        if !analysis.missingInformation.isEmpty {
+                            analysisSection("Что требует проверки") {
+                                analysisList(analysis.missingInformation, icon: "questionmark.circle", color: JusticiaTheme.orange)
+                            }
+                        }
+
+                        if !analysis.deadlines.isEmpty {
+                            analysisSection("Сроки и даты") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(Array(analysis.deadlines.enumerated()), id: \.offset) { _, deadline in
+                                        HStack(alignment: .top, spacing: 9) {
+                                            Image(systemName: "calendar.badge.clock")
+                                                .foregroundStyle(JusticiaTheme.orange)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(deadline.title)
+                                                    .font(.subheadline.weight(.semibold))
+                                                Text(deadline.dueDate ?? "Дата требует проверки")
+                                                    .font(.caption)
+                                                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                                                if let source = deadline.sourceText, !source.isEmpty {
+                                                    Text(source)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                                                        .lineLimit(3)
+                                                        .textSelection(.enabled)
+                                                }
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Label(
+                            "Вывод ИИ — рабочая аналитика. Перед использованием в процессуальном документе проверьте факты, нормы и источники.",
+                            systemImage: "checkmark.shield"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                    .padding(16)
+                    .background(JusticiaTheme.surfaceMuted.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: JusticiaTheme.corner))
+                } else if workspace.analyzingDocumentID == document.id {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Локальный ИИ анализирует документ…")
+                            .font(.subheadline)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                    .padding(.vertical, 12)
+                }
+
+                if let error = workspace.errorMessage, workspace.analyzingDocumentID == nil {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(JusticiaTheme.red)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(JusticiaTheme.red)
+                    }
+                }
+
                 Spacer(minLength: 20)
             }
             .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
@@ -691,6 +843,66 @@ struct JusticiaLiveDocumentsView: View {
 
     private func byteCount(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    @ViewBuilder
+    private func analysisSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func analysisList(_ items: [String], icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(items, id: \.self) { item in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: icon)
+                        .foregroundStyle(color)
+                    Text(item)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func riskColor(_ risk: String) -> Color {
+        switch risk.lowercased() {
+        case "critical", "high": JusticiaTheme.red
+        case "medium": JusticiaTheme.orange
+        case "low": JusticiaTheme.green
+        default: JusticiaTheme.secondaryInk
+        }
+    }
+
+    private func riskTitle(_ risk: String) -> String {
+        switch risk.lowercased() {
+        case "critical": "Критический"
+        case "high": "Высокий"
+        case "medium": "Средний"
+        case "low": "Низкий"
+        default: "Не определён"
+        }
+    }
+
+    private func taskTitle(_ task: String) -> String {
+        switch task {
+        case "risk_review": "Анализ рисков"
+        case "extract_deadlines": "Извлечение сроков"
+        case "summarize": "Резюме"
+        default: "Общий анализ"
+        }
+    }
+
+    private func confidenceText(_ value: Double) -> String {
+        String(format: "%.0f%%", value * 100)
     }
 }
 

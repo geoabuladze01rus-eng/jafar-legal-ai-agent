@@ -1,5 +1,11 @@
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
+
 struct JusticiaMatterAssistantView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -12,6 +18,7 @@ struct JusticiaMatterAssistantView: View {
     @State private var result: JusticiaMatterResearchResponseDTO?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var copiedReport = false
 
     private let quickQuestions = [
         "Сформулируй ключевые факты по материалам дела",
@@ -205,6 +212,14 @@ struct JusticiaMatterAssistantView: View {
                         .foregroundStyle(JusticiaTheme.secondaryInk)
                 }
                 Spacer()
+
+                Button {
+                    copyResearchReport(response)
+                } label: {
+                    Label(copiedReport ? "Скопировано" : "Скопировать справку", systemImage: copiedReport ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
             Text(response.answer)
@@ -361,6 +376,7 @@ struct JusticiaMatterAssistantView: View {
         isLoading = true
         errorMessage = nil
         result = nil
+        copiedReport = false
 
         Task {
             do {
@@ -379,6 +395,71 @@ struct JusticiaMatterAssistantView: View {
                 }
             }
         }
+    }
+
+    private func copyResearchReport(_ response: JusticiaMatterResearchResponseDTO) {
+        let report = researchReport(response)
+
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #elseif os(iOS)
+        UIPasteboard.general.string = report
+        #endif
+
+        copiedReport = true
+    }
+
+    private func researchReport(_ response: JusticiaMatterResearchResponseDTO) -> String {
+        var lines = [
+            "Юстиция — рабочая справка по материалам дела",
+            "Дело: \(matter.displayNumber) · \(matter.title)",
+            "",
+            "Вопрос:",
+            response.question,
+            "",
+            "Вывод:",
+            response.answer,
+            "",
+            "Источники:"
+        ]
+
+        if response.citations.isEmpty {
+            lines.append("— релевантные цитаты не возвращены")
+        } else {
+            for citation in response.citations {
+                if let parsed = parseCitation(citation) {
+                    lines.append("— \(documentName(for: parsed.documentID)), стр. \(parsed.page), фрагмент \(parsed.chunk) [\(citation)]")
+                } else {
+                    lines.append("— \(citation)")
+                }
+            }
+        }
+
+        if !response.contradictions.isEmpty {
+            lines += ["", "Противоречия и пробелы:"]
+            for item in response.contradictions {
+                let type = stringValue(item["type"])
+                let topic = stringValue(item["topic"])
+                let description = stringValue(item["description"])
+                let left = stringValue(item["left"])
+                let right = stringValue(item["right"])
+
+                if type == "evidence_gap" {
+                    lines.append("— \(topic.isEmpty ? "Пробел в доказательствах" : topic): \(description)")
+                } else {
+                    let title = topic.isEmpty ? "Противоречие" : topic
+                    lines.append("— \(title): \(left) / \(right)")
+                }
+            }
+        }
+
+        lines += [
+            "",
+            "Проверка обязательна: это рабочая аналитическая справка ИИ, а не первичный источник и не готовый процессуальный документ."
+        ]
+
+        return lines.joined(separator: "\n")
     }
 
     private func parseCitation(_ citation: String) -> (documentID: String, page: String, chunk: String)? {

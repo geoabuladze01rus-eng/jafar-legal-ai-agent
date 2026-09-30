@@ -14,6 +14,7 @@ from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .desktop_corpus_runtime import build_desktop_corpus_from_env
 from .desktop_corpus_service import DesktopCorpusService
+from .desktop_legal_research import build_desktop_legal_research_service
 from .domains import DocumentTask, MatterType
 from .google_oauth_api import resolve_google_oauth_subject, router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
@@ -98,8 +99,27 @@ _memory_service = build_memory_service_from_env()
 memory_executor = MemoryCommandExecutor(_memory_service) if _memory_service is not None else None
 app.state.memory_service = _memory_service
 _legal_research_service = build_legal_research_service_from_env()
+_desktop_legal_research_service = (
+    build_desktop_legal_research_service(desktop_corpus_store, ollama_analyzer)
+    if desktop_corpus_store is not None
+    else None
+)
+
+
+def _legal_research_service_for_matter(matter_id: str):
+    if matter_store.get(matter_id) is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    if _desktop_legal_research_service is not None:
+        return _desktop_legal_research_service
+    if _legal_research_service is not None:
+        return _legal_research_service
+    return None
+
+
 app.state.legal_research_service_factory = (
-    (lambda _matter_id: _legal_research_service) if _legal_research_service is not None else None
+    _legal_research_service_for_matter
+    if _desktop_legal_research_service is not None or _legal_research_service is not None
+    else None
 )
 
 

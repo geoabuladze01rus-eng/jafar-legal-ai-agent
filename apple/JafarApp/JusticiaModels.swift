@@ -8,7 +8,7 @@ enum JusticiaSection: String, CaseIterable, Identifiable {
     case deadlines = "Сроки"
     case templates = "Шаблоны"
     case publishing = "Автопубликации"
-    case transcription = "Транскрибация аудио"
+    case transcription = "Транскрибация × PLAUD"
     case settings = "Настройки"
 
     var id: String { rawValue }

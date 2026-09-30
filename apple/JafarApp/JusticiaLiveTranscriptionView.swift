@@ -11,9 +11,21 @@ struct JusticiaLiveTranscriptionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 8) {
+                Text("PLAUD")
+                    .font(.caption.bold())
+                    .foregroundStyle(JusticiaTheme.blue)
+                JusticiaPill(text: "Партнёрство предложено", color: JusticiaTheme.orange)
+                Spacer()
+                Text("Официальная интеграция будет активирована после согласования с PLAUD.")
+                    .font(.caption2)
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+            }
+            .justiciaCard(padding: 10)
+
             pageHeader(
-                title: "Транскрибация аудио",
-                subtitle: "Локальная расшифровка с возможностью сохранить текст прямо в материалы выбранного дела."
+                title: "Транскрибация × PLAUD",
+                subtitle: "Предлагаемая партнёрская интеграция PLAUD для юридических записей. Локальная расшифровка с сохранением текста прямо в материалы выбранного дела."
             )
 
             HStack(alignment: .top, spacing: 14) {

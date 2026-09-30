@@ -113,6 +113,11 @@ struct JusticiaSettingsView: View {
             .justiciaCard()
 
             VStack(alignment: .leading, spacing: 12) {
+                JusticiaBetaDiagnosticsView()
+            }
+            .justiciaCard()
+
+            VStack(alignment: .leading, spacing: 12) {
                 Text("Безопасность")
                     .font(.headline)
 

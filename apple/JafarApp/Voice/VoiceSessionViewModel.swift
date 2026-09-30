@@ -11,6 +11,7 @@ final class VoiceSessionViewModel: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var isSpeaking = false
     @Published private(set) var isSending = false
+    @Published private(set) var isTranscribingFile = false
     @Published private(set) var approvalRequired = false
     @Published private(set) var errorMessage: String?
 
@@ -50,11 +51,54 @@ final class VoiceSessionViewModel: ObservableObject {
         await send(command: command, approved: false)
     }
 
+    func stopTranscriptionOnly() {
+        recognizer.stop()
+        isListening = false
+        transcript = recognizer.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        response = ""
+        approvalRequired = false
+        pendingCommand = nil
+    }
+
+    func clearTranscript() {
+        if isListening {
+            recognizer.stop()
+            isListening = false
+        }
+        transcript = ""
+        response = ""
+        approvalRequired = false
+        pendingCommand = nil
+        errorMessage = nil
+    }
+
     func sendText(_ command: String) async {
         let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
         transcript = normalized
         await send(command: normalized, approved: false)
+    }
+
+    func transcribeAudioFile(_ url: URL) async {
+        guard !isTranscribingFile && !isSending else { return }
+        isTranscribingFile = true
+        errorMessage = nil
+        defer { isTranscribingFile = false }
+
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let result = try await recognizer.transcribeFileOnDevice(url: url)
+            transcript = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            response = ""
+            approvalRequired = false
+            pendingCommand = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func confirmPendingCommand() async {

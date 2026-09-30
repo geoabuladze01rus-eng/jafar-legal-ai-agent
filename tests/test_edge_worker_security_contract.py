@@ -6,6 +6,10 @@ WORKERS = (
     ROOT / "supabase/functions/document-ocr-worker-v4/index.ts",
     ROOT / "supabase/functions/document-pipeline-worker-v3/index.ts",
 )
+TELEGRAM_WORKERS = (
+    ROOT / "supabase/functions/telegram-publisher-v3/index.ts",
+    ROOT / "supabase/functions/telegram-notion-sync-v3/index.ts",
+)
 
 
 def test_internal_workers_never_accept_public_or_platform_api_keys():
@@ -25,9 +29,16 @@ def test_workers_with_disabled_platform_jwt_have_a_dedicated_secret_boundary():
         ROOT / "supabase/migrations/20260824111500_schedule_document_worker_edge_functions.sql"
     ).read_text(encoding="utf-8")
 
-    assert config.count("verify_jwt = false") == len(WORKERS)
+    assert config.count("verify_jwt = false") == len(WORKERS) + len(TELEGRAM_WORKERS)
     assert schedule.count("jafar_worker_secret") == len(WORKERS)
     assert "SUPABASE_SERVICE_ROLE_KEY" not in schedule
+
+    for path in TELEGRAM_WORKERS:
+        source = path.read_text(encoding="utf-8")
+        assert 'req.headers.get("x-jafar-worker-secret")' in source
+        assert 'getSecret("get_jafar_worker_secret_for_publisher")' in source or (
+            'fetchExpectedWorkerSecret()' in source
+        )
 
 
 def test_workers_require_explicit_confidential_cloud_opt_in_before_claiming_jobs():

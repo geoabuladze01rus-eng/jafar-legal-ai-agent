@@ -151,6 +151,7 @@ activemq-data/
 .env
 .envrc
 .venv
+.venv-*/
 supabase/.temp/
 env/
 venv/
@@ -206,6 +207,10 @@ tempCodeRunnerFile.py
 
 # Ruff stuff:
 .ruff_cache/
+
+# Local macOS packaging output and generated Xcode projects
+dist/
+apple/JafarApp.xcodeproj/
 
 # PyPI configuration file
 .pypirc

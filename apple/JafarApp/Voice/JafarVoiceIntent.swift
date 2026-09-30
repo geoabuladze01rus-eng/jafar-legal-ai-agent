@@ -1,8 +1,8 @@
 import AppIntents
 
-struct JafarVoiceIntent: AppIntent {
-    static let title: LocalizedStringResource = "Спросить Джафара"
-    static let description = IntentDescription("Передаёт голосовую команду юридическому AI-агенту Джафару.")
+struct JusticiaVoiceIntent: AppIntent {
+    static let title: LocalizedStringResource = "Спросить «Юстицию»"
+    static let description = IntentDescription("Передаёт голосовую команду юридическому ИИ-помощнику «Юстиция».")
     static let openAppWhenRun = true
 
     @Parameter(title: "Команда")
@@ -19,22 +19,22 @@ struct JafarVoiceIntent: AppIntent {
             )
         )
         if response.approvalRequired {
-            return .result(dialog: "\(response.message) Откройте Джафара и подтвердите действие.")
+            return .result(dialog: "\(response.message) Откройте «Юстицию» и подтвердите действие.")
         }
         return .result(dialog: "\(response.message)")
     }
 }
 
-struct JafarAppShortcuts: AppShortcutsProvider {
+struct JusticiaAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: JafarVoiceIntent(),
+            intent: JusticiaVoiceIntent(),
             phrases: [
                 "Спроси \(.applicationName)",
                 "Спросить \(.applicationName)",
                 "Команда \(.applicationName)"
             ],
-            shortTitle: "Джафар",
+            shortTitle: "Юстиция",
             systemImageName: "waveform"
         )
     }

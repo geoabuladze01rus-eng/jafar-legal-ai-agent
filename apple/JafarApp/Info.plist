@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Юстиция</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -11,20 +13,22 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Юстиция</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>2.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>JAFARCommandEndpoint</key>
 	<string>$(JAFAR_COMMAND_ENDPOINT)</string>
 	<key>JAFARUserId</key>
 	<string>$(JAFAR_USER_ID)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Джафар использует микрофон для голосовых команд.</string>
+	<string>«Юстиция» использует микрофон для голосовых команд и транскрибации.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Джафар использует распознавание речи для выполнения голосовых команд.</string>
+	<string>«Юстиция» использует распознавание речи для голосовых команд и транскрибации.</string>
 </dict>
 </plist>

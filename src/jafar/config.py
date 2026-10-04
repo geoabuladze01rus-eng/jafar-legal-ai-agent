@@ -24,6 +24,19 @@ class Settings(BaseSettings):
     telegram_production_send: bool = False
     telegram_dry_run: bool = True
 
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_editorial_model: str = "deepseek-v4-flash"
+
+    editorial_enabled: bool = False
+    editorial_owner_user_id: str | None = None
+    editorial_owner_chat_id: str | None = None
+    editorial_channel_id: str | None = None
+    editorial_db_path: str = ".jafar/editorial.sqlite3"
+    editorial_auto_publish_green: bool = False
+    editorial_image_model: str = "gpt-image-2.5-flare"
+    editorial_image_size: str = "1024x1536"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

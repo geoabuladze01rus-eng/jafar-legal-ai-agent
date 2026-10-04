@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -21,21 +22,77 @@ class TelegramBotHttpClient:
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
         self.request_timeout = request_timeout
 
-    async def send_message(self, *, chat_id: int | str, text: str) -> dict[str, Any]:
+    async def send_message(
+        self,
+        *,
+        chat_id: int | str,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
         async with httpx.AsyncClient(timeout=self.request_timeout) as client:
             response = await client.post(
                 f"{self.base_url}/sendMessage",
-                json={"chat_id": chat_id, "text": text},
+                json=payload,
             )
             response.raise_for_status()
-            payload = response.json()
-        if not payload.get("ok"):
-            raise RuntimeError(f"Telegram sendMessage failed: {payload}")
-        return dict(payload.get("result") or {})
+            body = response.json()
+        if not body.get("ok"):
+            raise RuntimeError(f"Telegram sendMessage failed: {body}")
+        return dict(body.get("result") or {})
+
+    async def send_photo(
+        self,
+        *,
+        chat_id: int | str,
+        photo: bytes,
+        filename: str = "editorial.jpg",
+        caption: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+        if reply_markup is not None:
+            data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+
+        async with httpx.AsyncClient(timeout=self.request_timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/sendPhoto",
+                data=data,
+                files={"photo": (filename, photo, "image/jpeg")},
+            )
+            response.raise_for_status()
+            body = response.json()
+        if not body.get("ok"):
+            raise RuntimeError(f"Telegram sendPhoto failed: {body}")
+        return dict(body.get("result") or {})
+
+    async def answer_callback_query(
+        self,
+        *,
+        callback_query_id: str,
+        text: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text[:200]
+        async with httpx.AsyncClient(timeout=self.request_timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/answerCallbackQuery",
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+        if not body.get("ok"):
+            raise RuntimeError(f"Telegram answerCallbackQuery failed: {body}")
+        return {"ok": True}
 
 
 class TelegramRuntime:
-    """Connect Telegram polling, the comment pipeline, safety and outbound delivery."""
+    """Connect Telegram polling, comment handling and owner-controlled editorial actions."""
 
     def __init__(
         self,
@@ -43,10 +100,12 @@ class TelegramRuntime:
         *,
         production_send: bool = False,
         dry_run: bool = True,
+        editorial_controller: Any | None = None,
     ) -> None:
         self.receiver = TelegramUpdateReceiver(bot_token)
         self.bot = TelegramBotHttpClient(bot_token)
         self.dry_run = dry_run
+        self.editorial_controller = editorial_controller
         self.outbound = TelegramOutbound(
             guard=ProductionGuard(production_send=production_send and not dry_run),
             bot=self.bot,
@@ -54,6 +113,11 @@ class TelegramRuntime:
         self._task: asyncio.Task[None] | None = None
 
     async def handle_update(self, update: dict[str, Any]) -> None:
+        if "callback_query" in update and self.editorial_controller is not None:
+            handled = await self.editorial_controller.handle_callback(update)
+            if handled:
+                return
+
         result = process_update(update)
         if result is None or not result.safety.allowed:
             return

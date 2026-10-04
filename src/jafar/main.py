@@ -13,6 +13,13 @@ from .config import settings
 from .document_intake import DocumentExtractionError, DocumentExtractor
 from .document_workflow import DocumentWorkflow
 from .domains import DocumentTask, MatterType
+from .editorial_autopost import (
+    DeepSeekEditorialProvider,
+    EditorialAutopostService,
+    EditorialQueueStore,
+    EditorialRequest,
+    OpenAIEditorialImageProvider,
+)
 from .google_oauth_api import resolve_google_oauth_subject, router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
 from .google_workspace_http import (
@@ -36,19 +43,56 @@ from .ollama_provider import OllamaLegalAnalyzer, OllamaProviderConfig
 from .persistent_matter_catalog import PersistentMatterCatalog
 from .privacy_policy import ProviderPrivacyPolicy
 from .routed_legal_analyzer import RoutedLegalAnalyzer
+from .telegram_editorial import TelegramEditorialController
 from .telegram_runtime import TelegramRuntime
 
 telegram_runtime: TelegramRuntime | None = None
+editorial_controller: TelegramEditorialController | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global telegram_runtime
+    global telegram_runtime, editorial_controller
     if settings.telegram_polling_enabled and settings.telegram_bot_token:
         telegram_runtime = TelegramRuntime(
             settings.telegram_bot_token,
             production_send=settings.telegram_production_send,
+            dry_run=settings.telegram_dry_run,
         )
+
+        if settings.editorial_enabled:
+            required = {
+                "DEEPSEEK_API_KEY": settings.deepseek_api_key,
+                "OPENAI_API_KEY": settings.openai_api_key,
+                "EDITORIAL_OWNER_USER_ID": settings.editorial_owner_user_id,
+                "EDITORIAL_OWNER_CHAT_ID": settings.editorial_owner_chat_id,
+                "EDITORIAL_CHANNEL_ID": settings.editorial_channel_id,
+            }
+            missing = [name for name, value in required.items() if not value]
+            if missing:
+                raise RuntimeError(
+                    "Editorial autopost is enabled but required settings are missing: "
+                    + ", ".join(missing)
+                )
+
+            editorial_service = EditorialAutopostService(
+                DeepSeekEditorialProvider(),
+                OpenAIEditorialImageProvider(),
+            )
+            editorial_controller = TelegramEditorialController(
+                bot=telegram_runtime.bot,
+                service=editorial_service,
+                store=EditorialQueueStore(),
+                owner_user_id=settings.editorial_owner_user_id or "",
+                owner_chat_id=settings.editorial_owner_chat_id or "",
+                channel_id=settings.editorial_channel_id or "",
+                auto_publish_green=settings.editorial_auto_publish_green,
+                channel_send_enabled=(
+                    settings.telegram_production_send and not settings.telegram_dry_run
+                ),
+            )
+            telegram_runtime.editorial_controller = editorial_controller
+
         telegram_runtime.start()
     try:
         yield
@@ -56,6 +100,7 @@ async def lifespan(app: FastAPI):
         if telegram_runtime is not None:
             await telegram_runtime.stop()
             telegram_runtime = None
+        editorial_controller = None
 
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
@@ -124,6 +169,15 @@ class CommandResponse(BaseModel):
     approval_required: bool = False
     request_id: str
     data: dict | None = None
+
+
+class EditorialCreateResponse(BaseModel):
+    publication_id: str
+    status: str
+    risk: str
+    risk_flags: list[str] = Field(default_factory=list)
+    title: str
+    requires_approval: bool
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -319,6 +373,14 @@ def command(request: CommandRequest) -> CommandResponse:
 
 def _analyze(text: str, task: DocumentTask, matter_type: MatterType):
     return routed_analyzer.analyze(text, task, matter_type)
+
+
+@app.post("/v1/editorial/posts", response_model=EditorialCreateResponse)
+async def create_editorial_post(request: EditorialRequest) -> EditorialCreateResponse:
+    if editorial_controller is None:
+        raise HTTPException(status_code=503, detail="Editorial autopost is not configured")
+    payload = await editorial_controller.create_post(request)
+    return EditorialCreateResponse.model_validate(payload)
 
 
 @app.post("/v1/analyze", response_model=AnalysisResponse)

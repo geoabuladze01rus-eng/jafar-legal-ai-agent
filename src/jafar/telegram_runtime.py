@@ -88,7 +88,7 @@ class TelegramBotHttpClient:
             body = response.json()
         if not body.get("ok"):
             raise RuntimeError(f"Telegram answerCallbackQuery failed: {body}")
-        return dict(body.get("result") or {})
+        return {"ok": True}
 
 
 class TelegramRuntime:

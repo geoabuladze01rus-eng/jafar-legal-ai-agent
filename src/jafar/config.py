@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_editorial_model: str = "deepseek-v4-flash"
+    deepseek_editorial_model: str = "deepseek-flash"
 
     editorial_enabled: bool = False
     editorial_owner_user_id: str | None = None

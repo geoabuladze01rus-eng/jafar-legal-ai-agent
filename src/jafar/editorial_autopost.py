@@ -245,6 +245,8 @@ class OpenAIEditorialImageProvider:
             model=self.model,
             prompt=VISUAL_STYLE_PREFIX + image_prompt.strip(),
             size=self.size,
+            quality="medium",
+            output_format="jpeg",
             n=1,
         )
         if not response.data:

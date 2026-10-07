@@ -4,12 +4,15 @@ from typing import Any, Protocol
 
 from .editorial_autopost import (
     EditorialAutopostService,
+    EditorialBundle,
     EditorialQueueItem,
     EditorialQueueStore,
     EditorialRequest,
     EditorialRisk,
     editorial_response_payload,
 )
+from .visual_policy import VisualCategory
+
 
 
 class TelegramEditorialBot(Protocol):
@@ -67,7 +70,8 @@ class TelegramEditorialController:
         bundle = self.service.generate_bundle(request)
         item = self.store.create(bundle)
 
-        if self.auto_publish_green and item.draft.risk is EditorialRisk.GREEN:
+        visual_ready = item.draft.visual_review_status == "approved" and item.draft.visual_score >= 80
+        if self.auto_publish_green and item.draft.risk is EditorialRisk.GREEN and visual_ready:
             if self.channel_send_enabled:
                 item = await self._publish(item)
             else:
@@ -123,9 +127,10 @@ class TelegramEditorialController:
 
             elif action == "image":
                 item = self.store.get(publication_id)
-                image_bytes = self.service.image_provider.generate(item.draft.image_prompt)
-                item = self.store.replace_image(publication_id, image_bytes)
-                await self._send_review(item, note="Сгенерирован новый визуал.")
+                image_bytes, draft = self.service.regenerate_visual(item.request, item.draft)
+                bundle = EditorialBundle(request=item.request, draft=draft, image_bytes=image_bytes)
+                item = self.store.replace_bundle(publication_id, bundle)
+                await self._send_review(item, note="Сгенерирован новый визуал и повторно пройден visual gate.")
                 message = "Новый визуал готов."
 
             elif action == "reject":
@@ -153,7 +158,11 @@ class TelegramEditorialController:
             EditorialRisk.YELLOW: "🟡 YELLOW",
             EditorialRisk.RED: "🔴 RED",
         }[item.draft.risk]
-        preview_caption = f"{risk_label}\n{item.draft.title}\nID: {item.publication_id}"
+        preview_caption = (
+            f"{risk_label}\n"
+            f"Visual: {item.draft.visual_template.value} / {item.draft.visual_score}/100\n"
+            f"{item.draft.title}\nID: {item.publication_id}"
+        )
         await self.bot.send_photo(
             chat_id=self.owner_chat_id,
             photo=item.image_bytes,
@@ -174,6 +183,13 @@ class TelegramEditorialController:
     async def _publish(self, item: EditorialQueueItem) -> EditorialQueueItem:
         if not item.image_bytes:
             raise RuntimeError("publication visual is missing")
+        if item.draft.visual_review_status != "approved" or item.draft.visual_score < 80:
+            raise RuntimeError("publication blocked by visual quality gate")
+        if (
+            item.draft.visual_category is VisualCategory.DOCUMENTARY_PHOTO_BRANDED
+            and not item.draft.visual_provenance_verified
+        ):
+            raise RuntimeError("documentary publication blocked: provenance is not verified")
 
         self.store.set_status(item.publication_id, "publishing")
         try:

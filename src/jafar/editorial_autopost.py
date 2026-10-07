@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import re
+import socket
 import sqlite3
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -15,6 +18,7 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .config import settings
+from .visual_policy import VisualCategory, VisualTemplate, select_visual_decision, visual_preflight_score
 
 TELEGRAM_TEXT_LIMIT = 4096
 
@@ -94,6 +98,18 @@ class EditorialRequest(BaseModel):
     source_urls: list[str] = Field(default_factory=list)
     is_news: bool = False
     current_case: bool = False
+    public_resonance: str = Field(default="normal", pattern="^(normal|high|breaking)$")
+    documentary_photo_url: str | None = None
+    documentary_photo_source_url: str | None = None
+    documentary_photo_source_name: str | None = Field(default=None, max_length=300)
+    documentary_photo_verified: bool = False
+
+    @model_validator(mode="after")
+    def documentary_photo_guard(self) -> "EditorialRequest":
+        if self.documentary_photo_verified:
+            if not self.documentary_photo_url or not self.documentary_photo_source_url:
+                raise ValueError("verified documentary photo requires photo URL and source URL")
+        return self
 
 
 class EditorialDraft(BaseModel):
@@ -108,6 +124,14 @@ class EditorialDraft(BaseModel):
     risk: EditorialRisk = EditorialRisk.YELLOW
     risk_flags: list[str] = Field(default_factory=list)
     author_value_add: str | None = Field(default=None, max_length=1200)
+    visual_template: VisualTemplate = VisualTemplate.RESONANT_CASE
+    visual_category: VisualCategory = VisualCategory.EDITORIAL_CINEMATIC
+    visual_score: int = Field(default=0, ge=0, le=100)
+    visual_review_status: str = Field(default="pending", pattern="^(pending|approved|regenerate|manual_review)$")
+    visual_source_url: str | None = None
+    visual_source_name: str | None = Field(default=None, max_length=300)
+    visual_provenance_verified: bool = False
+    ai_generated: bool = True
 
     @field_validator("title", "hook", "body", "image_prompt")
     @classmethod
@@ -217,8 +241,21 @@ class DeepSeekEditorialProvider:
             if draft.legal_claims and "legal_claims_require_factcheck" not in flags:
                 flags.append("legal_claims_require_factcheck")
 
+        decision = select_visual_decision(
+            topic=request.topic,
+            title=draft.title,
+            is_news=request.is_news,
+            public_resonance=request.public_resonance,
+            documentary_photo_verified=request.documentary_photo_verified,
+        )
         data["risk"] = risk
         data["risk_flags"] = flags
+        data["visual_template"] = decision.template
+        data["visual_category"] = decision.category
+        data["visual_source_url"] = request.documentary_photo_source_url
+        data["visual_source_name"] = request.documentary_photo_source_name
+        data["visual_provenance_verified"] = request.documentary_photo_verified
+        data["ai_generated"] = decision.ai_allowed
         return EditorialDraft.model_validate(data)
 
 
@@ -275,12 +312,92 @@ class EditorialAutopostService:
         self.text_provider = text_provider
         self.image_provider = image_provider
 
-    def generate_bundle(self, request: EditorialRequest) -> EditorialBundle:
-        draft = self.text_provider.generate(request)
-        image_bytes = self.image_provider.generate(draft.image_prompt)
+    @staticmethod
+    def _validate_public_https_url(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https" or not parsed.hostname:
+            raise RuntimeError("documentary photo URL must use HTTPS")
+        try:
+            addresses = socket.getaddrinfo(parsed.hostname, None, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as exc:
+            raise RuntimeError("documentary photo host cannot be resolved") from exc
+        if not addresses:
+            raise RuntimeError("documentary photo host has no resolvable address")
+        for address in addresses:
+            ip = ipaddress.ip_address(address[4][0])
+            if not ip.is_global:
+                raise RuntimeError("documentary photo URL resolves to a non-public address")
+
+    @classmethod
+    def _download_documentary_photo(cls, url: str) -> bytes:
+        cls._validate_public_https_url(url)
+        response = httpx.get(url, timeout=60.0, follow_redirects=True)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if not content_type.lower().startswith("image/"):
+            raise RuntimeError("documentary photo URL did not return an image")
+        content = response.content
+        if not content:
+            raise RuntimeError("documentary photo download returned empty bytes")
+        if len(content) > 20 * 1024 * 1024:
+            raise RuntimeError("documentary photo exceeds 20 MB limit")
+        return content
+
+    def _make_visual(self, request: EditorialRequest, draft: EditorialDraft) -> tuple[bytes, EditorialDraft]:
+        decision = select_visual_decision(
+            topic=request.topic,
+            title=draft.title,
+            is_news=request.is_news,
+            public_resonance=request.public_resonance,
+            documentary_photo_verified=request.documentary_photo_verified,
+        )
+
+        if decision.category is VisualCategory.DOCUMENTARY_PHOTO_BRANDED:
+            if not request.documentary_photo_url or not request.documentary_photo_verified:
+                raise RuntimeError("verified documentary visual requires a verified photo URL")
+            image_bytes = self._download_documentary_photo(request.documentary_photo_url)
+            ai_generated = False
+            prompt = ""
+        else:
+            prompt = decision.prompt_prefix + draft.image_prompt.strip()
+            image_bytes = self.image_provider.generate(prompt)
+            ai_generated = True
+
+        score, review_status = visual_preflight_score(
+            decision=decision,
+            image_present=bool(image_bytes),
+            image_size_bytes=len(image_bytes),
+            prompt=prompt,
+            source_url=request.documentary_photo_source_url,
+            provenance_verified=request.documentary_photo_verified,
+            ai_generated=ai_generated,
+        )
         if not image_bytes:
             raise RuntimeError("visual generation returned empty bytes")
+
+        updated = draft.model_copy(
+            update={
+                "visual_template": decision.template,
+                "visual_category": decision.category,
+                "visual_score": score,
+                "visual_review_status": review_status,
+                "visual_source_url": request.documentary_photo_source_url,
+                "visual_source_name": request.documentary_photo_source_name,
+                "visual_provenance_verified": request.documentary_photo_verified,
+                "ai_generated": ai_generated,
+            }
+        )
+        return image_bytes, EditorialDraft.model_validate(updated.model_dump())
+
+    def generate_bundle(self, request: EditorialRequest) -> EditorialBundle:
+        draft = self.text_provider.generate(request)
+        image_bytes, draft = self._make_visual(request, draft)
         return EditorialBundle(request=request, draft=draft, image_bytes=image_bytes)
+
+    def regenerate_visual(self, request: EditorialRequest, draft: EditorialDraft) -> tuple[bytes, EditorialDraft]:
+        if draft.visual_category is VisualCategory.DOCUMENTARY_PHOTO_BRANDED:
+            raise RuntimeError("verified documentary photo cannot be replaced with an AI visual")
+        return self._make_visual(request, draft)
 
 
 class EditorialQueueStore:
@@ -435,5 +552,13 @@ def editorial_response_payload(item: EditorialQueueItem) -> dict[str, Any]:
         "risk": item.draft.risk.value,
         "risk_flags": item.draft.risk_flags,
         "title": item.draft.title,
-        "requires_approval": item.draft.risk is not EditorialRisk.GREEN,
+        "visual_template": item.draft.visual_template.value,
+        "visual_category": item.draft.visual_category.value,
+        "visual_score": item.draft.visual_score,
+        "visual_review_status": item.draft.visual_review_status,
+        "requires_approval": (
+            item.draft.risk is not EditorialRisk.GREEN
+            or item.draft.visual_review_status != "approved"
+            or item.draft.visual_score < 80
+        ),
     }

@@ -27,7 +27,7 @@ class FakeTextProvider:
 
 class FakeImageProvider:
     def generate(self, image_prompt: str) -> bytes:
-        return b"jpg-bytes"
+        return b"x" * 12000
 
 
 class FakeBot:

@@ -28,7 +28,7 @@ class FakeTextProvider:
 class FakeImageProvider:
     def generate(self, image_prompt: str) -> bytes:
         assert image_prompt
-        return b"fake-image"
+        return b"x" * 12000
 
 
 def test_service_generates_post_and_visual() -> None:
@@ -41,7 +41,9 @@ def test_service_generates_post_and_visual() -> None:
     bundle = service.generate_bundle(request)
 
     assert bundle.draft.risk is EditorialRisk.GREEN
-    assert bundle.image_bytes == b"fake-image"
+    assert len(bundle.image_bytes) == 12000
+    assert bundle.draft.visual_score >= 80
+    assert bundle.draft.visual_review_status == "approved"
     assert "просто разговор" in bundle.draft.title
 
 

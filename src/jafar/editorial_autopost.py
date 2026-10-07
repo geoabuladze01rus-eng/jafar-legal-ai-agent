@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import re
+import socket
 import sqlite3
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -310,7 +313,24 @@ class EditorialAutopostService:
         self.image_provider = image_provider
 
     @staticmethod
-    def _download_documentary_photo(url: str) -> bytes:
+    def _validate_public_https_url(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https" or not parsed.hostname:
+            raise RuntimeError("documentary photo URL must use HTTPS")
+        try:
+            addresses = socket.getaddrinfo(parsed.hostname, None, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as exc:
+            raise RuntimeError("documentary photo host cannot be resolved") from exc
+        if not addresses:
+            raise RuntimeError("documentary photo host has no resolvable address")
+        for address in addresses:
+            ip = ipaddress.ip_address(address[4][0])
+            if not ip.is_global:
+                raise RuntimeError("documentary photo URL resolves to a non-public address")
+
+    @classmethod
+    def _download_documentary_photo(cls, url: str) -> bytes:
+        cls._validate_public_https_url(url)
         response = httpx.get(url, timeout=60.0, follow_redirects=True)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")

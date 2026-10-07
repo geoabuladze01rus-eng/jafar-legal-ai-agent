@@ -65,3 +65,14 @@ def test_verified_photo_requires_urls() -> None:
         assert "requires photo URL and source URL" in str(exc)
     else:
         raise AssertionError("verified photo without source URLs must be rejected")
+
+
+def test_documentary_photo_url_rejects_private_network() -> None:
+    from jafar.editorial_autopost import EditorialAutopostService
+
+    try:
+        EditorialAutopostService._validate_public_https_url("https://127.0.0.1/image.jpg")
+    except RuntimeError as exc:
+        assert "non-public address" in str(exc)
+    else:
+        raise AssertionError("private network URL must be rejected")

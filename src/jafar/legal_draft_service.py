@@ -45,12 +45,20 @@ class LegalDraftRequest(BaseModel):
     legal_basis: str = Field(default="", max_length=5_000)
     requested_action: str = Field(default="", max_length=5_000)
     source_document_ids: list[str] = Field(default_factory=list, max_length=MAX_SOURCE_DOCUMENTS)
+    review_record_ids: list[str] = Field(default_factory=list, max_length=12)
 
     @field_validator("source_document_ids")
     @classmethod
     def unique_document_ids(cls, ids: list[str]) -> list[str]:
         if len(set(ids)) != len(ids) or any(not value.strip() for value in ids):
             raise ValueError("Source document identifiers must be distinct and nonempty")
+        return ids
+
+    @field_validator("review_record_ids")
+    @classmethod
+    def unique_review_ids(cls, ids: list[str]) -> list[str]:
+        if len(set(ids)) != len(ids) or any(not v.strip() for v in ids):
+            raise ValueError("Review record identifiers must be distinct and nonempty")
         return ids
 
 
@@ -60,6 +68,21 @@ class LegalDraftEvidence(BaseModel):
     chunk_index: int
     citation: str
     excerpt: str
+
+
+class LegalDraftReviewSource(BaseModel):
+    filename: str
+    document_id: str
+    citation: str
+    quote: str
+
+
+class LegalDraftReviewNote(BaseModel):
+    record_id: str
+    candidate_id: str
+    note: str
+    left: LegalDraftReviewSource
+    right: LegalDraftReviewSource
 
 
 class LegalDraftPreview(BaseModel):
@@ -74,8 +97,13 @@ class LegalDraftPreview(BaseModel):
     legal_basis: str
     requested_action: str
     evidence: list[LegalDraftEvidence]
+    review_notes: list[LegalDraftReviewNote] = Field(default_factory=list)
     warnings: list[str]
     can_export: bool
+
+
+class LocalReviewLedger(Protocol):
+    def list(self, matter_id: str) -> list: ...
 
 
 class LocalCorpus(Protocol):
@@ -101,9 +129,13 @@ def _trim_excerpt(value: str) -> str:
 
 
 class LegalDraftService:
-    def __init__(self, matters: MatterRepository, corpus: LocalCorpus) -> None:
+    def __init__(
+        self, matters: MatterRepository, corpus: LocalCorpus,
+        review_ledger: LocalReviewLedger | None = None,
+    ) -> None:
         self.matters = matters
         self.corpus = corpus
+        self.review_ledger = review_ledger
 
     def preview(self, matter_id: str, request: LegalDraftRequest) -> LegalDraftPreview:
         matter: Matter | None = self.matters.get(matter_id)
@@ -121,7 +153,11 @@ class LegalDraftService:
 
         evidence: list[LegalDraftEvidence] = []
         seen: dict[str, int] = {}
-        for chunk in self.corpus.chunks(matter_id):
+        selected_chunks = [
+            chunk for chunk in self.corpus.chunks(matter_id)
+            if chunk.matter_id == matter_id and chunk.document_id in documents
+        ]
+        for chunk in selected_chunks:
             if chunk.document_id not in documents or not chunk.content.strip():
                 continue
             count = seen.get(chunk.document_id, 0)
@@ -138,7 +174,62 @@ class LegalDraftService:
                 )
             )
 
+        review_notes: list[LegalDraftReviewNote] = []
+        if request.review_record_ids:
+            if self.review_ledger is None:
+                raise DraftNotFound("Local reviewer decisions are unavailable")
+            # This list comes from an AES-GCM encrypted Matter-scoped ledger.
+            all_reviews = self.review_ledger.list(matter_id)
+            by_id = {record.record_id: record for record in all_reviews}
+            newest_by_candidate = {}
+            for record in all_reviews:
+                newest_by_candidate.setdefault(record.candidate_id, record)
+            chunks_by_citation = {chunk.citation: chunk for chunk in selected_chunks}
+            for record_id in request.review_record_ids:
+                record = by_id.get(record_id)
+                if record is None or record.matter_id != matter_id:
+                    raise DraftNotFound("Reviewer decision not found in selected Matter")
+                if (
+                    record.decision != "keep_for_work"
+                    or newest_by_candidate.get(record.candidate_id).record_id != record.record_id
+                ):
+                    raise ValueError("Reviewer note is dismissed, superseded or not marked for work")
+                sources: list[LegalDraftReviewSource] = []
+                for claim in (record.left, record.right):
+                    if claim.document_id not in documents:
+                        raise ValueError("Reviewer note refers to a document not selected for this draft")
+                    chunk = chunks_by_citation.get(claim.citation)
+                    if chunk is None or chunk.document_id != claim.document_id:
+                        raise ValueError("Reviewer note source fragment is unavailable")
+                    # The note can only be exported if its *original* exact quotation
+                    # still occurs in the current authenticated local source.
+                    if " ".join(claim.quote.split()) not in " ".join(chunk.content.split()):
+                        raise ValueError("Reviewer note quotation failed source verification")
+                    filename = Path(documents[claim.document_id].filename).name
+                    if claim.filename != filename:
+                        raise ValueError("Reviewer note source filename has changed")
+                    sources.append(
+                        LegalDraftReviewSource(
+                            filename=filename, document_id=claim.document_id,
+                            citation=claim.citation, quote=claim.quote,
+                        )
+                    )
+                review_notes.append(
+                    LegalDraftReviewNote(
+                        record_id=record.record_id,
+                        candidate_id=record.candidate_id,
+                        note=record.note,
+                        left=sources[0], right=sources[1],
+                    )
+                )
+
         warnings: list[str] = []
+        if review_notes:
+            warnings.append(
+                "Отобранные рабочие замечания помещены только в служебный лист "
+                "после разрыва страницы, не в текст процессуального документа. "
+                "Статус «оставить для работы» не подтверждает достоверность фактов."
+            )
         required = {
             "recipient": "Не указан адресат документа",
             "author": "Не указаны заявитель и его процессуальное положение",
@@ -179,6 +270,7 @@ class LegalDraftService:
             legal_basis=request.legal_basis.strip(),
             requested_action=request.requested_action.strip(),
             evidence=evidence,
+            review_notes=review_notes,
             warnings=warnings,
             can_export=not export_blockers,
         )
@@ -278,6 +370,21 @@ def render_legal_draft_docx(preview: LegalDraftPreview) -> bytes:
             f"Техническая ссылка: {item.citation}."
         )
         _paragraph(document, "Извлечённый текст: " + item.excerpt)
+    if preview.review_notes:
+        _paragraph(document, "РАБОЧИЕ ЗАМЕЧАНИЯ ЮРИСТА (ВНУТРЕННЯЯ ПРОВЕРКА)", centered=True)
+        _paragraph(
+            document, "Записи включены по выбору юриста и не удостоверяют "
+            "подлинность документов или факт противоречия. Этот раздел не "
+            "предназначен для подачи в суд."
+        )
+        for index, note in enumerate(preview.review_notes, 1):
+            _paragraph(document, f"Замечание № {index}. Позиция юриста: {note.note}")
+            for source in (note.left, note.right):
+                _paragraph(
+                    document, f"Документ: {source.filename}. "
+                    f"Техническая ссылка: {source.citation}. "
+                    f"Дословная выдержка: «{source.quote}»"
+                )
     for warning in preview.warnings:
         _paragraph(document, warning)
 

@@ -15,12 +15,42 @@ struct JusticiaDraftRequestDTO: Codable {
     let legalBasis: String
     let requestedAction: String
     let sourceDocumentIDs: [String]
+    let reviewRecordIDs: [String]
 
     enum CodingKeys: String, CodingKey {
         case kind, recipient, author, position
         case legalBasis = "legal_basis"
         case requestedAction = "requested_action"
         case sourceDocumentIDs = "source_document_ids"
+        case reviewRecordIDs = "review_record_ids"
+    }
+
+    init(
+        kind: String, recipient: String, author: String,
+        position: String, legalBasis: String, requestedAction: String,
+        sourceDocumentIDs: [String], reviewRecordIDs: [String] = []
+    ) {
+        self.kind = kind
+        self.recipient = recipient
+        self.author = author
+        self.position = position
+        self.legalBasis = legalBasis
+        self.requestedAction = requestedAction
+        self.sourceDocumentIDs = sourceDocumentIDs
+        self.reviewRecordIDs = reviewRecordIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try values.decode(String.self, forKey: .kind)
+        recipient = try values.decode(String.self, forKey: .recipient)
+        author = try values.decode(String.self, forKey: .author)
+        position = try values.decode(String.self, forKey: .position)
+        legalBasis = try values.decode(String.self, forKey: .legalBasis)
+        requestedAction = try values.decode(String.self, forKey: .requestedAction)
+        sourceDocumentIDs = try values.decode([String].self, forKey: .sourceDocumentIDs)
+        // Old encrypted drafts did not contain this field.
+        reviewRecordIDs = try values.decodeIfPresent([String].self, forKey: .reviewRecordIDs) ?? []
     }
 }
 
@@ -80,6 +110,8 @@ struct JusticiaDraftComposerView: View {
     @State private var legalBasis = ""
     @State private var requestedAction = ""
     @State private var selectedDocIDs: Set<String> = []
+    @State private var selectedReviewIDs: Set<String> = []
+    @State private var reviewerDecisions: [JusticiaClaimDecisionRecordDTO] = []
     @State private var preview: JusticiaDraftPreviewDTO?
     @State private var aiSuggestion: JusticiaDraftSuggestionDTO?
     @State private var isProcessing = false
@@ -98,7 +130,8 @@ struct JusticiaDraftComposerView: View {
         [
             workspace.selectedMatterID ?? "",
             kind, recipient, author, position, legalBasis, requestedAction,
-            selectedDocIDs.sorted().joined(separator: ",")
+            selectedDocIDs.sorted().joined(separator: ","),
+            selectedReviewIDs.sorted().joined(separator: ",")
         ].joined(separator: "\u{001F}")
     }
 
@@ -110,8 +143,17 @@ struct JusticiaDraftComposerView: View {
             position: position,
             legalBasis: legalBasis,
             requestedAction: requestedAction,
-            sourceDocumentIDs: selectedDocIDs.sorted()
+            sourceDocumentIDs: selectedDocIDs.sorted(),
+            reviewRecordIDs: selectedReviewIDs.sorted()
         )
+    }
+
+    private var latestWorkingDecisions: [JusticiaClaimDecisionRecordDTO] {
+        var seen = Set<String>()
+        return reviewerDecisions.filter { entry in
+            guard seen.insert(entry.candidateID).inserted else { return false }
+            return entry.decision == "keep_for_work"
+        }
     }
 
     var body: some View {
@@ -144,6 +186,7 @@ struct JusticiaDraftComposerView: View {
                         legalBasis = stored.legalBasis
                         requestedAction = stored.requestedAction
                         selectedDocIDs = Set(stored.sourceDocumentIDs)
+                        selectedReviewIDs = Set(stored.reviewRecordIDs)
                         preview = nil
                         aiSuggestion = nil
                     }
@@ -187,6 +230,43 @@ struct JusticiaDraftComposerView: View {
                             )
                             .disabled(document.state != "READY" && document.state != "ready")
                         }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Рабочие замечания из журнала проверок")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Они попадут только в служебный лист Word после разрыва страницы. "
+                         + "Не заменяют изложение позиции и не считаются установленными фактами.")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                    if latestWorkingDecisions.isEmpty {
+                        Text("Нет подходящих текущих решений «Оставить для работы».")
+                            .font(.caption)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    } else {
+                        ForEach(latestWorkingDecisions) { entry in
+                            Toggle(
+                                entry.note,
+                                isOn: Binding(
+                                    get: { selectedReviewIDs.contains(entry.recordID) },
+                                    set: { checked in
+                                        if checked { selectedReviewIDs.insert(entry.recordID) }
+                                        else { selectedReviewIDs.remove(entry.recordID) }
+                                    }
+                                )
+                            )
+                            .disabled(
+                                !selectedDocIDs.contains(entry.left.documentID) ||
+                                !selectedDocIDs.contains(entry.right.documentID)
+                            )
+                        }
+                    }
+                    if !selectedReviewIDs.isEmpty {
+                        Button("Сбросить выбранные замечания") {
+                            selectedReviewIDs.removeAll()
+                        }
+                        .buttonStyle(.borderless)
                     }
                 }
 
@@ -270,7 +350,12 @@ struct JusticiaDraftComposerView: View {
             aiSuggestion = nil
             message = nil
         }
+        .task(id: workspace.selectedMatterID) {
+            await loadReviewerDecisions()
+        }
         .onChange(of: workspace.selectedMatterID) { _, _ in
+            reviewerDecisions = []
+            selectedReviewIDs = []
             kind = "motion"
             recipient = ""
             author = ""
@@ -326,6 +411,21 @@ struct JusticiaDraftComposerView: View {
                 .foregroundStyle(result.canExport ? JusticiaTheme.green : JusticiaTheme.orange)
         }
         .padding(.top, 8)
+    }
+
+    @MainActor
+    private func loadReviewerDecisions() async {
+        guard let apiClient, let matterID = workspace.selectedMatterID else { return }
+        do {
+            let records = try await apiClient.listClaimReviewDecisions(matterID: matterID)
+            guard workspace.selectedMatterID == matterID else { return }
+            reviewerDecisions = records
+        } catch {
+            // Draft editing remains available even without a review register.
+            if workspace.selectedMatterID == matterID {
+                reviewerDecisions = []
+            }
+        }
     }
 
     @MainActor

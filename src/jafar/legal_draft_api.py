@@ -12,6 +12,7 @@ from .legal_draft_service import (
     LegalDraftRequest,
     LegalDraftService,
     LegalDraftPreview,
+    LocalReviewLedger,
     render_legal_draft_docx,
 )
 from .matter_repository import MatterRepository
@@ -31,6 +32,7 @@ def build_legal_draft_router(
     matters: MatterRepository,
     corpus: EncryptedDesktopCorpusStore | None,
     local_model: LocalDraftModel | None = None,
+    review_ledger: LocalReviewLedger | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["local-legal-drafts"])
 
@@ -39,7 +41,7 @@ def build_legal_draft_router(
         if corpus is None:
             raise HTTPException(status_code=404, detail="Local document composer unavailable")
         try:
-            return LegalDraftService(matters, corpus).preview(matter_id, request)
+            return LegalDraftService(matters, corpus, review_ledger).preview(matter_id, request)
         except DraftNotFound as exc:
             raise HTTPException(status_code=404, detail=exc.detail) from exc
         except (DesktopStorageError, OSError, ValueError) as exc:

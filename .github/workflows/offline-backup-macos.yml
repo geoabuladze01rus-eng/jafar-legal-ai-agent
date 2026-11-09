@@ -1,0 +1,32 @@
+name: JAFAR Offline Backup macOS Smoke
+
+on:
+  pull_request:
+    branches:
+      - integration/jafar-2.1-canonical
+      - main
+    paths:
+      - src/jafar/desktop_backup.py
+      - tests/test_desktop_backup.py
+      - .github/workflows/offline-backup-macos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-backup:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install JAFAR and test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Check offline backup CLI
+        run: python -m jafar.desktop_backup --help
+      - name: Test Mac filesystem, flock, encrypted backup and non-destructive restore
+        run: python -m pytest -q tests/test_desktop_backup.py

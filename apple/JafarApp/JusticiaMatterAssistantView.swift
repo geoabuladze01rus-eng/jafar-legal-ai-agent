@@ -258,7 +258,11 @@ struct JusticiaMatterAssistantView: View {
                             Text(documentName(for: parsed.documentID))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(JusticiaTheme.ink)
-                            Text("Страница \(parsed.page) · фрагмент \(parsed.chunk)")
+                            Text(
+                                hasPhysicalPDFPage(parsed.documentID, parsed.page)
+                                ? "Страница \(parsed.page) · фрагмент \(parsed.chunk)"
+                                : "Страница не установлена · фрагмент \(parsed.chunk)"
+                            )
                                 .font(.caption)
                                 .foregroundStyle(JusticiaTheme.secondaryInk)
                             Text(citation)
@@ -429,7 +433,9 @@ struct JusticiaMatterAssistantView: View {
         } else {
             for citation in response.citations {
                 if let parsed = parseCitation(citation) {
-                    lines.append("— \(documentName(for: parsed.documentID)), стр. \(parsed.page), фрагмент \(parsed.chunk) [\(citation)]")
+                    let pageLabel = hasPhysicalPDFPage(parsed.documentID, parsed.page)
+                        ? "стр. \(parsed.page)" : "страница не установлена"
+                    lines.append("— \(documentName(for: parsed.documentID)), \(pageLabel), фрагмент \(parsed.chunk) [\(citation)]")
                 } else {
                     lines.append("— \(citation)")
                 }
@@ -460,6 +466,11 @@ struct JusticiaMatterAssistantView: View {
         ]
 
         return lines.joined(separator: "\n")
+    }
+
+    private func hasPhysicalPDFPage(_ documentID: String, _ page: String) -> Bool {
+        guard page != "0", Int(page) != nil else { return false }
+        return documents.first(where: { $0.documentId == documentID })?.pageProvenance == "pdf_physical"
     }
 
     private func parseCitation(_ citation: String) -> (documentID: String, page: String, chunk: String)? {

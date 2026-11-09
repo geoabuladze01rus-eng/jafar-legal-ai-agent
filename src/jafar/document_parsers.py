@@ -9,6 +9,14 @@ from typing import Protocol
 class DocumentParserError(ValueError):
     pass
 
+@dataclass(frozen=True, slots=True)
+class ParsedPage:
+    """A physical PDF page number, not a court case-file leaf number."""
+
+    page_number: int
+    text: str
+
+
 
 class DocumentParser(Protocol):
     def supports(self, filename: str, media_type: str | None = None) -> bool: ...
@@ -34,16 +42,24 @@ class NativeDocumentParser:
         raise DocumentParserError(f"Unsupported document format: {extension or 'unknown'}")
 
     @staticmethod
-    def _extract_pdf(content: bytes) -> str:
+    def _extract_pdf_pages(content: bytes) -> tuple[ParsedPage, ...]:
+        """Read the physical page order from a local PDF without OCR."""
         try:
             from pypdf import PdfReader
         except ImportError as exc:
             raise DocumentParserError("PDF support is not installed") from exc
         try:
             reader = PdfReader(BytesIO(content))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            return tuple(
+                ParsedPage(page_number=index, text=page.extract_text() or "")
+                for index, page in enumerate(reader.pages, start=1)
+            )
         except Exception as exc:
             raise DocumentParserError("Unable to read PDF document") from exc
+
+    @staticmethod
+    def _extract_pdf(content: bytes) -> str:
+        return "\n".join(page.text for page in NativeDocumentParser._extract_pdf_pages(content))
 
     @staticmethod
     def _extract_docx(content: bytes) -> str:

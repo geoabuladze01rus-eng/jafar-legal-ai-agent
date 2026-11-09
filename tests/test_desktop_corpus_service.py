@@ -15,6 +15,7 @@ def test_explicit_import_builds_matter_scoped_local_citations(tmp_path):
     )
     result = store.retrieve("matter-1", "ARTICLE 10")
     assert result.citations
-    assert result.citations[0].startswith(f"document:{document.document_id}:page:1:chunk:")
+    assert result.citations[0].startswith(f"document:{document.document_id}:page:0:chunk:")
+    assert document.provenance[0]["page_kind"] == "unknown"
     assert store.retrieve("other-matter", "ARTICLE 10").results == ()
     store.close()

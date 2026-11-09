@@ -75,6 +75,7 @@ struct JusticiaDocumentDTO: Codable, Identifiable, Hashable {
     let byteCount: Int
     let state: String
     let citations: [String]
+    let pageProvenance: String?
 
     var id: String { documentId }
 
@@ -87,6 +88,7 @@ struct JusticiaDocumentDTO: Codable, Identifiable, Hashable {
         case byteCount = "byte_count"
         case state
         case citations
+        case pageProvenance = "page_provenance"
     }
 
     var displayState: String {

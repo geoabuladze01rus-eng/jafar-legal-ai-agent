@@ -345,6 +345,17 @@ struct JusticiaAPIClient {
         )
     }
 
+    func suggestDraft(
+        matterID: String,
+        draft: JusticiaDraftRequestDTO
+    ) async throws -> JusticiaDraftSuggestionDTO {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts/suggest",
+            method: "POST",
+            body: try JSONEncoder().encode(draft)
+        )
+    }
+
     func exportDraft(
         matterID: String,
         draft: JusticiaDraftRequestDTO

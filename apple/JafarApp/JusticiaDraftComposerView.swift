@@ -53,6 +53,20 @@ struct JusticiaDraftPreviewDTO: Decodable {
     }
 }
 
+struct JusticiaDraftSuggestionDTO: Decodable {
+    let proposedPosition: String
+    let citations: [String]
+    let pointsToVerify: [String]
+    let localOnly: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case proposedPosition = "proposed_position"
+        case citations
+        case pointsToVerify = "points_to_verify"
+        case localOnly = "local_only"
+    }
+}
+
 /// Working draft: user-entered facts and legal grounds, source-verified excerpts.
 /// No model-generated allegations or unverifiable case-file page references.
 struct JusticiaDraftComposerView: View {
@@ -67,6 +81,7 @@ struct JusticiaDraftComposerView: View {
     @State private var requestedAction = ""
     @State private var selectedDocIDs: Set<String> = []
     @State private var preview: JusticiaDraftPreviewDTO?
+    @State private var aiSuggestion: JusticiaDraftSuggestionDTO?
     @State private var isProcessing = false
     @State private var message: String?
     @State private var errorMessage: String?
@@ -166,6 +181,17 @@ struct JusticiaDraftComposerView: View {
                     .disabled(isProcessing)
 
                     Button {
+                        Task { await suggestPosition() }
+                    } label: {
+                        Label("Предложить текст локальным ИИ", systemImage: "sparkles")
+                    }
+                    .disabled(
+                        isProcessing || selectedDocIDs.isEmpty ||
+                        (position.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                         requestedAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    )
+
+                    Button {
                         Task { await exportWord() }
                     } label: {
                         Label("Сохранить Word", systemImage: "square.and.arrow.down")
@@ -191,6 +217,28 @@ struct JusticiaDraftComposerView: View {
                 if let preview {
                     previewSection(preview)
                 }
+                if let aiSuggestion {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Предложение локального ИИ — требует проверки")
+                            .font(.headline)
+                        Text(aiSuggestion.proposedPosition)
+                            .font(.body)
+                            .textSelection(.enabled)
+                        ForEach(aiSuggestion.pointsToVerify, id: \.self) { point in
+                            Label(point, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                        }
+                        Text("Ссылок на выбранные фрагменты: \(aiSuggestion.citations.count)")
+                            .font(.caption)
+                        Button("Вставить предложенную позицию для редактирования") {
+                            position = aiSuggestion.proposedPosition
+                            aiSuggestion = nil
+                            preview = nil
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.top, 12)
+                }
             } else {
                 Text("Выберите дело и запустите локальный сервис «Юстиции».")
                     .font(.subheadline)
@@ -201,6 +249,7 @@ struct JusticiaDraftComposerView: View {
         .justiciaCard()
         .onChange(of: inputSignature) { _, _ in
             preview = nil
+            aiSuggestion = nil
             message = nil
         }
     }
@@ -257,6 +306,24 @@ struct JusticiaDraftComposerView: View {
         defer { isProcessing = false }
         do {
             preview = try await apiClient.previewDraft(matterID: matterID, draft: draft)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func suggestPosition() async {
+        guard let apiClient, let matterID = workspace.selectedMatterID else { return }
+        let signature = inputSignature
+        isProcessing = true
+        aiSuggestion = nil
+        errorMessage = nil
+        defer { isProcessing = false }
+        do {
+            let suggestion = try await apiClient.suggestDraft(matterID: matterID, draft: draft)
+            if signature == inputSignature {
+                aiSuggestion = suggestion
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

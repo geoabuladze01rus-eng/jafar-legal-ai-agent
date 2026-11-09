@@ -53,3 +53,28 @@ Preview returns warnings, evidence, can_export. Export returns an unsigned DOCX 
 Run Ruff, compileall, targeted pytest, full pytest, then Apple build and packaging workflows. On a clean Apple Silicon Mac, test importing synthetic documents, previewing, selecting a destination, opening the saved file in Word, changing the selected Matter and confirming that foreign-Matter documents never appear.
 
 This is a beta integration block, not a fully autonomous legal pleading generator or commercially ready release.
+
+
+## Optional local AI drafting suggestions
+
+The local preview may now request a **proposal** from the explicitly configured Ollama
+provider via POST /v1/matters/{matter_id}/drafts/suggest. This action is disabled
+without a running local model and never switches to OpenAI/Gemini or a remote URL.
+It accepts the same bounded, user-selected Matter documents as the Word draft.
+
+The Ollama result must be strict JSON with proposed_position, citations and
+points_to_verify. Every cited token must belong to a verified excerpt in the
+selected Matter, and the model's own runtime metadata must confirm local
+execution. Invalid JSON, unauthorized citations, an empty citation list or
+unavailable Ollama fail closed. The model cannot write to files, add documents,
+send messages or submit a pleading.
+
+The suggested position is displayed for manual review. The lawyer must explicitly
+press "Вставить предложенную позицию для редактирования" to copy it into the draft
+editor, and must re-run preview before Word export. Citation membership does not
+establish that a natural-language claim is entailed by the source. The mandatory
+source-review warning remains visible. AI does not populate legal provisions
+or decide procedural standing.
+
+Test with synthetic documents only. Verify wrong-Matter citations are rejected,
+missing Ollama returns an unavailable error and no cloud fallback occurs.

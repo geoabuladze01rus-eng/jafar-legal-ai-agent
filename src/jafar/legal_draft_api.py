@@ -15,6 +15,13 @@ from .legal_draft_service import (
     render_legal_draft_docx,
 )
 from .matter_repository import MatterRepository
+from .legal_draft_suggestions import (
+    DraftSuggestion,
+    DraftSuggestionError,
+    DraftSuggestionUnavailable,
+    LocalDraftModel,
+    suggest_draft_position,
+)
 
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -23,6 +30,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 def build_legal_draft_router(
     matters: MatterRepository,
     corpus: EncryptedDesktopCorpusStore | None,
+    local_model: LocalDraftModel | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["local-legal-drafts"])
 
@@ -67,5 +75,26 @@ def build_legal_draft_router(
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    @router.post(
+        "/v1/matters/{matter_id}/drafts/suggest",
+        response_model=DraftSuggestion,
+    )
+    def draft_suggest(matter_id: str, request: LegalDraftRequest) -> DraftSuggestion:
+        checked = preview(matter_id, request)
+        try:
+            return suggest_draft_position(
+                draft=request,
+                preview=checked,
+                model=local_model,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Select documents and specify the purpose") from exc
+        except DraftSuggestionUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Local Ollama is unavailable") from exc
+        except DraftSuggestionError as exc:
+            raise HTTPException(
+                status_code=502, detail="Local suggestion failed source validation"
+            ) from exc
 
     return router

@@ -380,6 +380,94 @@ struct JusticiaAPIClient {
         return data
     }
 
+    func listSavedDrafts(matterID: String) async throws -> [JusticiaSavedDraftSummaryDTO] {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts",
+            method: "GET",
+            body: nil
+        )
+    }
+
+    func createSavedDraft(
+        matterID: String,
+        draft: JusticiaDraftRequestDTO
+    ) async throws -> JusticiaSavedDraftVersionDTO {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts",
+            method: "POST",
+            body: try JSONEncoder().encode(["draft": draft])
+        )
+    }
+
+    func readSavedDraft(
+        matterID: String,
+        draftID: String
+    ) async throws -> JusticiaSavedDraftVersionDTO {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts/\(draftID)",
+            method: "GET",
+            body: nil
+        )
+    }
+
+    func updateSavedDraft(
+        matterID: String,
+        draftID: String,
+        expectedRevision: Int,
+        draft: JusticiaDraftRequestDTO
+    ) async throws -> JusticiaSavedDraftVersionDTO {
+        let payload = JusticiaSavedDraftUpdateDTO(
+            expectedRevision: expectedRevision,
+            draft: draft
+        )
+        return try await request(
+            path: "/v1/matters/\(matterID)/drafts/\(draftID)",
+            method: "PUT",
+            body: try JSONEncoder().encode(payload)
+        )
+    }
+
+    func savedDraftRevisions(
+        matterID: String,
+        draftID: String
+    ) async throws -> [JusticiaSavedDraftRevisionInfoDTO] {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts/\(draftID)/revisions",
+            method: "GET",
+            body: nil
+        )
+    }
+
+    func readSavedDraftRevision(
+        matterID: String,
+        draftID: String,
+        revision: Int
+    ) async throws -> JusticiaSavedDraftVersionDTO {
+        try await request(
+            path: "/v1/matters/\(matterID)/drafts/\(draftID)/revisions/\(revision)",
+            method: "GET",
+            body: nil
+        )
+    }
+
+    func restoreSavedDraftRevision(
+        matterID: String,
+        draftID: String,
+        expectedRevision: Int,
+        sourceRevision: Int
+    ) async throws -> JusticiaSavedDraftVersionDTO {
+        let payload = JusticiaSavedDraftRestoreDTO(
+            expectedRevision: expectedRevision,
+            sourceRevision: sourceRevision,
+            approved: true
+        )
+        return try await request(
+            path: "/v1/matters/\(matterID)/drafts/\(draftID)/restore",
+            method: "POST",
+            body: try JSONEncoder().encode(payload)
+        )
+    }
+
     private func request<Response: Decodable>(
         path: String,
         method: String,

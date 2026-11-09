@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 import AppKit
 #endif
 
-struct JusticiaDraftRequestDTO: Encodable {
+struct JusticiaDraftRequestDTO: Codable {
     let kind: String
     let recipient: String
     let author: String
@@ -131,6 +131,24 @@ struct JusticiaDraftComposerView: View {
                 Text("Дело: " + matter.title)
                     .font(.subheadline.weight(.medium))
 
+                JusticiaDraftHistoryPanel(
+                    matterID: workspace.selectedMatterID,
+                    apiClient: apiClient,
+                    draft: draft,
+                    inputSignature: inputSignature,
+                    onLoad: { stored in
+                        kind = stored.kind
+                        recipient = stored.recipient
+                        author = stored.author
+                        position = stored.position
+                        legalBasis = stored.legalBasis
+                        requestedAction = stored.requestedAction
+                        selectedDocIDs = Set(stored.sourceDocumentIDs)
+                        preview = nil
+                        aiSuggestion = nil
+                    }
+                )
+
                 Picker("Вид документа", selection: $kind) {
                     ForEach(types.indices, id: \.self) { index in
                         Text(types[index].1).tag(types[index].0)
@@ -250,6 +268,19 @@ struct JusticiaDraftComposerView: View {
         .onChange(of: inputSignature) { _, _ in
             preview = nil
             aiSuggestion = nil
+            message = nil
+        }
+        .onChange(of: workspace.selectedMatterID) { _, _ in
+            kind = "motion"
+            recipient = ""
+            author = ""
+            position = ""
+            legalBasis = ""
+            requestedAction = ""
+            selectedDocIDs = []
+            preview = nil
+            aiSuggestion = nil
+            errorMessage = nil
             message = nil
         }
     }

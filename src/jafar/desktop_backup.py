@@ -17,7 +17,7 @@ import re
 import sqlite3
 import tempfile
 import zipfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -130,7 +130,7 @@ def _sqlite_check(path: Path) -> None:
     _ensure_real_file(path)
     uri = "file:" + quote(str(path.resolve(strict=True)), safe="/") + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=5)) as db:
             check = db.execute("PRAGMA quick_check").fetchall()
             if check != [("ok",)]:
                 raise BackupError("SQLite snapshot failed integrity check")
@@ -142,8 +142,8 @@ def _snapshot_database(source: Path, target: Path) -> None:
     _ensure_real_file(source)
     src_uri = "file:" + quote(str(source.resolve(strict=True)), safe="/") + "?mode=ro"
     try:
-        with sqlite3.connect(src_uri, uri=True, timeout=5) as db:
-            with sqlite3.connect(target) as snapshot:
+        with closing(sqlite3.connect(src_uri, uri=True, timeout=5)) as db:
+            with closing(sqlite3.connect(target)) as snapshot:
                 db.backup(snapshot)
         os.chmod(target, 0o600)
         _sqlite_check(target)
@@ -154,7 +154,7 @@ def _snapshot_database(source: Path, target: Path) -> None:
 def _listed_originals(corpus_snapshot: Path) -> list[str]:
     uri = "file:" + quote(str(corpus_snapshot.resolve(strict=True)), safe="/") + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True) as db:
+        with closing(sqlite3.connect(uri, uri=True)) as db:
             rows = db.execute("SELECT id FROM documents ORDER BY id").fetchall()
     except sqlite3.DatabaseError as exc:
         raise BackupError("Cannot inspect encrypted corpus index") from exc
@@ -209,6 +209,8 @@ def create_backup(home: Path, destination: Path, passphrase: str) -> dict[str, o
     if len(passphrase) < 16:
         raise BackupError("Use an independent backup passphrase of at least 16 characters")
     with _offline_lock(home):
+        if (home / "documents").is_symlink():
+            raise BackupError("Encrypted document directory cannot be a symlink")
         with tempfile.TemporaryDirectory(prefix=".jafar-backup-work-", dir=destination.parent) as tmp:
             work = Path(tmp)
             os.chmod(work, 0o700)
@@ -297,6 +299,8 @@ def _load_into_temp(archive_file: Path, passphrase: str, target: Path) -> dict[s
             raise BackupError("Unexpected or duplicated archive member")
         if HEADER not in all_members or MANIFEST not in all_members:
             raise BackupError("Backup header or manifest is missing")
+        if any(info.compress_type != zipfile.ZIP_STORED for info in archive.infolist()):
+            raise BackupError("Unsupported archive compression mode")
         header_info = archive.getinfo(HEADER)
         manifest_info = archive.getinfo(MANIFEST)
         if header_info.file_size > 8192 or manifest_info.file_size > MAX_MANIFEST_SIZE + 32:

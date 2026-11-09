@@ -217,22 +217,22 @@ struct JusticiaDraftComposerView: View {
                 if let preview {
                     previewSection(preview)
                 }
-                if let aiSuggestion {
+                if let suggestion = aiSuggestion {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Предложение локального ИИ — требует проверки")
                             .font(.headline)
-                        Text(aiSuggestion.proposedPosition)
+                        Text(suggestion.proposedPosition)
                             .font(.body)
                             .textSelection(.enabled)
-                        ForEach(aiSuggestion.pointsToVerify, id: \.self) { point in
+                        ForEach(suggestion.pointsToVerify, id: \.self) { point in
                             Label(point, systemImage: "exclamationmark.triangle")
                                 .font(.caption)
                         }
-                        Text("Ссылок на выбранные фрагменты: \(aiSuggestion.citations.count)")
+                        Text("Ссылок на выбранные фрагменты: \(suggestion.citations.count)")
                             .font(.caption)
                         Button("Вставить предложенную позицию для редактирования") {
-                            position = aiSuggestion.proposedPosition
-                            aiSuggestion = nil
+                            position = suggestion.proposedPosition
+                            self.aiSuggestion = nil
                             preview = nil
                         }
                         .buttonStyle(.bordered)

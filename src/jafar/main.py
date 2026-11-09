@@ -26,6 +26,7 @@ from .google_workspace_http import (
 )
 from .legal_analysis import LegalAnalyzer
 from .legal_entity_api import router as legal_entity_router
+from .legal_draft_api import build_legal_draft_router
 from .legal_models import AnalysisRequest, AnalysisResponse, Matter
 from .legal_research_api import router as legal_research_router
 from .legal_research_runtime import build_legal_research_service_from_env
@@ -88,6 +89,7 @@ desktop_corpus_store = build_desktop_corpus_from_env()
 desktop_corpus_service = (
     DesktopCorpusService(desktop_corpus_store) if desktop_corpus_store is not None else None
 )
+app.include_router(build_legal_draft_router(matter_store, desktop_corpus_store))
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, routed_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)

@@ -300,6 +300,7 @@ struct JusticiaRootView: View {
             VStack(alignment: .leading, spacing: 20) {
                 JusticiaLiveAnalyticsView(workspace: workspace)
                 JusticiaEvidenceMatrixView(workspace: workspace, apiClient: apiClient)
+                JusticiaClaimReviewView(workspace: workspace, apiClient: apiClient)
             }
         case .deadlines:
             JusticiaLiveDeadlinesView(workspace: workspace)

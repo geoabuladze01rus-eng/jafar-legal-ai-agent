@@ -301,7 +301,10 @@ struct JusticiaRootView: View {
         case .deadlines:
             JusticiaLiveDeadlinesView(workspace: workspace)
         case .templates:
-            JusticiaTemplatesWorkspaceView()
+            VStack(alignment: .leading, spacing: 20) {
+                JusticiaDraftComposerView(workspace: workspace, apiClient: apiClient)
+                JusticiaTemplatesWorkspaceView()
+            }
         case .publishing:
             JusticiaPublishingWorkspaceView()
         case .transcription:

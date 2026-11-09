@@ -218,3 +218,29 @@ def test_swift_history_has_protected_api_and_no_plaintext_userdefaults():
     assert "UserDefaults.standard.set" not in panel
     assert "Task.sleep(nanoseconds:" in panel
     assert "self.matterID == matterID" in panel
+
+
+
+def test_replacing_ciphertext_with_another_matters_version_is_rejected(tmp_path):
+    store = build_store(tmp_path)
+    first = store.create("case-a", request("Данные A"))
+    second = store.create("case-b", request("Данные B"))
+    store.close()
+
+    connection = sqlite3.connect(tmp_path / "drafts.sqlite3")
+    encrypted = connection.execute(
+        "SELECT nonce,payload FROM draft_revisions WHERE draft_id=? AND revision=1",
+        (second.draft_id,),
+    ).fetchone()
+    connection.execute(
+        "UPDATE draft_revisions SET nonce=?,payload=? WHERE draft_id=? AND revision=1",
+        (encrypted[0], encrypted[1], first.draft_id),
+    )
+    connection.commit()
+    connection.close()
+
+    reopened = build_store(tmp_path)
+    with pytest.raises(DesktopStorageError):
+        reopened.get("case-a", first.draft_id)
+    assert reopened.get("case-b", second.draft_id).draft.position == "Данные B"
+    reopened.close()

@@ -540,6 +540,57 @@ struct JusticiaAPIClient {
         return data
     }
 
+    func listClaimReviewDecisions(
+        matterID: String
+    ) async throws -> [JusticiaClaimDecisionRecordDTO] {
+        try await request(
+            path: "/v1/matters/\(matterID)/claims/decisions",
+            method: "GET",
+            body: nil
+        )
+    }
+
+    func saveClaimReviewDecision(
+        matterID: String,
+        report: JusticiaClaimReviewReportDTO,
+        candidateID: String,
+        decision: String,
+        note: String
+    ) async throws -> JusticiaClaimDecisionRecordDTO {
+        let payload = JusticiaSaveClaimDecisionDTO(
+            report: report,
+            decision: JusticiaClaimDecisionInputDTO(
+                candidateID: candidateID,
+                decision: decision,
+                note: note
+            )
+        )
+        return try await request(
+            path: "/v1/matters/\(matterID)/claims/decisions",
+            method: "POST",
+            body: try JSONEncoder().encode(payload)
+        )
+    }
+
+    func exportClaimReviewDecisions(matterID: String) async throws -> Data {
+        var urlRequest = URLRequest(
+            url: baseURL.appending(path: "/v1/matters/\(matterID)/claims/decisions/docx")
+        )
+        urlRequest.httpMethod = "GET"
+        urlRequest.timeoutInterval = 60
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            forHTTPHeaderField: "Accept"
+        )
+        let (data, response) = try await session.data(for: urlRequest)
+        try validate(response: response, data: data)
+        guard data.starts(with: [0x50, 0x4b]) else {
+            throw JusticiaAPIError.invalidPayload
+        }
+        return data
+    }
+
     private func request<Response: Decodable>(
         path: String,
         method: String,

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from jafar.api_auth import api_auth_middleware
 from jafar.claim_review import (
-    ClaimReviewInvalid, ClaimReviewNotFound, ClaimReviewReport,
+    ClaimReviewInvalid, ClaimReviewNotFound,
     ClaimReviewRequest, ClaimReviewService, ClaimReviewTooLarge,
     ClaimReviewUnavailable, render_claim_review_docx,
 )

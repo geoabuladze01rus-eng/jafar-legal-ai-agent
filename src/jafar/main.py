@@ -17,6 +17,7 @@ from .desktop_corpus_service import DesktopCorpusService
 from .draft_history_api import build_draft_history_router
 from .draft_history_runtime import build_draft_history_from_env
 from .evidence_matrix_api import build_evidence_matrix_router
+from .claim_review_api import build_claim_review_router
 from .domains import DocumentTask, MatterType
 from .google_oauth_api import resolve_google_oauth_subject, router as google_oauth_router
 from .google_workspace import NaturalLanguageWorkspaceRouter
@@ -96,6 +97,7 @@ app.include_router(build_legal_draft_router(matter_store, desktop_corpus_store, 
 desktop_draft_history = build_draft_history_from_env()
 app.include_router(build_draft_history_router(matter_store, desktop_draft_history))
 app.include_router(build_evidence_matrix_router(matter_store, desktop_corpus_store))
+app.include_router(build_claim_review_router(matter_store, desktop_corpus_store, ollama_analyzer))
 document_extractor = DocumentExtractor()
 document_workflow = DocumentWorkflow(matter_store, routed_analyzer)
 command_runtime = JafarCommandRuntime(matter_store)

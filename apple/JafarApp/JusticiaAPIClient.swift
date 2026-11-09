@@ -505,6 +505,41 @@ struct JusticiaAPIClient {
         return data
     }
 
+    func inspectClaimDifferences(
+        matterID: String,
+        request: JusticiaClaimReviewRequestDTO
+    ) async throws -> JusticiaClaimReviewReportDTO {
+        try await self.request(
+            path: "/v1/matters/\(matterID)/claims/inspect",
+            method: "POST",
+            body: try JSONEncoder().encode(request)
+        )
+    }
+
+    func exportClaimReview(
+        matterID: String,
+        report: JusticiaClaimReviewReportDTO
+    ) async throws -> Data {
+        var urlRequest = URLRequest(
+            url: baseURL.appending(path: "/v1/matters/\(matterID)/claims/docx")
+        )
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 90
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            forHTTPHeaderField: "Accept"
+        )
+        urlRequest.httpBody = try JSONEncoder().encode(report)
+        let (data, response) = try await session.data(for: urlRequest)
+        try validate(response: response, data: data)
+        guard data.starts(with: [0x50, 0x4b]) else {
+            throw JusticiaAPIError.invalidPayload
+        }
+        return data
+    }
+
     private func request<Response: Decodable>(
         path: String,
         method: String,

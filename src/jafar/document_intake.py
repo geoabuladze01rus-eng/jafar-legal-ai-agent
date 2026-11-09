@@ -8,6 +8,7 @@ from .document_parsers import (
     DocumentParser,
     DocumentParserError,
     NativeDocumentParser,
+    ParsedPage,
     build_document_parser,
 )
 
@@ -17,6 +18,7 @@ class ExtractedDocument:
     filename: str
     media_type: str
     text: str
+    pages: tuple[ParsedPage, ...] = ()
 
     @property
     def fingerprint(self) -> str:
@@ -59,8 +61,15 @@ class DocumentExtractor:
         extension = Path(filename).suffix.lower()
         if not self.parser.supports(filename, media_type):
             raise DocumentExtractionError(f"Unsupported document format: {extension or 'unknown'}")
+        pages: tuple[ParsedPage, ...] = ()
         try:
-            text = self.parser.parse(filename, content, media_type)
+            if extension == ".pdf" and isinstance(self.parser, NativeDocumentParser):
+                # One native parse, preserving real physical PDF page boundaries.
+                pages = self.parser._extract_pdf_pages(content)
+                text = "\n".join(page.text for page in pages)
+            else:
+                # Pluggable parsers that cannot prove physical pages return no pages.
+                text = self.parser.parse(filename, content, media_type)
         except DocumentParserError as exc:
             raise DocumentExtractionError(str(exc)) from exc
         text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
@@ -70,6 +79,7 @@ class DocumentExtractor:
             filename=filename,
             media_type=media_type or "application/octet-stream",
             text=text,
+            pages=pages,
         )
 
     @staticmethod

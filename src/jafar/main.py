@@ -149,6 +149,7 @@ class DesktopCorpusDocumentResponse(BaseModel):
     byte_count: int
     state: str
     citations: list[str]
+    page_provenance: str = "unknown"
 
 
 class AnalyzeStoredDocumentRequest(BaseModel):
@@ -398,6 +399,16 @@ async def analyze_document(
     )
 
 
+def _page_provenance(document) -> str:
+    """Only native physical PDF page metadata may be presented as a page number."""
+    if document.provenance and all(
+        record.get("page_kind") == "pdf_physical"
+        for record in document.provenance
+    ):
+        return "pdf_physical"
+    return "unknown"
+
+
 @app.post(
     "/v1/matters/{matter_id}/documents/import",
     response_model=DesktopCorpusDocumentResponse,
@@ -417,6 +428,7 @@ async def import_desktop_document(matter_id: str, file: UploadFile = File(...)) 
         document = desktop_corpus_service.import_document(
             matter_id=matter_id, filename=file.filename or "document",
             media_type=extracted.media_type, original_bytes=content, extracted_text=extracted.text,
+            pages=extracted.pages,
         )
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=400, detail="Document could not be extracted safely") from exc
@@ -424,7 +436,7 @@ async def import_desktop_document(matter_id: str, file: UploadFile = File(...)) 
     return DesktopCorpusDocumentResponse(
         document_id=document.document_id, matter_id=document.matter_id, filename=document.filename,
         media_type=document.media_type, fingerprint=document.fingerprint, byte_count=document.byte_count,
-        state=document.state, citations=citations,
+        state=document.state, citations=citations, page_provenance=_page_provenance(document),
     )
 
 
@@ -440,7 +452,7 @@ def list_desktop_documents(matter_id: str) -> list[DesktopCorpusDocumentResponse
         response.append(DesktopCorpusDocumentResponse(
             document_id=document.document_id, matter_id=document.matter_id, filename=document.filename,
             media_type=document.media_type, fingerprint=document.fingerprint, byte_count=document.byte_count,
-            state=document.state, citations=citations,
+            state=document.state, citations=citations, page_provenance=_page_provenance(document),
         ))
     return response
 

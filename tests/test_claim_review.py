@@ -247,7 +247,7 @@ def test_docx_export_revalidates_quotes_and_fingerprints_without_second_ai_call(
     blob = render_claim_review_docx(validated)
     assert blob.startswith(b"PK")
     doc = Document(BytesIO(blob))
-    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs).replace("\u00a0", " ")
     assert YES in text and NO in text
     assert "Чужой источник" not in text
     assert "страница не установлена" in text
@@ -337,6 +337,6 @@ def test_swift_workflow_requires_manual_review_and_scoped_sources():
     assert "/v1/matters/\\(matterID)/claims/inspect" in api
     assert "/v1/matters/\\(matterID)/claims/docx" in api
     assert "selectedIDs.sorted()" in view
-    assert "signature == currentSignature" in view
+    assert "currentSignature == signature" in view
     assert "NSSavePanel()" in view
     assert "не установленные противоречия" in view

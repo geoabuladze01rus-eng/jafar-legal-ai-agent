@@ -190,4 +190,4 @@ def test_swift_suggestions_require_explicit_insert_and_run_on_current_matter():
     assert "Предложение локального ИИ" in view
     assert "Вставить предложенную позицию для редактирования" in view
     assert "signature == inputSignature" in view
-    assert "position = aiSuggestion.proposedPosition" in view
+    assert "position = suggestion.proposedPosition" in view

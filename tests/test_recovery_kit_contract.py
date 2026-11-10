@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 TOOL = (ROOT / "scripts/jafar_key_recovery.swift").read_text(encoding="utf-8")
 KEY = (ROOT / "apple/JafarApp/DesktopStorageKey.swift").read_text(encoding="utf-8")
+BACKEND = (ROOT / "apple/JafarApp/BackendRuntime.swift").read_text(encoding="utf-8")
 WORKFLOW = (
     ROOT / ".github/workflows/keychain-recovery-macos.yml"
 ).read_text(encoding="utf-8")
@@ -70,3 +71,9 @@ def test_macos_workflow_runs_synthetic_only_no_secret_store():
     assert "An interactive terminal is required" in WORKFLOW
     assert "SecItemAdd" not in WORKFLOW
     assert "import --input" not in WORKFLOW
+
+
+def test_missing_key_error_is_explained_and_blocks_backend_start():
+    assert "catch DesktopStorageKeyError.existingEncryptedArchiveRequiresRecovery" in BACKEND
+    assert "Автоматическое создание нового ключа заблокировано" in BACKEND
+    assert "Восстановите исходный ключ офлайн" in BACKEND

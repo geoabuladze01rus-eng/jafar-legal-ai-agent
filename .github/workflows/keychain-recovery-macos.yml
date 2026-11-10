@@ -1,0 +1,41 @@
+name: JAFAR macOS Keychain Recovery Kit
+
+on:
+  pull_request:
+    branches:
+      - integration/jafar-2.1-canonical
+      - main
+    paths:
+      - scripts/jafar_key_recovery.swift
+      - apple/JafarApp/DesktopStorageKey.swift
+      - tests/test_recovery_kit_contract.py
+      - .github/workflows/keychain-recovery-macos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-codec:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the standalone offline recovery utility
+        run: swiftc -o "$RUNNER_TEMP/jafar-key-recovery" scripts/jafar_key_recovery.swift
+      - name: Test synthetic encryption, decryption and tamper rejection (no Keychain)
+        run: |
+          "$RUNNER_TEMP/jafar-key-recovery" self-test
+      - name: Noninteractive use must be rejected without accessing the Keychain
+        run: |
+          if "$RUNNER_TEMP/jafar-key-recovery" export --output "$RUNNER_TEMP/must-not-exist.json" > "$RUNNER_TEMP/recovery-stdout" 2> "$RUNNER_TEMP/recovery-stderr"; then
+            echo "Recovery export bypassed the interactive terminal requirement"
+            exit 1
+          fi
+          grep -F "An interactive terminal is required" "$RUNNER_TEMP/recovery-stderr"
+          test ! -e "$RUNNER_TEMP/must-not-exist.json"
+      - name: Validate no automatic key regeneration over an archive
+        run: |
+          swiftc -parse-as-library -emit-module \
+            -o "$RUNNER_TEMP/DesktopStorageKey.swiftmodule" \
+            apple/JafarApp/DesktopStorageKey.swift

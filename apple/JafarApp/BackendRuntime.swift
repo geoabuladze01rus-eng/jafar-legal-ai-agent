@@ -54,6 +54,10 @@ final class BackendRuntime: ObservableObject {
             try await supervisor.start()
             state = .ready
             sessionID = UUID()
+        } catch DesktopStorageKeyError.existingEncryptedArchiveRequiresRecovery {
+            state = .failed("Обнаружен зашифрованный архив без ключа Keychain. "
+                + "Автоматическое создание нового ключа заблокировано. "
+                + "Восстановите исходный ключ офлайн перед запуском JAFAR.")
         } catch {
             state = .failed("Не удалось запустить локальный движок «Юстиции».")
         }

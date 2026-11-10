@@ -477,6 +477,8 @@ private func run() throws {
           (command == "import" && args[1] == "--input") else {
         throw RecoveryError.invalidCommand
     }
+    // Enforce terminal-only use BEFORE reading any Keychain item.
+    guard isatty(STDIN_FILENO) == 1 else { throw RecoveryError.needsTerminal }
     let file = URL(fileURLWithPath: args[2])
     try lockedWhileAppClosed {
         if command == "export" {

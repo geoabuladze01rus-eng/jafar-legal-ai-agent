@@ -24,7 +24,8 @@ jobs:
       - name: Compile the standalone offline recovery utility
         run: swiftc -o "$RUNNER_TEMP/jafar-key-recovery" scripts/jafar_key_recovery.swift
       - name: Test synthetic encryption, decryption and tamper rejection (no Keychain)
-        run: "$RUNNER_TEMP/jafar-key-recovery" self-test
+        run: |
+          "$RUNNER_TEMP/jafar-key-recovery" self-test
       - name: Noninteractive use must be rejected without accessing the Keychain
         run: |
           if "$RUNNER_TEMP/jafar-key-recovery" export --output "$RUNNER_TEMP/must-not-exist.json"; then

@@ -18,6 +18,12 @@ def test_cli_contains_only_explicit_key_export_and_import():
     assert '(command == "import" && args[1] == "--input")' in TOOL
     assert "guard isatty(STDIN_FILENO) == 1" in TOOL
     assert "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly" in TOOL
+    assert "try verifyAgainstExistingArchive(data)" in TOOL
+    assert "SQLITE_OPEN_READONLY" in TOOL
+    assert "jafar-desktop-matter-storage-v1" in TOOL
+    assert "jafar-desktop-corpus-storage-v1" in TOOL
+    assert "jafar-desktop-storage-check-v1" in TOOL
+    assert "jafar-desktop-corpus-check-v1" in TOOL
     assert "SecItemAdd(query as CFDictionary, nil)" in TOOL
     assert "SecItemUpdate" not in TOOL
     assert "SecItemDelete" not in TOOL
@@ -58,6 +64,7 @@ def test_macos_workflow_runs_synthetic_only_no_secret_store():
     assert "runs-on: macos-15" in WORKFLOW
     assert "swiftc -o" in WORKFLOW
     assert "self-test" in WORKFLOW
+    assert "Recovery codec and archive key preflight self-tests passed" in TOOL
     assert "must-not-exist.json" in WORKFLOW
     assert "SecItemAdd" not in WORKFLOW
     assert "import --input" not in WORKFLOW

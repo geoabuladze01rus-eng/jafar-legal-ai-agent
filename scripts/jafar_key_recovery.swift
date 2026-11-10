@@ -10,6 +10,7 @@ import CryptoKit
 import CommonCrypto
 import Darwin
 import Security
+import SQLite3
 
 private let serviceName = "ru.jafar.legal-ai.desktop-storage"
 private let accountName = "master-key-v1"
@@ -29,6 +30,7 @@ private enum RecoveryError: Error, CustomStringConvertible {
     case keychain(Int32)
     case applicationOpen
     case unsafeTarget
+    case archiveKeyMismatch
 
     var description: String {
         switch self {
@@ -42,6 +44,7 @@ private enum RecoveryError: Error, CustomStringConvertible {
         case .keychain(let status): return "Keychain operation failed (status \(status))."
         case .applicationOpen: return "Quit JAFAR and its local backend before using the recovery utility."
         case .unsafeTarget: return "Destination exists, is a link, or cannot be safely created."
+        case .archiveKeyMismatch: return "Recovery key does not authenticate the existing local archive. Keychain was not modified."
         }
     }
 }
@@ -149,9 +152,111 @@ private func readMasterKey() throws -> Data? {
     return data
 }
 
+private func databaseCheckValues(_ file: URL) throws -> (Data, Data) {
+    // Open existing encrypted databases in read-only mode. Nothing is migrated.
+    let status = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    guard status?.isRegularFile == true, status?.isSymbolicLink != true else {
+        throw RecoveryError.archiveKeyMismatch
+    }
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(
+        file.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil
+    ) == SQLITE_OK, let connection = database else {
+        if database != nil { sqlite3_close(database) }
+        throw RecoveryError.archiveKeyMismatch
+    }
+    defer { sqlite3_close(connection) }
+    var statement: OpaquePointer?
+    let query =
+        "SELECT " +
+        "(SELECT value FROM metadata WHERE key='key_check_nonce'), " +
+        "(SELECT value FROM metadata WHERE key='key_check_payload')"
+    guard sqlite3_prepare_v2(connection, query, -1, &statement, nil) == SQLITE_OK,
+          let prepared = statement else {
+        if statement != nil { sqlite3_finalize(statement) }
+        throw RecoveryError.archiveKeyMismatch
+    }
+    defer { sqlite3_finalize(prepared) }
+    guard sqlite3_step(prepared) == SQLITE_ROW,
+          sqlite3_column_type(prepared, 0) == SQLITE_BLOB,
+          sqlite3_column_type(prepared, 1) == SQLITE_BLOB,
+          let noncePointer = sqlite3_column_blob(prepared, 0),
+          let cipherPointer = sqlite3_column_blob(prepared, 1) else {
+        throw RecoveryError.archiveKeyMismatch
+    }
+    let nonce = Data(
+        bytes: noncePointer, count: Int(sqlite3_column_bytes(prepared, 0))
+    )
+    let ciphertext = Data(
+        bytes: cipherPointer, count: Int(sqlite3_column_bytes(prepared, 1))
+    )
+    guard nonce.count == 12, ciphertext.count > 16 else {
+        throw RecoveryError.archiveKeyMismatch
+    }
+    return (nonce, ciphertext)
+}
+
+private func verifyAgainstExistingArchive(_ masterKey: Data) throws {
+    // Import on a fresh Mac has no data yet. If a partially restored home
+    // exists, authenticate every available core database BEFORE SecItemAdd.
+    let home = dataHome()
+    let known = [
+        ("matters.sqlite3", "jafar-desktop-matter-storage-v1", "jafar-desktop-storage-check-v1"),
+        ("corpus.sqlite3", "jafar-desktop-corpus-storage-v1", "jafar-desktop-corpus-check-v1")
+    ]
+    let manager = FileManager.default
+    var authenticated = 0
+    for (filename, context, checkValue) in known {
+        let path = home.appendingPathComponent(filename)
+        guard manager.fileExists(atPath: path.path) else { continue }
+        authenticated += 1
+        let (nonce, payload) = try databaseCheckValues(path)
+        let key = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: masterKey),
+            salt: Data("JAFAR desktop storage".utf8),
+            info: Data(context.utf8),
+            outputByteCount: 32
+        )
+        do {
+            let box = try AES.GCM.SealedBox(
+                nonce: AES.GCM.Nonce(data: nonce),
+                ciphertext: Data(payload.dropLast(16)),
+                tag: Data(payload.suffix(16))
+            )
+            let plain = try AES.GCM.open(
+                box, using: key, authenticating: Data("metadata:check".utf8)
+            )
+            guard plain == Data(checkValue.utf8) else {
+                throw RecoveryError.archiveKeyMismatch
+            }
+        } catch {
+            throw RecoveryError.archiveKeyMismatch
+        }
+    }
+    if authenticated == 0 {
+        let extra = [
+            "drafts.sqlite3",
+            "claim-review-decisions.sqlite3"
+        ]
+        let otherDatabases = extra.contains {
+            manager.fileExists(atPath: home.appendingPathComponent($0).path)
+        }
+        let documents = home.appendingPathComponent("documents", isDirectory: true)
+        let anyBlobs = (
+            try? manager.contentsOfDirectory(
+                at: documents, includingPropertiesForKeys: nil
+            )
+        )?.contains(where: { $0.pathExtension == "jafarblob" }) ?? false
+        if otherDatabases || anyBlobs {
+            throw RecoveryError.archiveKeyMismatch
+        }
+    }
+}
+
 private func installMasterKey(_ data: Data) throws {
     guard data.count == 32 else { throw RecoveryError.invalidFile }
     guard try readMasterKey() == nil else { throw RecoveryError.keyAlreadyExists }
+    try verifyAgainstExistingArchive(data)
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: serviceName,
@@ -294,7 +399,64 @@ private func selfTest() throws {
         tamperingRejected = true
     }
     guard tamperingRejected else { throw RecoveryError.cryptography }
-    print("Recovery codec self-test passed; Keychain was not accessed.")
+    // Test the existing-database key identity preflight without touching
+    // any real JAFAR data or the Keychain.
+    let testHome = FileManager.default.temporaryDirectory
+        .appendingPathComponent("jafar-key-recovery-self-test-" + UUID().uuidString)
+    try FileManager.default.createDirectory(
+        at: testHome, withIntermediateDirectories: false
+    )
+    defer { try? FileManager.default.removeItem(at: testHome) }
+    let oldHome = ProcessInfo.processInfo.environment["JAFAR_DESKTOP_HOME"]
+    setenv("JAFAR_DESKTOP_HOME", testHome.path, 1)
+    defer {
+        if let oldHome {
+            setenv("JAFAR_DESKTOP_HOME", oldHome, 1)
+        } else {
+            unsetenv("JAFAR_DESKTOP_HOME")
+        }
+    }
+
+    let matterKey = HKDF<SHA256>.deriveKey(
+        inputKeyMaterial: SymmetricKey(data: key),
+        salt: Data("JAFAR desktop storage".utf8),
+        info: Data("jafar-desktop-matter-storage-v1".utf8),
+        outputByteCount: 32
+    )
+    let check = try AES.GCM.seal(
+        Data("jafar-desktop-storage-check-v1".utf8),
+        using: matterKey, authenticating: Data("metadata:check".utf8)
+    )
+    let nonce = Data(check.nonce)
+    let cipher = check.ciphertext + check.tag
+    func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+    let databasePath = testHome.appendingPathComponent("matters.sqlite3").path
+    var conn: OpaquePointer?
+    guard sqlite3_open(databasePath, &conn) == SQLITE_OK, let db = conn else {
+        if conn != nil { sqlite3_close(conn) }
+        throw RecoveryError.cryptography
+    }
+    let sql =
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, value BLOB NOT NULL);" +
+        "INSERT INTO metadata VALUES ('key_check_nonce', X'\(hex(nonce))');" +
+        "INSERT INTO metadata VALUES ('key_check_payload', X'\(hex(cipher))');"
+    guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+        sqlite3_close(db)
+        throw RecoveryError.cryptography
+    }
+    sqlite3_close(db)
+    try verifyAgainstExistingArchive(key)
+    var wrongKeyRejected = false
+    do {
+        try verifyAgainstExistingArchive(try randomBytes(32))
+    } catch RecoveryError.archiveKeyMismatch {
+        wrongKeyRejected = true
+    }
+    guard wrongKeyRejected else { throw RecoveryError.cryptography }
+
+    print("Recovery codec and archive key preflight self-tests passed; Keychain was not accessed.")
 }
 
 private func run() throws {

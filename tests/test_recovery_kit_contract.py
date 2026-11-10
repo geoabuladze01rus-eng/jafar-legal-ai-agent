@@ -17,6 +17,7 @@ def test_cli_contains_only_explicit_key_export_and_import():
     assert '(command == "export" && args[1] == "--output")' in TOOL
     assert '(command == "import" && args[1] == "--input")' in TOOL
     assert "guard isatty(STDIN_FILENO) == 1" in TOOL
+    assert "Enforce terminal-only use BEFORE reading any Keychain item" in TOOL
     assert "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly" in TOOL
     assert "try verifyAgainstExistingArchive(data)" in TOOL
     assert "SQLITE_OPEN_READONLY" in TOOL
@@ -66,5 +67,6 @@ def test_macos_workflow_runs_synthetic_only_no_secret_store():
     assert "self-test" in WORKFLOW
     assert "Recovery codec and archive key preflight self-tests passed" in TOOL
     assert "must-not-exist.json" in WORKFLOW
+    assert "An interactive terminal is required" in WORKFLOW
     assert "SecItemAdd" not in WORKFLOW
     assert "import --input" not in WORKFLOW

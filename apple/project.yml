@@ -18,6 +18,7 @@ targets:
       properties:
         CFBundleDisplayName: "Юстиция"
         CFBundleName: "Юстиция"
+        CFBundleIconFile: Justicia.icns
         CFBundleShortVersionString: "2.1.0"
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "14.0"

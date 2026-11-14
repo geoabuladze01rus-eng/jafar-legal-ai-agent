@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct JusticiaSettingsView: View {
+    @Binding var avatarData: Data
     @AppStorage("justicia.notifications") private var notifications = true
     @AppStorage("justicia.compactSidebar") private var compactSidebar = false
     @AppStorage("justicia.reduceMotion") private var reduceMotion = false
     @AppStorage("justicia.onboardingCompleted") private var onboardingCompleted = false
+    @State private var choosingAvatar = false
+    @State private var importingAvatar = false
+    @State private var avatarError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -19,28 +23,48 @@ struct JusticiaSettingsView: View {
                         .font(.headline)
 
                     HStack(spacing: 14) {
-                        Circle()
-                            .fill(JusticiaTheme.blueSoft)
-                            .frame(width: 64, height: 64)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.title)
-                                    .foregroundStyle(JusticiaTheme.blue)
-                            )
-
+                        JusticiaAvatar(data: avatarData, size: 64)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Профиль юриста")
-                                .font(.title3.bold())
-                            Text("Локальное рабочее пространство")
+                                .font(.system(.title3, design: .serif, weight: .semibold))
+                            Text("Фото профиля хранится на этом устройстве.")
                                 .font(.caption)
                                 .foregroundStyle(JusticiaTheme.secondaryInk)
                         }
                     }
 
+                    HStack(spacing: 10) {
+                        Button(avatarData.isEmpty ? "Выбрать фото…" : "Сменить фото…") {
+                            avatarError = nil
+                            choosingAvatar = true
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        if !avatarData.isEmpty {
+                            Button("Удалить фото") {
+                                avatarData = Data()
+                                avatarError = nil
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        if importingAvatar {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Загружаем фото")
+                        }
+                    }
+                    .disabled(importingAvatar)
+
+                    if let avatarError {
+                        Text(avatarError)
+                            .font(.caption)
+                            .foregroundStyle(JusticiaTheme.red)
+                    }
+
                     Divider()
 
                     Label(
-                        "Данные приложения хранятся локально и шифруются.",
+                        "Дела и документы хранятся в зашифрованном хранилище.",
                         systemImage: "lock.shield"
                     )
                     .font(.caption)
@@ -132,6 +156,30 @@ struct JusticiaSettingsView: View {
             }
             .justiciaCard()
         }
+        .fileImporter(isPresented: $choosingAvatar, allowedContentTypes: JusticiaAvatarPhoto.allowedTypes) { result in
+            Task { @MainActor in
+                switch result {
+                case .success(let url):
+                    importingAvatar = true
+                    defer { importingAvatar = false }
+                    do {
+                        let photo = try await Task.detached(priority: .userInitiated) {
+                            try JusticiaAvatarPhoto.importPhoto(from: url)
+                        }.value
+                        avatarData = photo
+                    } catch let error as JusticiaAvatarPhoto.ImportError {
+                        avatarError = error.localizedDescription
+                    } catch {
+                        avatarError = "Не удалось прочитать выбранный файл."
+                    }
+                case .failure(let error):
+                    let failure = error as NSError
+                    if failure.domain != NSCocoaErrorDomain || failure.code != NSUserCancelledError {
+                        avatarError = "Не удалось открыть выбранный файл."
+                    }
+                }
+            }
+        }
     }
 
     private func settingsRow(_ title: String, _ status: String, _ icon: String, _ color: Color) -> some View {
@@ -149,7 +197,7 @@ struct JusticiaSettingsView: View {
 func pageHeader(title: String, subtitle: String) -> some View {
     VStack(alignment: .leading, spacing: 5) {
         Text(title)
-            .font(.system(size: 28, weight: .bold, design: .rounded))
+            .font(.system(size: 30, weight: .semibold, design: .serif))
             .foregroundStyle(JusticiaTheme.ink)
         Text(subtitle)
             .font(.subheadline)

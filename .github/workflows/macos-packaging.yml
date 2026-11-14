@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - integration/jafar-2.1-canonical
+      - feature/jafar-2.1-case-evidence-gap-draft
   workflow_dispatch:
 
 permissions:
@@ -29,3 +30,20 @@ jobs:
           JAFAR_BUILD_PYTHON="$BUILD_PYTHON" ./scripts/build_macos_release.sh
       - name: Verify packaging output is ignored
         run: git status --short --ignored dist/macos
+      - name: Verify the app icon
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/justicia-premium-workspace-avatar' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          app="dist/macos/Юстиция.app/Contents"
+          icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Info.plist")"
+          test "$icon" = Justicia.icns
+          test -s "$app/Resources/$icon"
+      - name: Attach unsigned beta installer
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/justicia-premium-workspace-avatar' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Justicia-macOS-arm64-beta
+          path: |
+            dist/macos/*.dmg
+            dist/macos/*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14

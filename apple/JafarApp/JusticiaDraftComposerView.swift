@@ -16,6 +16,8 @@ struct JusticiaDraftRequestDTO: Codable {
     let requestedAction: String
     let sourceDocumentIDs: [String]
     let reviewRecordIDs: [String]
+    let evidenceGaps: [JusticiaGroundedEvidenceGapDTO]
+    let categorizedStatements: [JusticiaGroundedStatementDTO]
 
     enum CodingKeys: String, CodingKey {
         case kind, recipient, author, position
@@ -23,12 +25,16 @@ struct JusticiaDraftRequestDTO: Codable {
         case requestedAction = "requested_action"
         case sourceDocumentIDs = "source_document_ids"
         case reviewRecordIDs = "review_record_ids"
+        case evidenceGaps = "evidence_gaps"
+        case categorizedStatements = "categorized_statements"
     }
 
     init(
         kind: String, recipient: String, author: String,
         position: String, legalBasis: String, requestedAction: String,
-        sourceDocumentIDs: [String], reviewRecordIDs: [String] = []
+        sourceDocumentIDs: [String], reviewRecordIDs: [String] = [],
+        evidenceGaps: [JusticiaGroundedEvidenceGapDTO] = [],
+        categorizedStatements: [JusticiaGroundedStatementDTO] = []
     ) {
         self.kind = kind
         self.recipient = recipient
@@ -38,6 +44,8 @@ struct JusticiaDraftRequestDTO: Codable {
         self.requestedAction = requestedAction
         self.sourceDocumentIDs = sourceDocumentIDs
         self.reviewRecordIDs = reviewRecordIDs
+        self.evidenceGaps = evidenceGaps
+        self.categorizedStatements = categorizedStatements
     }
 
     init(from decoder: Decoder) throws {
@@ -49,8 +57,10 @@ struct JusticiaDraftRequestDTO: Codable {
         legalBasis = try values.decode(String.self, forKey: .legalBasis)
         requestedAction = try values.decode(String.self, forKey: .requestedAction)
         sourceDocumentIDs = try values.decode([String].self, forKey: .sourceDocumentIDs)
-        // Old encrypted drafts did not contain this field.
+        // Old encrypted drafts did not contain these fields.
         reviewRecordIDs = try values.decodeIfPresent([String].self, forKey: .reviewRecordIDs) ?? []
+        evidenceGaps = try values.decodeIfPresent([JusticiaGroundedEvidenceGapDTO].self, forKey: .evidenceGaps) ?? []
+        categorizedStatements = try values.decodeIfPresent([JusticiaGroundedStatementDTO].self, forKey: .categorizedStatements) ?? []
     }
 }
 
@@ -75,11 +85,25 @@ struct JusticiaDraftPreviewDTO: Decodable {
     let title: String
     let warnings: [String]
     let evidence: [JusticiaDraftEvidenceDTO]
+    let evidenceGaps: [JusticiaGroundedEvidenceGapDTO]
+    let categorizedStatements: [JusticiaGroundedStatementDTO]
     let canExport: Bool
 
     enum CodingKeys: String, CodingKey {
         case title, warnings, evidence
+        case evidenceGaps = "evidence_gaps"
+        case categorizedStatements = "categorized_statements"
         case canExport = "can_export"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decode(String.self, forKey: .title)
+        warnings = try values.decode([String].self, forKey: .warnings)
+        evidence = try values.decode([JusticiaDraftEvidenceDTO].self, forKey: .evidence)
+        evidenceGaps = try values.decodeIfPresent([JusticiaGroundedEvidenceGapDTO].self, forKey: .evidenceGaps) ?? []
+        categorizedStatements = try values.decodeIfPresent([JusticiaGroundedStatementDTO].self, forKey: .categorizedStatements) ?? []
+        canExport = try values.decode(Bool.self, forKey: .canExport)
     }
 }
 

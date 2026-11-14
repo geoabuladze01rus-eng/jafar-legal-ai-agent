@@ -8,6 +8,15 @@ struct JusticiaLiveHomeView: View {
     let canCreateMatter: Bool
     let createMatter: () -> Void
 
+    @State private var selectionTask: Task<Void, Never>?
+    @State private var showsGettingStarted = false
+    @State private var deadlineScope: DeadlineScope = .upcoming
+
+    private enum DeadlineScope: String, CaseIterable {
+        case upcoming = "Предстоящие"
+        case overdue = "Просроченные"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(alignment: .center, spacing: 18) {
@@ -29,6 +38,9 @@ struct JusticiaLiveHomeView: View {
                 if workspace.matters.isEmpty && workspace.errorMessage == nil {
                     firstMatterCard
                 } else if !workspace.matters.isEmpty {
+                    if let matter = workspace.selectedMatter {
+                        activeMatter(matter)
+                    }
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .top, spacing: 16) {
                             recentMatters.frame(minWidth: 340)
@@ -41,6 +53,10 @@ struct JusticiaLiveHomeView: View {
                     }
                 }
             }
+        }
+        .onDisappear {
+            selectionTask?.cancel()
+            selectionTask = nil
         }
     }
 
@@ -96,6 +112,18 @@ struct JusticiaLiveHomeView: View {
                     .font(.caption)
                     .foregroundStyle(JusticiaTheme.secondaryInk)
                     .padding(.top, 3)
+                DisclosureGroup("Как начать работу", isExpanded: $showsGettingStarted) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Создайте карточку дела.", systemImage: "briefcase")
+                        Label("Загрузите PDF или Word в разделе «Документы».", systemImage: "doc.on.doc")
+                        Label("Подготовьте проект в разделе «Шаблоны».", systemImage: "pencil.and.outline")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .padding(.top, 8)
+                }
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: 390, alignment: .leading)
             }
         }
     }
@@ -107,6 +135,72 @@ struct JusticiaLiveHomeView: View {
             .disabled(!canCreateMatter)
     }
 
+    private func activeMatter(_ matter: JusticiaMatterDTO) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Label("Выбранное дело", systemImage: "briefcase")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                Spacer(minLength: 12)
+                Picker("Выбранное дело", selection: Binding(
+                    get: { workspace.selectedMatterID },
+                    set: { id in
+                        guard let next = workspace.matters.first(where: { $0.id == id }) else { return }
+                        selectMatter(next)
+                    }
+                )) {
+                    ForEach(workspace.matters) { option in
+                        Text(option.title).tag(Optional(option.id))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 280)
+                .disabled(selectionTask != nil)
+            }
+            Text(matter.title)
+                .font(.system(.title2, design: .serif, weight: .semibold))
+                .foregroundStyle(JusticiaTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(matter.displayNumber + " · " + matter.displayStatus)
+                .font(.subheadline)
+                .foregroundStyle(JusticiaTheme.secondaryInk)
+            Divider()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { matterShortcuts }
+                VStack(alignment: .leading, spacing: 8) { matterShortcuts }
+            }
+            .disabled(selectionTask != nil)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .justiciaCard(padding: 20)
+    }
+
+    @ViewBuilder
+    private var matterShortcuts: some View {
+        shortcut("Карточка", icon: "briefcase", section: .matters)
+        shortcut("Документы", icon: "doc.on.doc", section: .documents)
+        shortcut("Черновики", icon: "square.and.pencil", section: .templates)
+    }
+
+    private func shortcut(_ title: String, icon: String, section: JusticiaSection) -> some View {
+        Button { navigate(section) } label: { Label(title, systemImage: icon) }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+    }
+
+    private func selectMatter(_ matter: JusticiaMatterDTO, then section: JusticiaSection? = nil) {
+        guard selectionTask == nil else { return }
+        selectionTask = Task { @MainActor in
+            defer { if !Task.isCancelled { selectionTask = nil } }
+            if workspace.selectedMatterID != matter.id {
+                await workspace.selectMatter(matter)
+            }
+            guard !Task.isCancelled else { return }
+            if let section { navigate(section) }
+        }
+    }
+
     private var recentMatters: some View {
         let recent = Array(workspace.matters.sorted { $0.updatedAt > $1.updatedAt }.prefix(5))
         return VStack(alignment: .leading, spacing: 0) {
@@ -115,10 +209,7 @@ struct JusticiaLiveHomeView: View {
             ForEach(recent) { matter in
                 Divider()
                 Button {
-                    Task {
-                        await workspace.selectMatter(matter)
-                        navigate(.matters)
-                    }
+                    selectMatter(matter, then: .matters)
                 } label: {
                     HStack(spacing: 11) {
                         JusticiaIconTile(systemName: "briefcase", size: 32)
@@ -139,6 +230,7 @@ struct JusticiaLiveHomeView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(selectionTask != nil)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,41 +238,69 @@ struct JusticiaLiveHomeView: View {
     }
 
     private var deadlines: some View {
-        let datedDeadlines = workspace.matters.flatMap { matter in
+        let dateParser = DateFormatter()
+        dateParser.locale = Locale(identifier: "en_US_POSIX")
+        dateParser.calendar = Calendar(identifier: .gregorian)
+        dateParser.dateFormat = "yyyy-MM-dd"
+        dateParser.isLenient = false
+        let today = dateParser.string(from: Date())
+        let datedDeadlines = workspace.matters.filter { $0.status.lowercased() != "closed" }.flatMap { matter in
             matter.deadlines.compactMap { deadline in
-                deadline.dueDate.map { (date: $0, title: deadline.title, matterNumber: matter.displayNumber) }
+                deadline.dueDate.map { (date: $0, title: deadline.title, matter: matter) }
             }
-        }.sorted { $0.date < $1.date }
+        }.filter { item in
+            deadlineScope == .overdue ? item.date < today : item.date >= today
+        }.sorted { lhs, rhs in
+            deadlineScope == .overdue ? lhs.date > rhs.date : lhs.date < rhs.date
+        }
         let preview = Array(datedDeadlines.prefix(5))
         return VStack(alignment: .leading, spacing: 0) {
             sectionTitle("Сроки по делам", action: "Все сроки") { navigate(.deadlines) }
                 .padding(.bottom, 12)
+            Picker("Период сроков", selection: $deadlineScope) {
+                ForEach(DeadlineScope.allCases, id: \.self) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.bottom, 12)
             if preview.isEmpty {
                 Divider()
-                Text("Пока нет сроков с указанной датой.")
+                Text(deadlineScope == .overdue ? "Просроченных сроков нет." : "Предстоящих сроков нет.")
                     .font(.subheadline)
                     .foregroundStyle(JusticiaTheme.secondaryInk)
                     .padding(.top, 14)
             } else {
                 ForEach(Array(preview.enumerated()), id: \.offset) { _, item in
                     Divider()
-                    HStack(spacing: 11) {
-                        JusticiaIconTile(systemName: "calendar", color: JusticiaTheme.gold, size: 32)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(JusticiaTheme.ink)
-                                .lineLimit(2)
-                            Text(item.matterNumber)
-                                .font(.caption)
+                    Button {
+                        selectMatter(item.matter, then: .matters)
+                    } label: {
+                        HStack(spacing: 11) {
+                            JusticiaIconTile(systemName: "calendar", color: JusticiaTheme.gold, size: 32)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(JusticiaTheme.ink)
+                                    .lineLimit(2)
+                                Text(item.matter.displayNumber)
+                                    .font(.caption)
+                                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                            }
+                            Spacer(minLength: 6)
+                            Text(dateParser.date(from: item.date)?.formatted(.dateTime.day().month().year().locale(Locale(identifier: "ru_RU"))) ?? item.date)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
                                 .foregroundStyle(JusticiaTheme.secondaryInk)
                         }
-                        Spacer(minLength: 6)
-                        Text(item.date)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                        .padding(.vertical, 11)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 11)
+                    .buttonStyle(.plain)
+                    .disabled(selectionTask != nil)
                 }
             }
         }

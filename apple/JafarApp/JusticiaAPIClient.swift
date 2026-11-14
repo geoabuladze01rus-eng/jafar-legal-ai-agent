@@ -698,6 +698,7 @@ final class JusticiaWorkspaceStore: ObservableObject {
     }
 
     func selectMatter(_ matter: JusticiaMatterDTO) async {
+        if selectedMatterID != matter.id { documents = [] }
         selectedMatterID = matter.id
         selectedDocumentID = nil
         analysisDocumentID = nil
@@ -742,11 +743,14 @@ final class JusticiaWorkspaceStore: ObservableObject {
             return
         }
         do {
-            documents = try await client.listDocuments(matterID: matterID)
+            let loaded = try await client.listDocuments(matterID: matterID)
+            guard !Task.isCancelled, selectedMatterID == matterID else { return }
+            documents = loaded
             if selectedDocumentID == nil || !documents.contains(where: { $0.id == selectedDocumentID }) {
                 selectedDocumentID = documents.first?.id
             }
         } catch {
+            guard !Task.isCancelled, selectedMatterID == matterID else { return }
             errorMessage = error.localizedDescription
         }
     }

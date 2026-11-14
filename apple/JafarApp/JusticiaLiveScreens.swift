@@ -17,6 +17,12 @@ struct JusticiaLiveHomeView: View {
         case overdue = "Просроченные"
     }
 
+    private struct DatedDeadline {
+        let date: String
+        let title: String
+        let matter: JusticiaMatterDTO
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(alignment: .center, spacing: 18) {
@@ -244,16 +250,16 @@ struct JusticiaLiveHomeView: View {
         dateParser.dateFormat = "yyyy-MM-dd"
         dateParser.isLenient = false
         let today = dateParser.string(from: Date())
-        let datedDeadlines = workspace.matters.filter { $0.status.lowercased() != "closed" }.flatMap { matter in
-            matter.deadlines.compactMap { deadline in
-                deadline.dueDate.map { (date: $0, title: deadline.title, matter: matter) }
+        let overdue = deadlineScope == .overdue
+        var rows: [DatedDeadline] = []
+        for matter in workspace.matters where matter.status.lowercased() != "closed" {
+            for deadline in matter.deadlines {
+                guard let date = deadline.dueDate, overdue == (date < today) else { continue }
+                rows.append(DatedDeadline(date: date, title: deadline.title, matter: matter))
             }
-        }.filter { item in
-            deadlineScope == .overdue ? item.date < today : item.date >= today
-        }.sorted { lhs, rhs in
-            deadlineScope == .overdue ? lhs.date > rhs.date : lhs.date < rhs.date
         }
-        let preview = Array(datedDeadlines.prefix(5))
+        rows.sort { overdue ? $0.date > $1.date : $0.date < $1.date }
+        let preview = Array(rows.prefix(5))
         return VStack(alignment: .leading, spacing: 0) {
             sectionTitle("Сроки по делам", action: "Все сроки") { navigate(.deadlines) }
                 .padding(.bottom, 12)
@@ -274,6 +280,9 @@ struct JusticiaLiveHomeView: View {
             } else {
                 ForEach(Array(preview.enumerated()), id: \.offset) { _, item in
                     Divider()
+                    let displayDate = dateParser.date(from: item.date)?.formatted(
+                        .dateTime.day().month().year().locale(Locale(identifier: "ru_RU"))
+                    ) ?? item.date
                     Button {
                         selectMatter(item.matter, then: .matters)
                     } label: {
@@ -289,7 +298,7 @@ struct JusticiaLiveHomeView: View {
                                     .foregroundStyle(JusticiaTheme.secondaryInk)
                             }
                             Spacer(minLength: 6)
-                            Text(dateParser.date(from: item.date)?.formatted(.dateTime.day().month().year().locale(Locale(identifier: "ru_RU"))) ?? item.date)
+                            Text(displayDate)
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(JusticiaTheme.secondaryInk)
                             Image(systemName: "chevron.right")

@@ -12,6 +12,8 @@ struct JusticiaRootView: View {
     @State private var searchText = ""
     @State private var showingSearchResults = false
     @State private var showingNotifications = false
+    @State private var showingCreateMatter = false
+    @AppStorage("justicia.profileAvatar") private var avatarData = Data()
     @AppStorage("justicia.compactSidebar") private var compactSidebar = false
     @AppStorage("justicia.notifications") private var notificationsEnabled = true
     @AppStorage("justicia.reduceMotion") private var reduceMotion = false
@@ -35,36 +37,35 @@ struct JusticiaRootView: View {
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-            sidebar
-            Divider().overlay(JusticiaTheme.border)
+                sidebar
 
-            VStack(spacing: 0) {
-                topBar
-                Divider().overlay(JusticiaTheme.border.opacity(0.8))
+                VStack(spacing: 0) {
+                    topBar
+                    Divider().overlay(JusticiaTheme.border.opacity(0.8))
 
-                ZStack {
-                    JusticiaTheme.canvas.ignoresSafeArea()
+                    ZStack {
+                        JusticiaTheme.canvas.ignoresSafeArea()
 
-                    ScrollView {
-                        VStack(spacing: 18) {
-                            if let backendStatusText {
-                                JusticiaBackendBanner(
-                                    text: backendStatusText,
-                                    failed: backendFailed,
-                                    retry: retryBackend
-                                )
+                        ScrollView {
+                            VStack(spacing: 18) {
+                                if let backendStatusText, apiClient == nil {
+                                    JusticiaBackendBanner(
+                                        text: backendStatusText,
+                                        failed: backendFailed,
+                                        retry: retryBackend
+                                    )
+                                }
+
+                                content
+                                    .transition(.opacity)
                             }
-
-                            content
-                                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                            .padding(26)
+                            .frame(maxWidth: 1380)
+                            .frame(maxWidth: .infinity, alignment: .top)
                         }
-                        .padding(22)
-                        .frame(maxWidth: 1480)
-                        .frame(maxWidth: .infinity, alignment: .top)
                     }
                 }
             }
-        }
             .background(JusticiaTheme.canvas)
 
             if !onboardingCompleted {
@@ -74,7 +75,12 @@ struct JusticiaRootView: View {
             }
         }
         .preferredColorScheme(.light)
+        .tint(JusticiaTheme.blue)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: selectedSection)
+        .sheet(isPresented: $showingCreateMatter) {
+            JusticiaCreateMatterSheet(workspace: workspace, onCreated: { selectedSection = .matters })
+                .frame(minWidth: 520, minHeight: 560)
+        }
         .sheet(isPresented: $showingNotifications) {
             JusticiaNotificationsView(workspace: workspace)
                 .frame(minWidth: 420, minHeight: 360)
@@ -106,102 +112,135 @@ struct JusticiaRootView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(JusticiaTheme.gold.opacity(0.12))
-                    Image(systemName: "scalemass")
-                        .font(.system(size: 23, weight: .semibold))
-                        .foregroundStyle(JusticiaTheme.gold)
+        VStack(alignment: .leading, spacing: 18) {
+            sidebarBrand
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    navigationGroup("Рабочее пространство", sections: [
+                        .home, .matters, .documents, .analytics, .deadlines, .templates
+                    ])
+                    navigationGroup("Инструменты", sections: [
+                        .publishing, .transcription, .settings
+                    ])
                 }
-                .frame(width: 42, height: 42)
-
-                if !compactSidebar {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Юстиция")
-                            .font(.system(size: 24, weight: .bold, design: .serif))
-                            .foregroundStyle(JusticiaTheme.ink)
-                        Text("ИИ-помощник юриста")
-                            .font(.caption)
-                            .foregroundStyle(JusticiaTheme.secondaryInk)
-                    }
-                }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
+            .scrollIndicators(.hidden)
 
-            VStack(spacing: 4) {
-                ForEach(JusticiaSection.allCases) { section in
-                    Button {
-                        selectedSection = section
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: section.icon)
-                                .font(.system(size: 15, weight: .medium))
-                                .frame(width: 20)
-                            if !compactSidebar {
-                                Text(section.rawValue)
-                                    .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
-                                    .lineLimit(1)
-                                Spacer()
-                            }
-                        }
-                        .foregroundStyle(selectedSection == section ? JusticiaTheme.blue : JusticiaTheme.ink)
-                        .padding(.horizontal, 13)
-                        .frame(height: 42)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(selectedSection == section ? JusticiaTheme.blueSoft : Color.clear)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(section.rawValue)
-                }
-            }
-            .padding(.horizontal, 10)
-
-            Spacer()
-
-            VStack(alignment: .leading, spacing: 7) {
+            Button {
+                selectedSection = .settings
+            } label: {
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(JusticiaTheme.ink)
-                        .frame(width: 34, height: 34)
-                        .overlay(
-                            Text("Ю")
-                                .foregroundStyle(.white)
-                                .font(.caption.bold())
-                        )
+                    JusticiaAvatar(data: avatarData, size: 34)
                     if !compactSidebar {
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text("Профиль юриста")
                                 .font(.caption.weight(.semibold))
-                            Text("Локальная рабочая среда")
+                                .foregroundStyle(JusticiaTheme.sidebarInk)
+                            Text("Настройки")
                                 .font(.caption2)
-                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                                .foregroundStyle(JusticiaTheme.sidebarMuted)
                         }
-                    }
-                }
-
-                if !compactSidebar {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(JusticiaTheme.green)
-                            .frame(width: 7, height: 7)
-                        Text("Данные хранятся локально")
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
                             .font(.caption2)
-                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                            .foregroundStyle(JusticiaTheme.sidebarMuted)
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
             }
-            .padding(14)
-            .background(JusticiaTheme.surface.opacity(0.85))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .padding(12)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Настройки профиля")
+            .help("Настройки профиля")
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
         }
         .frame(width: compactSidebar ? 78 : JusticiaTheme.sidebarWidth)
         .background(JusticiaTheme.sidebar)
+    }
+
+    private var sidebarBrand: some View {
+        HStack(spacing: 11) {
+            JusticiaScalesMark()
+                .stroke(JusticiaTheme.brass, style: StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round))
+                .frame(width: 26, height: 26)
+                .frame(width: 40, height: 40)
+                .background(JusticiaTheme.brass.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(JusticiaTheme.brass.opacity(0.24))
+                }
+                .accessibilityHidden(true)
+
+            if !compactSidebar {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Юстиция")
+                        .font(.system(size: 25, weight: .semibold, design: .serif))
+                        .foregroundStyle(JusticiaTheme.sidebarInk)
+                    Text("ИИ-помощник юриста")
+                        .font(.caption2)
+                        .foregroundStyle(JusticiaTheme.sidebarMuted)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: compactSidebar ? .center : .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
+    }
+
+    private func navigationGroup(_ title: String, sections: [JusticiaSection]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !compactSidebar {
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.25)
+                    .foregroundStyle(JusticiaTheme.sidebarMuted)
+                    .padding(.leading, 13)
+                    .padding(.bottom, 4)
+            }
+            ForEach(sections) { section in
+                let isSelected = selectedSection == section
+                let title = section == .transcription ? "Транскрибация" : section.rawValue
+                Button {
+                    selectedSection = section
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: section.icon)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(isSelected ? JusticiaTheme.brass : JusticiaTheme.sidebarMuted)
+                            .frame(width: 19)
+                        if !compactSidebar {
+                            Text(title)
+                                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: compactSidebar ? .center : .leading)
+                    .frame(height: 36)
+                    .foregroundStyle(JusticiaTheme.sidebarInk)
+                    .background(
+                        Color.white.opacity(isSelected ? 0.09 : 0), in: RoundedRectangle(cornerRadius: 8)
+                    )
+                    .overlay(alignment: .leading) {
+                        if isSelected {
+                            Capsule()
+                                .fill(JusticiaTheme.brass)
+                                .frame(width: 2, height: 16)
+                                .padding(.leading, 2)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .help(title)
+            }
+        }
     }
 
     private var topBar: some View {
@@ -242,6 +281,14 @@ struct JusticiaRootView: View {
 
             Spacer()
 
+            if apiClient != nil {
+                Label("Локальный режим", systemImage: "checkmark.shield")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .fixedSize()
+                    .help("Локальный движок готов")
+            }
+
             if notificationsEnabled {
                 Button {
                     showingNotifications = true
@@ -259,10 +306,7 @@ struct JusticiaRootView: View {
                 selectedSection = .settings
             } label: {
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(JusticiaTheme.blueSoft)
-                        .frame(width: 32, height: 32)
-                        .overlay(Image(systemName: "person.fill").foregroundStyle(JusticiaTheme.blue))
+                    JusticiaAvatar(data: avatarData, size: 33)
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Юрист")
                             .font(.caption.weight(.semibold))
@@ -274,6 +318,8 @@ struct JusticiaRootView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Настройки профиля")
+            .help("Настройки профиля")
         }
         .padding(.horizontal, 20)
         .frame(height: 62)
@@ -284,11 +330,16 @@ struct JusticiaRootView: View {
     private var content: some View {
         switch selectedSection {
         case .home:
-            JusticiaLiveHomeView(workspace: workspace, navigate: { selectedSection = $0 })
+            JusticiaLiveHomeView(workspace: workspace,
+                navigate: { selectedSection = $0 },
+                canCreateMatter: apiClient != nil,
+                createMatter: { showingCreateMatter = true }
+            )
         case .matters:
             JusticiaLiveMattersView(
                 workspace: workspace,
                 apiClient: apiClient,
+                createMatter: { showingCreateMatter = true },
                 openDocument: { documentID in
                     workspace.selectedDocumentID = documentID
                     selectedSection = .documents
@@ -314,8 +365,30 @@ struct JusticiaRootView: View {
         case .transcription:
             JusticiaLiveTranscriptionView(voice: voice, workspace: workspace)
         case .settings:
-            JusticiaSettingsView()
+            JusticiaSettingsView(avatarData: $avatarData)
         }
+    }
+}
+
+struct JusticiaScalesMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
+        }
+        var path = Path()
+        path.move(to: point(0.50, 0.10))
+        path.addLine(to: point(0.50, 0.85))
+        path.move(to: point(0.30, 0.85))
+        path.addLine(to: point(0.70, 0.85))
+        path.move(to: point(0.15, 0.27))
+        path.addLine(to: point(0.85, 0.27))
+        for x in [CGFloat(0.24), CGFloat(0.76)] {
+            path.move(to: point(x, 0.27))
+            path.addLine(to: point(x - 0.14, 0.60))
+            path.addQuadCurve(to: point(x + 0.14, 0.60), control: point(x, 0.82))
+            path.closeSubpath()
+        }
+        return path
     }
 }
 

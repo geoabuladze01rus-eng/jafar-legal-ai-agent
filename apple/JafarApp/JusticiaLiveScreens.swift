@@ -5,160 +5,192 @@ import UniformTypeIdentifiers
 struct JusticiaLiveHomeView: View {
     @ObservedObject var workspace: JusticiaWorkspaceStore
     let navigate: (JusticiaSection) -> Void
-
-    private let columns = [GridItem(.adaptive(minimum: 210), spacing: 14)]
+    let canCreateMatter: Bool
+    let createMatter: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            pageHeader(
-                title: "Добро пожаловать в «Юстицию»",
-                subtitle: "Локальная рабочая среда для дел, документов, сроков и юридического ИИ."
-            )
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(alignment: .center, spacing: 18) {
+                pageHeader(title: "Рабочий стол", subtitle: "Дела, документы и процессуальные сроки.")
+                if !workspace.matters.isEmpty {
+                    newMatterButton("Новое дело")
+                        .fixedSize()
+                }
+            }
 
-            if workspace.isLoading {
-                ProgressView("Загружаем локальные данные…")
-                    .frame(maxWidth: .infinity, minHeight: 80)
+            if workspace.isLoading && workspace.matters.isEmpty {
+                ProgressView("Открываем рабочий стол…")
+                    .frame(maxWidth: .infinity, minHeight: 170)
                     .justiciaCard()
-            } else if let error = workspace.errorMessage {
-                errorCard(error)
-            }
-
-            LazyVGrid(columns: columns, spacing: 14) {
-                metricCard("Активные дела", "\(activeMatters)", "из \(workspace.matters.count) дел", "briefcase", JusticiaTheme.blue)
-                metricCard("Ближайшие сроки", "\(deadlineCount)", "в локальной базе", "calendar.badge.exclamationmark", JusticiaTheme.orange)
-                metricCard("Документы дела", "\(workspace.documents.count)", workspace.selectedMatter == nil ? "выберите дело" : "по выбранному делу", "doc.text", JusticiaTheme.blue)
-                metricCard("Режим данных", "Локально", "защищённое хранилище", "lock.shield", JusticiaTheme.green)
-            }
-
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Последние дела", action: "Все дела") { navigate(.matters) }
-
-                    if workspace.matters.isEmpty {
-                        emptyState(
-                            icon: "briefcase",
-                            title: "Дел пока нет",
-                            message: "Создайте первое дело — оно сохранится в локальном зашифрованном хранилище."
-                        )
-                    } else {
-                        ForEach(workspace.matters.prefix(5)) { matter in
-                            Button {
-                                Task {
-                                    await workspace.selectMatter(matter)
-                                    navigate(.matters)
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    JusticiaIconTile(systemName: "briefcase", color: JusticiaTheme.blue, size: 34)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(matter.displayNumber)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(JusticiaTheme.ink)
-                                        Text(matter.title)
-                                            .font(.caption)
-                                            .foregroundStyle(JusticiaTheme.secondaryInk)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                    JusticiaPill(text: matter.displayStatus, color: JusticiaTheme.green)
-                                }
-                                .padding(.vertical, 5)
-                            }
-                            .buttonStyle(.plain)
+            } else {
+                if let error = workspace.errorMessage {
+                    errorCard(error)
+                }
+                if workspace.matters.isEmpty && workspace.errorMessage == nil {
+                    firstMatterCard
+                } else if !workspace.matters.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 16) {
+                            recentMatters.frame(minWidth: 340)
+                            deadlines.frame(minWidth: 300)
+                        }
+                        VStack(spacing: 16) {
+                            recentMatters
+                            deadlines
                         }
                     }
                 }
-                .justiciaCard()
-                .frame(maxWidth: .infinity)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Ближайшие сроки", action: "Открыть сроки") { navigate(.deadlines) }
-
-                    let upcoming = workspace.matters.flatMap { matter in
-                        matter.deadlines.map { (matter, $0) }
-                    }.prefix(5)
-
-                    if upcoming.isEmpty {
-                        emptyState(
-                            icon: "calendar",
-                            title: "Сроки не добавлены",
-                            message: "Сроки из материалов дела будут появляться здесь после обработки документов."
-                        )
-                    } else {
-                        ForEach(Array(upcoming.enumerated()), id: \.offset) { _, pair in
-                            HStack(spacing: 12) {
-                                JusticiaIconTile(systemName: "calendar.badge.clock", color: JusticiaTheme.orange, size: 34)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(pair.1.title)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(pair.0.displayNumber + (pair.1.dueDate.map { " · " + $0 } ?? ""))
-                                        .font(.caption)
-                                        .foregroundStyle(JusticiaTheme.secondaryInk)
-                                }
-                                Spacer()
-                            }
-                        }
-                    }
-                }
-                .justiciaCard()
-                .frame(maxWidth: .infinity)
-            }
-
-            HStack(spacing: 12) {
-                quickButton("Открыть дела", "briefcase.fill", .matters)
-                quickButton("Документы", "doc.text.magnifyingglass", .documents)
-                quickButton("Транскрибация", "waveform", .transcription)
-            }
-        }
-        .task {
-            if workspace.matters.isEmpty {
-                await workspace.refresh()
             }
         }
     }
 
-    private var activeMatters: Int {
-        workspace.matters.filter { $0.status.lowercased() == "active" }.count
-    }
-
-    private var deadlineCount: Int {
-        workspace.matters.reduce(0) { $0 + $1.deadlines.count }
-    }
-
-    private func metricCard(_ title: String, _ value: String, _ note: String, _ icon: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                JusticiaIconTile(systemName: icon, color: color)
-                Spacer()
+    private var firstMatterCard: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 30) {
+                welcomeMessage.frame(minWidth: 330)
+                Spacer(minLength: 0)
+                ZStack {
+                    Circle().strokeBorder(JusticiaTheme.gold.opacity(0.18))
+                    Circle()
+                        .fill(JusticiaTheme.gold.opacity(0.07))
+                        .padding(14)
+                    JusticiaScalesMark()
+                        .stroke(JusticiaTheme.gold, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                        .frame(width: 79, height: 79)
+                }
+                .frame(width: 162, height: 162)
+                .accessibilityHidden(true)
             }
-            Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+            VStack(alignment: .leading) { welcomeMessage }
+        }
+        .padding(30)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: JusticiaTheme.largeCorner)
+                .fill(LinearGradient(colors: [JusticiaTheme.surface, JusticiaTheme.surfaceMuted],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: JusticiaTheme.largeCorner)
+                .strokeBorder(JusticiaTheme.border)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var welcomeMessage: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text("Создайте первое дело")
+                .font(.system(size: 33, weight: .semibold, design: .serif))
                 .foregroundStyle(JusticiaTheme.ink)
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            Text(note)
-                .font(.caption)
+                .accessibilityAddTraits(.isHeader)
+            Text("В карточку дела можно загрузить материалы, проверить документы и подготовить черновик.")
+                .font(.subheadline)
                 .foregroundStyle(JusticiaTheme.secondaryInk)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 390, alignment: .leading)
+            if canCreateMatter {
+                newMatterButton("Создать первое дело")
+                    .padding(.top, 7)
+                Label("Материалы хранятся на этом устройстве", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .padding(.top, 3)
+            }
+        }
+    }
+
+    private func newMatterButton(_ title: String) -> some View {
+        Button(action: createMatter) { Label(title, systemImage: "plus") }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canCreateMatter)
+    }
+
+    private var recentMatters: some View {
+        let recent = Array(workspace.matters.sorted { $0.updatedAt > $1.updatedAt }.prefix(5))
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("Последние дела", action: "Все дела") { navigate(.matters) }
+                .padding(.bottom, 12)
+            ForEach(recent) { matter in
+                Divider()
+                Button {
+                    Task {
+                        await workspace.selectMatter(matter)
+                        navigate(.matters)
+                    }
+                } label: {
+                    HStack(spacing: 11) {
+                        JusticiaIconTile(systemName: "briefcase", size: 32)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(matter.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(JusticiaTheme.ink)
+                                .lineLimit(2)
+                            Text(matter.displayNumber)
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        }
+                        Spacer(minLength: 6)
+                        JusticiaPill(text: matter.displayStatus, color: JusticiaTheme.blue)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 11)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .justiciaCard()
+        .justiciaCard(padding: 19)
     }
 
-    private func quickButton(_ title: String, _ icon: String, _ section: JusticiaSection) -> some View {
-        Button {
-            navigate(section)
-        } label: {
-            Label(title, systemImage: icon)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
+    private var deadlines: some View {
+        let datedDeadlines = workspace.matters.flatMap { matter in
+            matter.deadlines.compactMap { deadline in
+                deadline.dueDate.map { (date: $0, title: deadline.title, matterNumber: matter.displayNumber) }
+            }
+        }.sorted { $0.date < $1.date }
+        let preview = Array(datedDeadlines.prefix(5))
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("Сроки по делам", action: "Все сроки") { navigate(.deadlines) }
+                .padding(.bottom, 12)
+            if preview.isEmpty {
+                Divider()
+                Text("Пока нет сроков с указанной датой.")
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .padding(.top, 14)
+            } else {
+                ForEach(Array(preview.enumerated()), id: \.offset) { _, item in
+                    Divider()
+                    HStack(spacing: 11) {
+                        JusticiaIconTile(systemName: "calendar", color: JusticiaTheme.gold, size: 32)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(JusticiaTheme.ink)
+                                .lineLimit(2)
+                            Text(item.matterNumber)
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        }
+                        Spacer(minLength: 6)
+                        Text(item.date)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                    .padding(.vertical, 11)
+                }
+            }
         }
-        .buttonStyle(.bordered)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .justiciaCard(padding: 19)
     }
 
     private func errorCard(_ error: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(JusticiaTheme.red)
             Text(error)
                 .font(.subheadline)
@@ -175,10 +207,10 @@ struct JusticiaLiveHomeView: View {
 struct JusticiaLiveMattersView: View {
     @ObservedObject var workspace: JusticiaWorkspaceStore
     let apiClient: JusticiaAPIClient?
+    let createMatter: () -> Void
     let openDocument: (String) -> Void
 
     @State private var filter = ""
-    @State private var showingCreateMatter = false
     @State private var showingAssistant = false
 
     var body: some View {
@@ -194,12 +226,11 @@ struct JusticiaLiveMattersView: View {
                         Text("Мои дела")
                             .font(.headline)
                         Spacer()
-                        Button {
-                            showingCreateMatter = true
-                        } label: {
+                        Button(action: createMatter) {
                             Label("Новое дело", systemImage: "plus")
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(apiClient == nil)
                     }
 
                     HStack {
@@ -262,10 +293,6 @@ struct JusticiaLiveMattersView: View {
         }
         .task {
             if workspace.matters.isEmpty { await workspace.refresh() }
-        }
-        .sheet(isPresented: $showingCreateMatter) {
-            JusticiaCreateMatterSheet(workspace: workspace)
-                .frame(minWidth: 520, minHeight: 560)
         }
         .sheet(isPresented: $showingAssistant) {
             if let matter = workspace.selectedMatter, let apiClient {
@@ -419,9 +446,10 @@ struct JusticiaLiveMattersView: View {
     }
 }
 
-private struct JusticiaCreateMatterSheet: View {
+struct JusticiaCreateMatterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var workspace: JusticiaWorkspaceStore
+    let onCreated: () -> Void
 
     @State private var title = ""
     @State private var matterType = "general"
@@ -489,7 +517,10 @@ private struct JusticiaCreateMatterSheet: View {
                             caseNumber: caseNumber
                         )
                         isSaving = false
-                        if saved { dismiss() }
+                        if saved {
+                            onCreated()
+                            dismiss()
+                        }
                     }
                 } label: {
                     if isSaving {

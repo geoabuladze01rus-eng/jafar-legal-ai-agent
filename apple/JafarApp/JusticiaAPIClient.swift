@@ -336,6 +336,23 @@ struct JusticiaAPIClient {
         return decoded
     }
 
+    func analyzeEvidenceGaps(
+        matterID: String,
+        sourceDocumentIDs: [String],
+        focus: String = ""
+    ) async throws -> JusticiaCaseEvidenceGapReportDTO {
+        let payload: [String: Any] = [
+            "source_document_ids": sourceDocumentIDs,
+            "focus": focus
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await request(
+            path: "/v1/matters/\(matterID)/analysis/evidence-gaps",
+            method: "POST",
+            body: body
+        )
+    }
+
     func previewDraft(
         matterID: String,
         draft: JusticiaDraftRequestDTO

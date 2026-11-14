@@ -19,6 +19,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from pydantic import BaseModel, Field, field_validator
 
+from .case_evidence_gap_service import GroundedEvidenceGap, GroundedStatement
 from .legal_models import Matter
 from .matter_repository import MatterRepository
 from .matter_rag import MatterChunk
@@ -46,6 +47,8 @@ class LegalDraftRequest(BaseModel):
     requested_action: str = Field(default="", max_length=5_000)
     source_document_ids: list[str] = Field(default_factory=list, max_length=MAX_SOURCE_DOCUMENTS)
     review_record_ids: list[str] = Field(default_factory=list, max_length=12)
+    evidence_gaps: list[GroundedEvidenceGap] = Field(default_factory=list, max_length=12)
+    categorized_statements: list[GroundedStatement] = Field(default_factory=list, max_length=24)
 
     @field_validator("source_document_ids")
     @classmethod
@@ -98,6 +101,8 @@ class LegalDraftPreview(BaseModel):
     requested_action: str
     evidence: list[LegalDraftEvidence]
     review_notes: list[LegalDraftReviewNote] = Field(default_factory=list)
+    evidence_gaps: list[GroundedEvidenceGap] = Field(default_factory=list)
+    categorized_statements: list[GroundedStatement] = Field(default_factory=list)
     warnings: list[str]
     can_export: bool
 
@@ -223,6 +228,26 @@ class LegalDraftService:
                     )
                 )
 
+        chunks_by_citation = {chunk.citation: chunk for chunk in selected_chunks}
+        validated_statements: list[GroundedStatement] = []
+        for stmt in request.categorized_statements:
+            if stmt.document_id not in documents:
+                raise ValueError("Statement refers to a document not selected for this draft")
+            chunk = chunks_by_citation.get(stmt.citation)
+            if chunk is None or chunk.document_id != stmt.document_id:
+                raise ValueError("Statement citation is not available in selected documents")
+            if " ".join(stmt.quote.split()) not in " ".join(chunk.content.split()):
+                raise ValueError("Statement quote failed source verification")
+            validated_statements.append(stmt)
+
+        validated_gaps: list[GroundedEvidenceGap] = []
+        for gap in request.evidence_gaps:
+            if gap.related_citation:
+                chunk = chunks_by_citation.get(gap.related_citation)
+                if chunk is None or chunk.document_id not in documents:
+                    raise ValueError("Evidence gap refers to a citation not in selected documents")
+            validated_gaps.append(gap)
+
         warnings: list[str] = []
         if review_notes:
             warnings.append(
@@ -230,6 +255,26 @@ class LegalDraftService:
                 "после разрыва страницы, не в текст процессуального документа. "
                 "Статус «оставить для работы» не подтверждает достоверность фактов."
             )
+        if validated_statements:
+            warnings.append(
+                "Разграничение фактов, утверждений сторон и выводов суда помещено в "
+                "служебный лист проверки источников и не подменяет судебную оценку доказательств."
+            )
+        if validated_gaps:
+            if request.kind == "motion":
+                warnings.append(
+                    "В проекте ходатайства зафиксированы пробелы в доказывании. "
+                    "Проверьте перечень истребуемых материалов и их относимость."
+                )
+            elif request.kind in ("complaint", "appeal"):
+                warnings.append(
+                    "В проекте жалобы зафиксированы неполнота исследования обстоятельств и пробелы в доказательствах. "
+                    "Проверьте основания обжалования."
+                )
+            else:
+                warnings.append(
+                    "В проекте учтены выявленные пробелы в доказывании. Требуется проверка юристом."
+                )
         required = {
             "recipient": "Не указан адресат документа",
             "author": "Не указаны заявитель и его процессуальное положение",
@@ -271,6 +316,8 @@ class LegalDraftService:
             requested_action=request.requested_action.strip(),
             evidence=evidence,
             review_notes=review_notes,
+            evidence_gaps=validated_gaps,
+            categorized_statements=validated_statements,
             warnings=warnings,
             can_export=not export_blockers,
         )
@@ -385,6 +432,53 @@ def render_legal_draft_docx(preview: LegalDraftPreview) -> bytes:
                     f"Техническая ссылка: {source.citation}. "
                     f"Дословная выдержка: «{source.quote}»"
                 )
+    if preview.categorized_statements:
+        _paragraph(document, "РАЗГРАНИЧЕНИЕ ФАКТОВ, УТВЕРЖДЕНИЙ СТОРОН И ВЫВОДОВ СУДА", centered=True)
+        _paragraph(
+            document,
+            "Классификация фрагментов носит аналитический характер для юриста "
+            "и не заменяет судебную оценку доказательств. Этот раздел предназначен "
+            "исключительно для внутренней проверки позиции."
+        )
+        cat_labels = {
+            "fact": "[ФАКТИЧЕСКОЕ ОБСТОЯТЕЛЬСТВО]",
+            "party_claim": "[УТВЕРЖДЕНИЕ СТОРОНЫ]",
+            "court_finding": "[ВЫВОД СУДА / ОРГАНА]",
+        }
+        for index, stmt in enumerate(preview.categorized_statements, 1):
+            label = cat_labels.get(stmt.category, "[ОБСТОЯТЕЛЬСТВО]")
+            page_info = f", страница {stmt.physical_page}" if stmt.physical_page else ""
+            subj_info = f", субъект: {stmt.subject}" if stmt.subject else ""
+            _paragraph(
+                document,
+                f"{index}. {label} Документ: {stmt.filename}{page_info}{subj_info}. "
+                f"Техническая ссылка: {stmt.citation}. Содержание: {stmt.statement}"
+            )
+            _paragraph(document, f"Дословная выдержка: «{stmt.quote}»")
+    if preview.evidence_gaps:
+        _paragraph(document, "ВЫЯВЛЕННЫЕ ПРОБЕЛЫ В ДОКАЗАТЕЛЬСТВАХ И ОБСТОЯТЕЛЬСТВАХ", centered=True)
+        _paragraph(
+            document,
+            "Пробелы указывают на отсутствие подтверждающих материалов для заявленных доводов "
+            "и служат основой для подготовки ходатайств об истребовании либо замечаний."
+        )
+        sev_labels = {
+            "high": "[Высокая критичность]",
+            "medium": "[Средняя критичность]",
+            "low": "[Низкая критичность]",
+        }
+        for index, gap in enumerate(preview.evidence_gaps, 1):
+            sev = sev_labels.get(gap.severity, "[Проверка]")
+            _paragraph(
+                document,
+                f"Пробел № {index}. {sev} Тема: {gap.topic}. Описание: {gap.description}"
+            )
+            if gap.expected_evidence:
+                _paragraph(document, f"Необходимые доказательства: {', '.join(gap.expected_evidence)}")
+            if gap.suggested_action:
+                _paragraph(document, f"Рекомендуемое процессуальное действие: {gap.suggested_action}")
+            if gap.related_citation:
+                _paragraph(document, f"Связанный фрагмент: {gap.related_citation}")
     for warning in preview.warnings:
         _paragraph(document, warning)
 

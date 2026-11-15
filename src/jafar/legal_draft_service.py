@@ -444,6 +444,7 @@ def render_legal_draft_docx(preview: LegalDraftPreview) -> bytes:
             "fact": "[ФАКТИЧЕСКОЕ ОБСТОЯТЕЛЬСТВО]",
             "party_claim": "[УТВЕРЖДЕНИЕ СТОРОНЫ]",
             "court_finding": "[ВЫВОД СУДА / ОРГАНА]",
+            "needs_verification": "[ТРЕБУЕТ ПРОВЕРКИ]",
         }
         for index, stmt in enumerate(preview.categorized_statements, 1):
             label = cat_labels.get(stmt.category, "[ОБСТОЯТЕЛЬСТВО]")

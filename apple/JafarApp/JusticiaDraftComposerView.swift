@@ -136,6 +136,10 @@ struct JusticiaDraftComposerView: View {
     @State private var selectedDocIDs: Set<String> = []
     @State private var selectedReviewIDs: Set<String> = []
     @State private var reviewerDecisions: [JusticiaClaimDecisionRecordDTO] = []
+    @State private var analysisReport: JusticiaCaseEvidenceGapReportDTO?
+    @State private var selectedStatementIDs: Set<String> = []
+    @State private var selectedGapIDs: Set<String> = []
+    @State private var isAnalyzingGaps = false
     @State private var preview: JusticiaDraftPreviewDTO?
     @State private var aiSuggestion: JusticiaDraftSuggestionDTO?
     @State private var isProcessing = false
@@ -155,12 +159,23 @@ struct JusticiaDraftComposerView: View {
             workspace.selectedMatterID ?? "",
             kind, recipient, author, position, legalBasis, requestedAction,
             selectedDocIDs.sorted().joined(separator: ","),
-            selectedReviewIDs.sorted().joined(separator: ",")
+            selectedReviewIDs.sorted().joined(separator: ","),
+            selectedStatementIDs.sorted().joined(separator: ","),
+            selectedGapIDs.sorted().joined(separator: ",")
         ].joined(separator: "\u{001F}")
     }
 
     private var draft: JusticiaDraftRequestDTO {
-        JusticiaDraftRequestDTO(
+        let chosenStatements: [JusticiaGroundedStatementDTO]
+        let chosenGaps: [JusticiaGroundedEvidenceGapDTO]
+        if let report = analysisReport {
+            chosenStatements = report.statements.filter { selectedStatementIDs.contains($0.statementID) }
+            chosenGaps = report.gaps.filter { selectedGapIDs.contains($0.gapID) }
+        } else {
+            chosenStatements = []
+            chosenGaps = []
+        }
+        return JusticiaDraftRequestDTO(
             kind: kind,
             recipient: recipient,
             author: author,
@@ -168,7 +183,9 @@ struct JusticiaDraftComposerView: View {
             legalBasis: legalBasis,
             requestedAction: requestedAction,
             sourceDocumentIDs: selectedDocIDs.sorted(),
-            reviewRecordIDs: selectedReviewIDs.sorted()
+            reviewRecordIDs: selectedReviewIDs.sorted(),
+            evidenceGaps: chosenGaps,
+            categorizedStatements: chosenStatements
         )
     }
 
@@ -245,9 +262,9 @@ struct JusticiaDraftComposerView: View {
                                     get: { selectedDocIDs.contains(document.id) },
                                     set: { enabled in
                                         if enabled {
-                                            selectedDocIDs.insert(document.id)
+                                             selectedDocIDs.insert(document.id)
                                         } else {
-                                            selectedDocIDs.remove(document.id)
+                                             selectedDocIDs.remove(document.id)
                                         }
                                     }
                                 )
@@ -256,6 +273,8 @@ struct JusticiaDraftComposerView: View {
                         }
                     }
                 }
+
+                evidenceGapAnalysisSection
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Рабочие замечания из журнала проверок")
@@ -377,6 +396,14 @@ struct JusticiaDraftComposerView: View {
         .task(id: workspace.selectedMatterID) {
             await loadReviewerDecisions()
         }
+        .onChange(of: selectedDocIDs) { _, _ in
+            analysisReport = nil
+            selectedStatementIDs.removeAll()
+            selectedGapIDs.removeAll()
+            preview = nil
+            aiSuggestion = nil
+            message = nil
+        }
         .onChange(of: workspace.selectedMatterID) { _, _ in
             reviewerDecisions = []
             selectedReviewIDs = []
@@ -387,6 +414,9 @@ struct JusticiaDraftComposerView: View {
             legalBasis = ""
             requestedAction = ""
             selectedDocIDs = []
+            analysisReport = nil
+            selectedStatementIDs.removeAll()
+            selectedGapIDs.removeAll()
             preview = nil
             aiSuggestion = nil
             errorMessage = nil
@@ -413,6 +443,16 @@ struct JusticiaDraftComposerView: View {
             Text(result.title).font(.headline)
             Text("Проверенных фрагментов: \(result.evidence.count)")
                 .font(.subheadline)
+            if !result.categorizedStatements.isEmpty {
+                Text("Выбрано обстоятельств для служебного листа: \(result.categorizedStatements.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.blue)
+            }
+            if !result.evidenceGaps.isEmpty {
+                Text("Выбрано пробелов для служебного листа: \(result.evidenceGaps.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.orange)
+            }
             ForEach(result.evidence) { evidence in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(evidence.filename + " · фрагмент " + String(evidence.chunkIndex + 1))
@@ -506,6 +546,284 @@ struct JusticiaDraftComposerView: View {
             _ = data
             errorMessage = "Сохранение DOCX в этой бета-версии доступно на macOS."
             #endif
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private var evidenceGapAnalysisSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Анализ обстоятельств и пробелов")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Выделяет факты, позиции сторон, выводы суда и пробелы в доказательствах.")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                }
+                Spacer()
+                Button {
+                    Task { await runEvidenceGapAnalysis() }
+                } label: {
+                    Label(
+                        analysisReport == nil ? "Запустить анализ" : "Обновить анализ",
+                        systemImage: "text.magnifyingglass"
+                    )
+                }
+                .disabled(isProcessing || isAnalyzingGaps || selectedDocIDs.isEmpty)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+            if isAnalyzingGaps {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Локальный анализ материалов дела…")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                }
+            }
+
+            if let report = analysisReport {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(report.summary)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                        .padding(8)
+                        .background(JusticiaTheme.blue.opacity(0.08))
+                        .cornerRadius(6)
+
+                    // Circumstances / Statements
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Обстоятельства дела (\(report.statements.count))")
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Button("Выбрать все") {
+                                selectedStatementIDs = Set(report.statements.map(\.statementID))
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+
+                            Button("Снять выбор") {
+                                selectedStatementIDs.removeAll()
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                        }
+
+                        if report.statements.isEmpty {
+                            Text("Обстоятельства не выделены в выбранных документах.")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        } else {
+                            ForEach(report.statements) { stmt in
+                                statementRow(stmt)
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // Gaps
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Выявленные пробелы в доказывании (\(report.gaps.count))")
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Button("Выбрать все") {
+                                selectedGapIDs = Set(report.gaps.map(\.gapID))
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+
+                            Button("Снять выбор") {
+                                selectedGapIDs.removeAll()
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                        }
+
+                        if report.gaps.isEmpty {
+                            Text("Пробелы в доказывании по выбранным документам не обнаружены.")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        } else {
+                            ForEach(report.gaps) { gap in
+                                gapRow(gap)
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(JusticiaTheme.border, lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    private func statementRow(_ stmt: JusticiaGroundedStatementDTO) -> some View {
+        Toggle(
+            isOn: Binding(
+                get: { selectedStatementIDs.contains(stmt.statementID) },
+                set: { enabled in
+                    if enabled { selectedStatementIDs.insert(stmt.statementID) }
+                    else { selectedStatementIDs.remove(stmt.statementID) }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    categoryBadge(stmt.category)
+                    if !stmt.subject.isEmpty {
+                        Text(stmt.subject)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(JusticiaTheme.ink)
+                    }
+                    Text("· " + stmt.filename)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                    if let page = stmt.physicalPage {
+                        Text("· стр. \(page) (PDF)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(JusticiaTheme.blue)
+                    }
+                }
+                Text(stmt.statement)
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.ink)
+                Text("«\(stmt.quote)»")
+                    .font(.caption)
+                    .italic()
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func gapRow(_ gap: JusticiaGroundedEvidenceGapDTO) -> some View {
+        Toggle(
+            isOn: Binding(
+                get: { selectedGapIDs.contains(gap.gapID) },
+                set: { enabled in
+                    if enabled { selectedGapIDs.insert(gap.gapID) }
+                    else { selectedGapIDs.remove(gap.gapID) }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    severityBadge(gap.severity)
+                    Text(gap.topic)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(JusticiaTheme.ink)
+                    if let cit = gap.relatedCitation {
+                        Text("· \(cit)")
+                            .font(.caption2)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                }
+                Text(gap.description)
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.ink)
+                if !gap.expectedEvidence.isEmpty {
+                    Text("Необходимые доказательства: " + gap.expectedEvidence.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                }
+                if !gap.suggestedAction.isEmpty {
+                    Text("Рекомендация: " + gap.suggestedAction)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.blue)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryBadge(_ category: String) -> some View {
+        switch category {
+        case "fact":
+            Text("ФАКТ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.green.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.green)
+                .cornerRadius(4)
+        case "court_finding":
+            Text("ВЫВОД СУДА")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.blue.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.blue)
+                .cornerRadius(4)
+        case "party_claim":
+            Text("УТВЕРЖДЕНИЕ СТОРОНЫ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.purple.opacity(0.15))
+                .foregroundStyle(Color.purple)
+                .cornerRadius(4)
+        default:
+            Text("ТРЕБУЕТ ПРОВЕРКИ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.orange.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.orange)
+                .cornerRadius(4)
+        }
+    }
+
+    @ViewBuilder
+    private func severityBadge(_ severity: String) -> some View {
+        switch severity {
+        case "high":
+            Text("ВЫСОКАЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.red.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.red)
+                .cornerRadius(4)
+        case "low":
+            Text("НИЗКАЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.gray.opacity(0.15))
+                .foregroundStyle(Color.secondary)
+                .cornerRadius(4)
+        default:
+            Text("СРЕДНЯЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.orange.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.orange)
+                .cornerRadius(4)
+        }
+    }
+
+    @MainActor
+    private func runEvidenceGapAnalysis() async {
+        guard let apiClient, let matterID = workspace.selectedMatterID, !selectedDocIDs.isEmpty else { return }
+        isAnalyzingGaps = true
+        errorMessage = nil
+        defer { isAnalyzingGaps = false }
+        do {
+            let report = try await apiClient.analyzeEvidenceGaps(
+                matterID: matterID,
+                sourceDocumentIDs: selectedDocIDs.sorted()
+            )
+            analysisReport = report
+            selectedStatementIDs = Set(report.statements.map(\.statementID))
+            selectedGapIDs = Set(report.gaps.map(\.gapID))
         } catch {
             errorMessage = error.localizedDescription
         }

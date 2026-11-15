@@ -57,6 +57,7 @@ def build_legal_draft_router(
         return preview(matter_id, request)
 
     @router.post("/v1/matters/{matter_id}/drafts/export")
+    @router.post("/v1/matters/{matter_id}/drafts/export-docx")
     def draft_export(matter_id: str, request: LegalDraftRequest) -> Response:
         checked = preview(matter_id, request)
         if not checked.can_export:

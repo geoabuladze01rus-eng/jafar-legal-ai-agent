@@ -4,6 +4,24 @@ import SwiftUI
 import AppKit
 
 final class JusticiaApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for window in sender.windows {
+                window.makeKeyAndOrderFront(self)
+            }
+        }
+        return true
+    }
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         BackendRuntime.shared.shutdownForApplicationTermination()
     }

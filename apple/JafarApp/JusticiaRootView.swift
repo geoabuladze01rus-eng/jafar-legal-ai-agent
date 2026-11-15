@@ -16,6 +16,9 @@ struct JusticiaRootView: View {
     @AppStorage("justicia.notifications") private var notificationsEnabled = true
     @AppStorage("justicia.reduceMotion") private var reduceMotion = false
     @AppStorage("justicia.onboardingCompleted") private var onboardingCompleted = false
+    @AppStorage("justicia.lawyerAvatar") private var lawyerAvatar = "person.fill"
+    @AppStorage("justicia.avatarColor") private var avatarColor = "blue"
+    @AppStorage("justicia.lawyerName") private var lawyerName = "Юрист"
 
     init(
         voice: VoiceSessionViewModel,
@@ -259,12 +262,14 @@ struct JusticiaRootView: View {
                 selectedSection = .settings
             } label: {
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(JusticiaTheme.blueSoft)
-                        .frame(width: 32, height: 32)
-                        .overlay(Image(systemName: "person.fill").foregroundStyle(JusticiaTheme.blue))
+                    LawyerAvatarView(
+                        iconName: lawyerAvatar,
+                        colorID: avatarColor,
+                        size: 32,
+                        iconSize: 15
+                    )
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Юрист")
+                        Text(lawyerName)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(JusticiaTheme.ink)
                         Text("Настройки профиля")

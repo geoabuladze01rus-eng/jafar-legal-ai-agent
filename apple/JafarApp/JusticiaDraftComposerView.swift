@@ -16,6 +16,9 @@ struct JusticiaDraftRequestDTO: Codable {
     let requestedAction: String
     let sourceDocumentIDs: [String]
     let reviewRecordIDs: [String]
+    let evidenceGaps: [JusticiaGroundedEvidenceGapDTO]
+    let categorizedStatements: [JusticiaGroundedStatementDTO]
+    let contradictions: [JusticiaGroundedContradictionDTO]
 
     enum CodingKeys: String, CodingKey {
         case kind, recipient, author, position
@@ -23,12 +26,18 @@ struct JusticiaDraftRequestDTO: Codable {
         case requestedAction = "requested_action"
         case sourceDocumentIDs = "source_document_ids"
         case reviewRecordIDs = "review_record_ids"
+        case evidenceGaps = "evidence_gaps"
+        case categorizedStatements = "categorized_statements"
+        case contradictions
     }
 
     init(
         kind: String, recipient: String, author: String,
         position: String, legalBasis: String, requestedAction: String,
-        sourceDocumentIDs: [String], reviewRecordIDs: [String] = []
+        sourceDocumentIDs: [String], reviewRecordIDs: [String] = [],
+        evidenceGaps: [JusticiaGroundedEvidenceGapDTO] = [],
+        categorizedStatements: [JusticiaGroundedStatementDTO] = [],
+        contradictions: [JusticiaGroundedContradictionDTO] = []
     ) {
         self.kind = kind
         self.recipient = recipient
@@ -38,6 +47,9 @@ struct JusticiaDraftRequestDTO: Codable {
         self.requestedAction = requestedAction
         self.sourceDocumentIDs = sourceDocumentIDs
         self.reviewRecordIDs = reviewRecordIDs
+        self.evidenceGaps = evidenceGaps
+        self.categorizedStatements = categorizedStatements
+        self.contradictions = contradictions
     }
 
     init(from decoder: Decoder) throws {
@@ -49,8 +61,11 @@ struct JusticiaDraftRequestDTO: Codable {
         legalBasis = try values.decode(String.self, forKey: .legalBasis)
         requestedAction = try values.decode(String.self, forKey: .requestedAction)
         sourceDocumentIDs = try values.decode([String].self, forKey: .sourceDocumentIDs)
-        // Old encrypted drafts did not contain this field.
+        // Old encrypted drafts did not contain these fields.
         reviewRecordIDs = try values.decodeIfPresent([String].self, forKey: .reviewRecordIDs) ?? []
+        evidenceGaps = try values.decodeIfPresent([JusticiaGroundedEvidenceGapDTO].self, forKey: .evidenceGaps) ?? []
+        categorizedStatements = try values.decodeIfPresent([JusticiaGroundedStatementDTO].self, forKey: .categorizedStatements) ?? []
+        contradictions = try values.decodeIfPresent([JusticiaGroundedContradictionDTO].self, forKey: .contradictions) ?? []
     }
 }
 
@@ -75,11 +90,28 @@ struct JusticiaDraftPreviewDTO: Decodable {
     let title: String
     let warnings: [String]
     let evidence: [JusticiaDraftEvidenceDTO]
+    let evidenceGaps: [JusticiaGroundedEvidenceGapDTO]
+    let categorizedStatements: [JusticiaGroundedStatementDTO]
+    let contradictions: [JusticiaGroundedContradictionDTO]
     let canExport: Bool
 
     enum CodingKeys: String, CodingKey {
         case title, warnings, evidence
+        case evidenceGaps = "evidence_gaps"
+        case categorizedStatements = "categorized_statements"
+        case contradictions
         case canExport = "can_export"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decode(String.self, forKey: .title)
+        warnings = try values.decode([String].self, forKey: .warnings)
+        evidence = try values.decode([JusticiaDraftEvidenceDTO].self, forKey: .evidence)
+        evidenceGaps = try values.decodeIfPresent([JusticiaGroundedEvidenceGapDTO].self, forKey: .evidenceGaps) ?? []
+        categorizedStatements = try values.decodeIfPresent([JusticiaGroundedStatementDTO].self, forKey: .categorizedStatements) ?? []
+        contradictions = try values.decodeIfPresent([JusticiaGroundedContradictionDTO].self, forKey: .contradictions) ?? []
+        canExport = try values.decode(Bool.self, forKey: .canExport)
     }
 }
 
@@ -112,6 +144,14 @@ struct JusticiaDraftComposerView: View {
     @State private var selectedDocIDs: Set<String> = []
     @State private var selectedReviewIDs: Set<String> = []
     @State private var reviewerDecisions: [JusticiaClaimDecisionRecordDTO] = []
+    @State private var analysisReport: JusticiaCaseEvidenceGapReportDTO?
+    @State private var selectedStatementIDs: Set<String> = []
+    @State private var selectedGapIDs: Set<String> = []
+    @State private var selectedContradictionIDs: Set<String> = []
+    @State private var analysisMode: String = "auto"
+    @State private var timeoutSeconds: Double = 60.0
+    @State private var isAnalyzingGaps = false
+    @State private var analysisTask: Task<Void, Never>? = nil
     @State private var preview: JusticiaDraftPreviewDTO?
     @State private var aiSuggestion: JusticiaDraftSuggestionDTO?
     @State private var isProcessing = false
@@ -131,12 +171,27 @@ struct JusticiaDraftComposerView: View {
             workspace.selectedMatterID ?? "",
             kind, recipient, author, position, legalBasis, requestedAction,
             selectedDocIDs.sorted().joined(separator: ","),
-            selectedReviewIDs.sorted().joined(separator: ",")
+            selectedReviewIDs.sorted().joined(separator: ","),
+            selectedStatementIDs.sorted().joined(separator: ","),
+            selectedGapIDs.sorted().joined(separator: ","),
+            selectedContradictionIDs.sorted().joined(separator: ",")
         ].joined(separator: "\u{001F}")
     }
 
     private var draft: JusticiaDraftRequestDTO {
-        JusticiaDraftRequestDTO(
+        let chosenStatements: [JusticiaGroundedStatementDTO]
+        let chosenGaps: [JusticiaGroundedEvidenceGapDTO]
+        let chosenContradictions: [JusticiaGroundedContradictionDTO]
+        if let report = analysisReport {
+            chosenStatements = report.statements.filter { selectedStatementIDs.contains($0.statementID) }
+            chosenGaps = report.gaps.filter { selectedGapIDs.contains($0.gapID) }
+            chosenContradictions = (report.contradictions ?? []).filter { selectedContradictionIDs.contains($0.contradictionID) }
+        } else {
+            chosenStatements = []
+            chosenGaps = []
+            chosenContradictions = []
+        }
+        return JusticiaDraftRequestDTO(
             kind: kind,
             recipient: recipient,
             author: author,
@@ -144,7 +199,10 @@ struct JusticiaDraftComposerView: View {
             legalBasis: legalBasis,
             requestedAction: requestedAction,
             sourceDocumentIDs: selectedDocIDs.sorted(),
-            reviewRecordIDs: selectedReviewIDs.sorted()
+            reviewRecordIDs: selectedReviewIDs.sorted(),
+            evidenceGaps: chosenGaps,
+            categorizedStatements: chosenStatements,
+            contradictions: chosenContradictions
         )
     }
 
@@ -221,9 +279,9 @@ struct JusticiaDraftComposerView: View {
                                     get: { selectedDocIDs.contains(document.id) },
                                     set: { enabled in
                                         if enabled {
-                                            selectedDocIDs.insert(document.id)
+                                             selectedDocIDs.insert(document.id)
                                         } else {
-                                            selectedDocIDs.remove(document.id)
+                                             selectedDocIDs.remove(document.id)
                                         }
                                     }
                                 )
@@ -232,6 +290,8 @@ struct JusticiaDraftComposerView: View {
                         }
                     }
                 }
+
+                evidenceGapAnalysisSection
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Рабочие замечания из журнала проверок")
@@ -353,7 +413,20 @@ struct JusticiaDraftComposerView: View {
         .task(id: workspace.selectedMatterID) {
             await loadReviewerDecisions()
         }
+        .onChange(of: selectedDocIDs) { _, _ in
+            analysisTask?.cancel()
+            isAnalyzingGaps = false
+            analysisReport = nil
+            selectedStatementIDs.removeAll()
+            selectedGapIDs.removeAll()
+            selectedContradictionIDs.removeAll()
+            preview = nil
+            aiSuggestion = nil
+            message = nil
+        }
         .onChange(of: workspace.selectedMatterID) { _, _ in
+            analysisTask?.cancel()
+            isAnalyzingGaps = false
             reviewerDecisions = []
             selectedReviewIDs = []
             kind = "motion"
@@ -363,6 +436,10 @@ struct JusticiaDraftComposerView: View {
             legalBasis = ""
             requestedAction = ""
             selectedDocIDs = []
+            analysisReport = nil
+            selectedStatementIDs.removeAll()
+            selectedGapIDs.removeAll()
+            selectedContradictionIDs.removeAll()
             preview = nil
             aiSuggestion = nil
             errorMessage = nil
@@ -389,6 +466,21 @@ struct JusticiaDraftComposerView: View {
             Text(result.title).font(.headline)
             Text("Проверенных фрагментов: \(result.evidence.count)")
                 .font(.subheadline)
+            if !result.categorizedStatements.isEmpty {
+                Text("Выбрано обстоятельств для служебного листа: \(result.categorizedStatements.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.blue)
+            }
+            if !result.evidenceGaps.isEmpty {
+                Text("Выбрано пробелов для служебного листа: \(result.evidenceGaps.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.orange)
+            }
+            if !result.contradictions.isEmpty {
+                Text("Выбрано противоречий для служебного листа: \(result.contradictions.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(JusticiaTheme.red)
+            }
             ForEach(result.evidence) { evidence in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(evidence.filename + " · фрагмент " + String(evidence.chunkIndex + 1))
@@ -485,5 +577,427 @@ struct JusticiaDraftComposerView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private var evidenceGapAnalysisSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Анализ обстоятельств, пробелов и противоречий")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Выделяет факты, позиции сторон, выводы суда, правовые оценки, гипотезы защиты и выявляет противоречия.")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                }
+                Spacer()
+                Button {
+                    Task { await runEvidenceGapAnalysis() }
+                } label: {
+                    Label(
+                        analysisReport == nil ? "Запустить анализ" : "Обновить анализ",
+                        systemImage: "text.magnifyingglass"
+                    )
+                }
+                .disabled(isProcessing || isAnalyzingGaps || selectedDocIDs.isEmpty)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+            HStack(spacing: 12) {
+                Picker("Режим:", selection: $analysisMode) {
+                    Text("Авто").tag("auto")
+                    Text("ИИ Ollama").tag("local_ai")
+                    Text("Детерминированный").tag("deterministic")
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 320)
+
+                Picker("Тайм-аут:", selection: $timeoutSeconds) {
+                    Text("30 с").tag(30.0)
+                    Text("60 с").tag(60.0)
+                    Text("120 с").tag(120.0)
+                    Text("180 с").tag(180.0)
+                }
+                .frame(width: 110)
+            }
+
+            if isAnalyzingGaps {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Выполняется локальный анализ материалов дела (\(analysisMode == "deterministic" ? "детерминированный" : (analysisMode == "local_ai" ? "нейросеть Ollama" : "автоматический")))...")
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                    Spacer()
+                    Button("Отменить", role: .cancel) {
+                        analysisTask?.cancel()
+                        isAnalyzingGaps = false
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(8)
+                .background(JusticiaTheme.border.opacity(0.3))
+                .cornerRadius(6)
+            }
+
+            if let report = analysisReport {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let method = report.analysisMethodUsed {
+                        HStack(spacing: 8) {
+                            Text(method == "local_ai" ? "ЛОКАЛЬНЫЙ ИИ OLLAMA" : "ДЕТЕРМИНИРОВАННЫЙ АНАЛИЗ")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(method == "local_ai" ? JusticiaTheme.green.opacity(0.2) : JusticiaTheme.blue.opacity(0.2))
+                                .foregroundStyle(method == "local_ai" ? JusticiaTheme.green : JusticiaTheme.blue)
+                                .cornerRadius(4)
+                            if let details = report.analysisDetails, !details.isEmpty {
+                                Text(details)
+                                    .font(.caption2)
+                                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                            }
+                        }
+                    }
+
+                    Text(report.summary)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                        .padding(8)
+                        .background(JusticiaTheme.blue.opacity(0.08))
+                        .cornerRadius(6)
+
+                    // Circumstances / Statements
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Обстоятельства дела (\(report.statements.count))")
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Button("Выбрать все") {
+                                selectedStatementIDs = Set(report.statements.map(\.statementID))
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+
+                            Button("Снять выбор") {
+                                selectedStatementIDs.removeAll()
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                        }
+
+                        if report.statements.isEmpty {
+                            Text("Обстоятельства не выделены в выбранных документах.")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        } else {
+                            ForEach(report.statements) { stmt in
+                                statementRow(stmt)
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // Gaps
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Выявленные пробелы в доказывании (\(report.gaps.count))")
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Button("Выбрать все") {
+                                selectedGapIDs = Set(report.gaps.map(\.gapID))
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+
+                            Button("Снять выбор") {
+                                selectedGapIDs.removeAll()
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                        }
+
+                        if report.gaps.isEmpty {
+                            Text("Пробелы в доказывании по выбранным документам не обнаружены.")
+                                .font(.caption)
+                                .foregroundStyle(JusticiaTheme.secondaryInk)
+                        } else {
+                            ForEach(report.gaps) { gap in
+                                gapRow(gap)
+                            }
+                        }
+                    }
+
+                    // Contradictions
+                    if let contras = report.contradictions, !contras.isEmpty {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Выявленные противоречия в показаниях и материалах (\(contras.count))")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(JusticiaTheme.red)
+                                Spacer()
+                                Button("Выбрать все") {
+                                    selectedContradictionIDs = Set(contras.map(\.contradictionID))
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+
+                                Button("Снять выбор") {
+                                    selectedContradictionIDs.removeAll()
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                            }
+
+                            ForEach(contras) { contra in
+                                contradictionRow(contra)
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(JusticiaTheme.border, lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    private func statementRow(_ stmt: JusticiaGroundedStatementDTO) -> some View {
+        Toggle(
+            isOn: Binding(
+                get: { selectedStatementIDs.contains(stmt.statementID) },
+                set: { enabled in
+                    if enabled { selectedStatementIDs.insert(stmt.statementID) }
+                    else { selectedStatementIDs.remove(stmt.statementID) }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    categoryBadge(stmt.category)
+                    if !stmt.subject.isEmpty {
+                        Text(stmt.subject)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(JusticiaTheme.ink)
+                    }
+                    Text("· " + stmt.filename)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                    if let page = stmt.physicalPage {
+                        Text("· стр. \(page) (PDF)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(JusticiaTheme.blue)
+                    }
+                }
+                Text(stmt.statement)
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.ink)
+                Text("«\(stmt.quote)»")
+                    .font(.caption)
+                    .italic()
+                    .foregroundStyle(JusticiaTheme.secondaryInk)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func gapRow(_ gap: JusticiaGroundedEvidenceGapDTO) -> some View {
+        Toggle(
+            isOn: Binding(
+                get: { selectedGapIDs.contains(gap.gapID) },
+                set: { enabled in
+                    if enabled { selectedGapIDs.insert(gap.gapID) }
+                    else { selectedGapIDs.remove(gap.gapID) }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    severityBadge(gap.severity)
+                    Text(gap.topic)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(JusticiaTheme.ink)
+                    if let cit = gap.relatedCitation {
+                        Text("· \(cit)")
+                            .font(.caption2)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                }
+                Text(gap.description)
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.ink)
+                if !gap.expectedEvidence.isEmpty {
+                    Text("Необходимые доказательства: " + gap.expectedEvidence.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.secondaryInk)
+                }
+                if !gap.suggestedAction.isEmpty {
+                    Text("Рекомендация: " + gap.suggestedAction)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.blue)
+                }
+            }
+        }
+    }
+
+    private func contradictionRow(_ contra: JusticiaGroundedContradictionDTO) -> some View {
+        Toggle(
+            isOn: Binding(
+                get: { selectedContradictionIDs.contains(contra.contradictionID) },
+                set: { enabled in
+                    if enabled { selectedContradictionIDs.insert(contra.contradictionID) }
+                    else { selectedContradictionIDs.remove(contra.contradictionID) }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    severityBadge(contra.severity)
+                    Text(contra.topic)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(JusticiaTheme.ink)
+                    if !contra.documents.isEmpty {
+                        Text("· " + contra.documents.joined(separator: ", "))
+                            .font(.caption2)
+                            .foregroundStyle(JusticiaTheme.secondaryInk)
+                    }
+                    if !contra.pages.isEmpty {
+                        Text("· стр. " + contra.pages.map(String.init).joined(separator: ", "))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(JusticiaTheme.blue)
+                    }
+                }
+                Text(contra.description)
+                    .font(.subheadline)
+                    .foregroundStyle(JusticiaTheme.ink)
+                if !contra.suggestedInquiry.isEmpty {
+                    Text("Рекомендуемое действие: " + contra.suggestedInquiry)
+                        .font(.caption)
+                        .foregroundStyle(JusticiaTheme.blue)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryBadge(_ category: String) -> some View {
+        switch category {
+        case "fact":
+            Text("ФАКТ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.green.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.green)
+                .cornerRadius(4)
+        case "court_finding":
+            Text("ВЫВОД СУДА")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.blue.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.blue)
+                .cornerRadius(4)
+        case "legal_assessment":
+            Text("ПРАВОВАЯ ОЦЕНКА")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.indigo.opacity(0.15))
+                .foregroundStyle(Color.indigo)
+                .cornerRadius(4)
+        case "party_claim":
+            Text("УТВЕРЖДЕНИЕ СТОРОНЫ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.purple.opacity(0.15))
+                .foregroundStyle(Color.purple)
+                .cornerRadius(4)
+        case "defense_hypothesis":
+            Text("ГИПОТЕЗА ЗАЩИТЫ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.teal.opacity(0.15))
+                .foregroundStyle(Color.teal)
+                .cornerRadius(4)
+        default:
+            Text("ТРЕБУЕТ ПРОВЕРКИ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.orange.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.orange)
+                .cornerRadius(4)
+        }
+    }
+
+    @ViewBuilder
+    private func severityBadge(_ severity: String) -> some View {
+        switch severity {
+        case "high":
+            Text("ВЫСОКАЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.red.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.red)
+                .cornerRadius(4)
+        case "low":
+            Text("НИЗКАЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.gray.opacity(0.15))
+                .foregroundStyle(Color.secondary)
+                .cornerRadius(4)
+        default:
+            Text("СРЕДНЯЯ")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(JusticiaTheme.orange.opacity(0.15))
+                .foregroundStyle(JusticiaTheme.orange)
+                .cornerRadius(4)
+        }
+    }
+
+    @MainActor
+    private func runEvidenceGapAnalysis() async {
+        guard let apiClient, let matterID = workspace.selectedMatterID, !selectedDocIDs.isEmpty else { return }
+        isAnalyzingGaps = true
+        errorMessage = nil
+        analysisTask?.cancel()
+        let mode = analysisMode
+        let timeout = timeoutSeconds
+        let docs = selectedDocIDs.sorted()
+        analysisTask = Task {
+            defer { isAnalyzingGaps = false }
+            do {
+                let report = try await apiClient.analyzeEvidenceGaps(
+                    matterID: matterID,
+                    sourceDocumentIDs: docs,
+                    analysisMode: mode,
+                    timeoutSeconds: timeout
+                )
+                if !Task.isCancelled {
+                    analysisReport = report
+                    selectedStatementIDs = Set(report.statements.map(\.statementID))
+                    selectedGapIDs = Set(report.gaps.map(\.gapID))
+                    if let contras = report.contradictions {
+                        selectedContradictionIDs = Set(contras.map(\.contradictionID))
+                    }
+                }
+            } catch {
+                if !Task.isCancelled {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+        await analysisTask?.value
     }
 }

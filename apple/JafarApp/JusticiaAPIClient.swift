@@ -339,11 +339,15 @@ struct JusticiaAPIClient {
     func analyzeEvidenceGaps(
         matterID: String,
         sourceDocumentIDs: [String],
-        focus: String = ""
+        focus: String = "",
+        analysisMode: String = "auto",
+        timeoutSeconds: Double = 60.0
     ) async throws -> JusticiaCaseEvidenceGapReportDTO {
         let payload: [String: Any] = [
             "source_document_ids": sourceDocumentIDs,
-            "focus": focus
+            "focus": focus,
+            "analysis_mode": analysisMode,
+            "timeout_seconds": timeoutSeconds
         ]
         let body = try JSONSerialization.data(withJSONObject: payload)
         return try await request(

@@ -43,12 +43,37 @@ struct JusticiaGroundedEvidenceGapDTO: Codable, Identifiable, Hashable {
     }
 }
 
+struct JusticiaGroundedContradictionDTO: Codable, Identifiable, Hashable {
+    let contradictionID: String
+    let topic: String
+    let description: String
+    let statementIDs: [String]
+    let citations: [String]
+    let documents: [String]
+    let pages: [Int]
+    let severity: String
+    let suggestedInquiry: String
+
+    var id: String { contradictionID }
+
+    enum CodingKeys: String, CodingKey {
+        case contradictionID = "contradiction_id"
+        case topic, description
+        case statementIDs = "statement_ids"
+        case citations, documents, pages, severity
+        case suggestedInquiry = "suggested_inquiry"
+    }
+}
+
 struct JusticiaCaseEvidenceGapReportDTO: Codable {
     let matterID: String
     let matterTitle: String
     let caseNumber: String?
     let statements: [JusticiaGroundedStatementDTO]
     let gaps: [JusticiaGroundedEvidenceGapDTO]
+    let contradictions: [JusticiaGroundedContradictionDTO]?
+    let analysisMethodUsed: String?
+    let analysisDetails: String?
     let summary: String
     let warnings: [String]
 
@@ -56,6 +81,9 @@ struct JusticiaCaseEvidenceGapReportDTO: Codable {
         case matterID = "matter_id"
         case matterTitle = "matter_title"
         case caseNumber = "case_number"
-        case statements, gaps, summary, warnings
+        case statements, gaps, contradictions
+        case analysisMethodUsed = "analysis_method_used"
+        case analysisDetails = "analysis_details"
+        case summary, warnings
     }
 }

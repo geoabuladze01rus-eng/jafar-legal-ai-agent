@@ -19,7 +19,11 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from pydantic import BaseModel, Field, field_validator
 
-from .case_evidence_gap_service import GroundedEvidenceGap, GroundedStatement
+from .case_evidence_gap_service import (
+    GroundedContradiction,
+    GroundedEvidenceGap,
+    GroundedStatement,
+)
 from .legal_models import Matter
 from .matter_repository import MatterRepository
 from .matter_rag import MatterChunk
@@ -49,6 +53,7 @@ class LegalDraftRequest(BaseModel):
     review_record_ids: list[str] = Field(default_factory=list, max_length=12)
     evidence_gaps: list[GroundedEvidenceGap] = Field(default_factory=list, max_length=12)
     categorized_statements: list[GroundedStatement] = Field(default_factory=list, max_length=24)
+    contradictions: list[GroundedContradiction] = Field(default_factory=list, max_length=16)
 
     @field_validator("source_document_ids")
     @classmethod
@@ -103,6 +108,7 @@ class LegalDraftPreview(BaseModel):
     review_notes: list[LegalDraftReviewNote] = Field(default_factory=list)
     evidence_gaps: list[GroundedEvidenceGap] = Field(default_factory=list)
     categorized_statements: list[GroundedStatement] = Field(default_factory=list)
+    contradictions: list[GroundedContradiction] = Field(default_factory=list)
     warnings: list[str]
     can_export: bool
 
@@ -248,6 +254,10 @@ class LegalDraftService:
                     raise ValueError("Evidence gap refers to a citation not in selected documents")
             validated_gaps.append(gap)
 
+        validated_contras: list[GroundedContradiction] = []
+        for contra in request.contradictions:
+            validated_contras.append(contra)
+
         warnings: list[str] = []
         if review_notes:
             warnings.append(
@@ -259,6 +269,11 @@ class LegalDraftService:
             warnings.append(
                 "Разграничение фактов, утверждений сторон и выводов суда помещено в "
                 "служебный лист проверки источников и не подменяет судебную оценку доказательств."
+            )
+        if validated_contras:
+            warnings.append(
+                "В служебный лист включены выявленные противоречия в доказательствах и показаниях. "
+                "Проверьте необходимость заявления ходатайств о вызове лиц либо истребовании первичных документов."
             )
         if validated_gaps:
             if request.kind == "motion":
@@ -318,6 +333,7 @@ class LegalDraftService:
             review_notes=review_notes,
             evidence_gaps=validated_gaps,
             categorized_statements=validated_statements,
+            contradictions=validated_contras,
             warnings=warnings,
             can_export=not export_blockers,
         )
@@ -444,6 +460,8 @@ def render_legal_draft_docx(preview: LegalDraftPreview) -> bytes:
             "fact": "[ФАКТИЧЕСКОЕ ОБСТОЯТЕЛЬСТВО]",
             "party_claim": "[УТВЕРЖДЕНИЕ СТОРОНЫ]",
             "court_finding": "[ВЫВОД СУДА / ОРГАНА]",
+            "legal_assessment": "[ПРАВОВАЯ ОЦЕНКА / ВЫВОД СУДА]",
+            "defense_hypothesis": "[ГИПОТЕЗА ЗАЩИТЫ / ВЕРСИЯ]",
             "needs_verification": "[ТРЕБУЕТ ПРОВЕРКИ]",
         }
         for index, stmt in enumerate(preview.categorized_statements, 1):
@@ -456,6 +474,28 @@ def render_legal_draft_docx(preview: LegalDraftPreview) -> bytes:
                 f"Техническая ссылка: {stmt.citation}. Содержание: {stmt.statement}"
             )
             _paragraph(document, f"Дословная выдержка: «{stmt.quote}»")
+    if preview.contradictions:
+        _paragraph(document, "ВЫЯВЛЕННЫЕ ПРОТИВОРЕЧИЯ В МАТЕРИАЛАХ И ПОКАЗАНИЯХ", centered=True)
+        _paragraph(
+            document,
+            "Сопоставление сведений указывает на несовпадение фактических данных или показаний участников дела. "
+            "Этот раздел предназначен исключительно для внутренней аналитической проверки юристом."
+        )
+        sev_labels = {
+            "high": "[Высокая критичность]",
+            "medium": "[Средняя критичность]",
+            "low": "[Низкая критичность]",
+        }
+        for index, contra in enumerate(preview.contradictions, 1):
+            sev = sev_labels.get(contra.severity, "[Проверка]")
+            _paragraph(
+                document,
+                f"Противоречие № {index}. {sev} Тема: {contra.topic}. Описание: {contra.description}"
+            )
+            if contra.documents:
+                _paragraph(document, f"Связанные документы: {', '.join(contra.documents)}")
+            if contra.suggested_inquiry:
+                _paragraph(document, f"Рекомендуемое действие по проверке: {contra.suggested_inquiry}")
     if preview.evidence_gaps:
         _paragraph(document, "ВЫЯВЛЕННЫЕ ПРОБЕЛЫ В ДОКАЗАТЕЛЬСТВАХ И ОБСТОЯТЕЛЬСТВАХ", centered=True)
         _paragraph(
